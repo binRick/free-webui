@@ -1,10 +1,34 @@
-# free-webui
+<p align="center">
+  <img src="./docs/img/banner.svg" alt="free-webui — royalty-free chat UI for self-hosted LLMs" width="100%"/>
+</p>
 
-> A royalty-free, MIT-licensed, **clean-room** rewrite of the open-webui chat frontend for self-hosted LLMs.
+<h1 align="center">free-webui</h1>
+
+<p align="center">
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-22d3ee.svg" alt="license: MIT"/></a>
+  <a href="https://repostats.app/r/binRick/free-webui"><img src="https://repostats.app/badge/binRick/free-webui.svg?metric=loc" alt="lines of code"/></a>
+  <a href="https://repostats.app/r/binRick/free-webui"><img src="https://repostats.app/badge/binRick/free-webui.svg?metric=cost" alt="cost estimate"/></a>
+  <a href="https://repostats.app/r/binRick/free-webui"><img src="https://repostats.app/badge/binRick/free-webui.svg?metric=complexity" alt="complexity"/></a>
+</p>
+
+<p align="center">
+  A royalty-free, MIT-licensed, <strong>clean-room</strong> rewrite of the open-webui chat frontend for self-hosted LLMs.
+</p>
 
 `free-webui` is a from-scratch implementation of the same idea — a polished browser UI for talking to local and remote language models — with **no upstream code, no upstream license, no upstream branding**. It is built to be small, hackable, and free in every sense: free to fork, free to embed, free to ship inside a commercial product.
 
 If `open-webui` is the kitchen-sink reference, `free-webui` aims to be the lean, opinionated alternative you can read in an afternoon.
+
+---
+
+## Screenshots
+
+<p align="center">
+  <img src="./docs/img/screenshot-empty.png" alt="empty chat state" width="49%"/>
+  <img src="./docs/img/screenshot-chat.png" alt="streamed reply from qwen2.5-coder via Ollama" width="49%"/>
+</p>
+
+<p align="center"><sub>left: fresh tab · right: streamed reply from <code>qwen2.5-coder:14b</code> via local Ollama</sub></p>
 
 ---
 

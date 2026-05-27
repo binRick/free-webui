@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400" role="img" aria-label="free-webui logo">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1020"/>
+      <stop offset="1" stop-color="#1e1b4b"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#a78bfa"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="400" height="400" rx="64" fill="url(#bg)"/>
+
+  <!-- speech-bubble outline (chat) wrapping a slashed-chain (free / unencumbered) -->
+  <g filter="url(#glow)">
+    <path d="M70 110
+             h220
+             a40 40 0 0 1 40 40
+             v110
+             a40 40 0 0 1 -40 40
+             h-90
+             l-50 50
+             v-50
+             h-80
+             a40 40 0 0 1 -40 -40
+             v-110
+             a40 40 0 0 1 40 -40 z"
+          fill="none" stroke="url(#ring)" stroke-width="8" stroke-linejoin="round"/>
+  </g>
+
+  <!-- f glyph: a free, open angle bracket interpretation -->
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-weight="700">
+    <text x="200" y="245" text-anchor="middle" font-size="170" fill="url(#ring)" filter="url(#glow)">f</text>
+  </g>
+
+  <!-- caret tail "_" to evoke terminal / cli, hinting at hackability -->
+  <rect x="170" y="270" width="60" height="10" rx="2" fill="#22d3ee" opacity="0.9"/>
+</svg>

@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     upstream_api_key: str = "ollama"
     default_model: str = "llama3.2"
 
+    # SQLite file path. Created on first run.
+    db_path: str = "data/free-webui.db"
+
     # CORS: SvelteKit dev server.
     allowed_origins: list[str] = ["http://localhost:5173"]
 

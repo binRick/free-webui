@@ -217,18 +217,40 @@ The SSE payload is the upstream's OpenAI delta format, re-emitted verbatim. That
 
 ## Roadmap
 
-Rough order, no dates:
+We're aiming at the 95% workflow people actually want from open-webui — not strict feature parity. Tiered by what's table-stakes vs nice-to-have.
 
-1. **Persistence** — SQLite for conversations + messages; sidebar with chat list.
-2. **Multi-conversation routing** — `/chat/[id]` routes, deletion, rename.
-3. **Markdown rendering** — code blocks with syntax highlighting, copy buttons.
-4. **System prompts & per-chat parameters** — temperature, top-p, stop.
-5. **Auth** — single-user password → multi-user with roles.
-6. **Attachments** — image input for multimodal models.
-7. **Tools / function calling** — server-side execution sandbox.
-8. **RAG** — document upload, embeddings, retrieval.
+### Tier 1 — feels like a real chat app
 
-Every step keeps the constraint: small, readable, MIT, no upstream code.
+- ✅ **Persistence** — SQLite for conversations + messages.
+- ✅ **Sidebar with conversation list** — create / open / delete; auto-titled from first user message.
+- **Markdown rendering** — fenced code with syntax highlighting + copy; tables; LaTeX; mermaid; sanitized.
+- **Edit + regenerate messages** — including branching off an edit.
+- **Per-chat parameters** — model, temperature, top-p, system prompt, stop sequences.
+- **Mobile / responsive layout + dark/light themes.**
+- **Regenerate / continue affordances** (stop already wired).
+
+### Tier 2 — the things people pick open-webui *for*
+
+- **Auth** — single-user → multi-user with roles; OAuth optional.
+- **RAG** — uploads, chunking, embeddings (Ollama / OpenAI), vector store, retrieval with citations.
+- **Web search** — pluggable providers (SearXNG, Brave, Tavily, Google PSE) with citations.
+- **Multimodal input** — image attachments for vision models.
+- **Voice** — STT for input, TTS for output.
+- **Model management** — list / pull / delete Ollama models from the UI; multiple upstream connections.
+- **Custom presets / "modelfiles"** — saved (model, system prompt, params) bundles.
+- **Tools / function calling** — server-side registry + execution; MCP server support.
+- **Memories** — long-lived facts persisted across conversations.
+- **Prompt library** — saved reusable prompts with variables.
+- **Share / export** — public share links; JSON / Markdown export; ChatGPT-format import.
+- **OpenAI-compatible API of our own** — let other clients hit free-webui as if it were OpenAI.
+
+### Tier 3 — larger initiatives, mostly skippable
+
+Image generation (A1111 / ComfyUI / DALL-E), code interpreter sandbox, Pipelines / plugin framework, evaluation / leaderboard, channels / spaces, LDAP / SAML, full i18n, PWA install, admin panel.
+
+### Constraint
+
+Every step stays small, readable, MIT, with **no upstream code**.
 
 ---
 

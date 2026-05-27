@@ -1,14 +1,13 @@
-import json
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
 
 from .config import settings
-from .schemas import ChatRequest, ModelInfo, ModelList
+from .conversations import router as conversations_router
+from .db import open_db
+from .schemas import ModelInfo, ModelList
 
 
 @asynccontextmanager
@@ -18,13 +17,15 @@ async def lifespan(app: FastAPI):
         headers={"Authorization": f"Bearer {settings.upstream_api_key}"},
         timeout=httpx.Timeout(connect=10.0, read=None, write=30.0, pool=10.0),
     )
+    app.state.db = await open_db(settings.db_path)
     try:
         yield
     finally:
         await app.state.http.aclose()
+        await app.state.db.close()
 
 
-app = FastAPI(title="free-webui", version="0.0.1", lifespan=lifespan)
+app = FastAPI(title="free-webui", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -32,6 +33,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(conversations_router)
 
 
 @app.get("/api/health")
@@ -50,38 +53,3 @@ async def list_models() -> ModelList:
     payload = r.json()
     data = [ModelInfo(id=m["id"]) for m in payload.get("data", [])]
     return ModelList(data=data)
-
-
-async def _stream_chat(payload: dict) -> AsyncIterator[bytes]:
-    """Proxy an OpenAI-compatible streaming chat completion as SSE.
-
-    Re-emits upstream `data: {...}` lines verbatim, plus a final `data: [DONE]`.
-    """
-    client: httpx.AsyncClient = app.state.http
-    async with client.stream("POST", "/chat/completions", json=payload) as r:
-        if r.status_code >= 400:
-            body = await r.aread()
-            yield f"data: {json.dumps({'error': body.decode(errors='replace')})}\n\n".encode()
-            return
-        async for line in r.aiter_lines():
-            if not line:
-                continue
-            # Upstream lines already look like `data: {...}` or `data: [DONE]`.
-            yield f"{line}\n\n".encode()
-
-
-@app.post("/api/chat")
-async def chat(req: ChatRequest) -> StreamingResponse:
-    payload = {
-        "model": req.model or settings.default_model,
-        "messages": [m.model_dump() for m in req.messages],
-        "stream": True,
-    }
-    if req.temperature is not None:
-        payload["temperature"] = req.temperature
-
-    return StreamingResponse(
-        _stream_chat(payload),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )

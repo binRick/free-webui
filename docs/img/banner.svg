@@ -41,14 +41,17 @@
 
   <!-- wordmark + tagline -->
   <g transform="translate(290 0)">
-    <text x="0" y="155" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-weight="800" font-size="92" fill="#e2e8f0" letter-spacing="-2">
+    <text x="0" y="140" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-weight="800" font-size="88" fill="#e2e8f0" letter-spacing="-2">
       free-<tspan fill="url(#ring)">webui</tspan>
     </text>
-    <text x="4" y="205" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" fill="#94a3b8" letter-spacing="0.5">
-      a royalty-free, MIT, clean-room chat UI for self-hosted LLMs
+    <text x="4" y="180" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" fill="#94a3b8" letter-spacing="0.5">
+      a royalty-free, MIT, clean-room
+    </text>
+    <text x="4" y="206" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" fill="#94a3b8" letter-spacing="0.5">
+      chat UI for self-hosted LLMs
     </text>
 
-    <g transform="translate(4 230)" font-family="ui-monospace, monospace" font-size="14" fill="#64748b">
+    <g transform="translate(4 232)" font-family="ui-monospace, monospace" font-size="14" fill="#64748b">
       <g>
         <rect x="0" y="0" width="92" height="26" rx="13" fill="#0f172a" stroke="#1e293b"/>
         <text x="46" y="17" text-anchor="middle">SvelteKit</text>

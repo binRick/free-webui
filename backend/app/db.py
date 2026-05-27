@@ -4,11 +4,15 @@ import aiosqlite
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS conversations (
-    id         TEXT PRIMARY KEY,
-    title      TEXT NOT NULL DEFAULT 'new chat',
-    model      TEXT,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
+    id            TEXT PRIMARY KEY,
+    title         TEXT NOT NULL DEFAULT 'new chat',
+    model         TEXT,
+    system_prompt TEXT,
+    temperature   REAL,
+    top_p         REAL,
+    stop          TEXT,
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -22,6 +26,22 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, id);
 """
 
+_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
+    ("conversations", "system_prompt", "TEXT"),
+    ("conversations", "temperature", "REAL"),
+    ("conversations", "top_p", "REAL"),
+    ("conversations", "stop", "TEXT"),
+)
+
+
+async def _ensure_columns(conn: aiosqlite.Connection) -> None:
+    for table, column, decl in _MIGRATIONS:
+        cur = await conn.execute(f"PRAGMA table_info({table})")
+        existing = {row[1] for row in await cur.fetchall()}
+        if column not in existing:
+            await conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+    await conn.commit()
+
 
 async def open_db(path: str) -> aiosqlite.Connection:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -30,4 +50,5 @@ async def open_db(path: str) -> aiosqlite.Connection:
     await conn.execute("PRAGMA journal_mode = WAL")
     await conn.executescript(SCHEMA)
     await conn.commit()
+    await _ensure_columns(conn)
     return conn

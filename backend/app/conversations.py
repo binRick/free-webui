@@ -1,7 +1,7 @@
 import json
 import time
 import uuid
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 
 import aiosqlite
 import httpx
@@ -32,6 +32,10 @@ class Conversation(BaseModel):
     id: str
     title: str
     model: str | None
+    system_prompt: str | None = None
+    temperature: float | None = None
+    top_p: float | None = None
+    stop: list[str] | None = None
     created_at: int
     updated_at: int
     messages: list[StoredMessage]
@@ -46,12 +50,135 @@ class SendBody(BaseModel):
     model: str | None = None
 
 
+class RegenerateBody(BaseModel):
+    model: str | None = None
+
+
+class EditBody(BaseModel):
+    content: str
+    model: str | None = None
+
+
+class UpdateBody(BaseModel):
+    title: str | None = None
+    model: str | None = None
+    system_prompt: str | None = None
+    temperature: float | None = None
+    top_p: float | None = None
+    stop: list[str] | None = None
+
+
 def _db(request: Request) -> aiosqlite.Connection:
     return request.app.state.db
 
 
 def _http(request: Request) -> httpx.AsyncClient:
     return request.app.state.http
+
+
+async def _load_history(db: aiosqlite.Connection, cid: str) -> list[dict]:
+    cur = await db.execute(
+        "SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY id", (cid,)
+    )
+    rows = await cur.fetchall()
+    return [{"role": r[0], "content": r[1]} for r in rows]
+
+
+async def _conv_settings(db: aiosqlite.Connection, cid: str) -> dict[str, Any]:
+    cur = await db.execute(
+        """
+        SELECT title, model, system_prompt, temperature, top_p, stop
+        FROM conversations WHERE id = ?
+        """,
+        (cid,),
+    )
+    row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="conversation not found")
+    stop_raw = row[5]
+    return {
+        "title": row[0],
+        "model": row[1],
+        "system_prompt": row[2],
+        "temperature": row[3],
+        "top_p": row[4],
+        "stop": json.loads(stop_raw) if stop_raw else None,
+    }
+
+
+def _build_upstream_messages(
+    system_prompt: str | None, history: list[dict], extra: list[dict] | None = None
+) -> list[dict]:
+    msgs: list[dict] = []
+    if system_prompt:
+        msgs.append({"role": "system", "content": system_prompt})
+    msgs.extend(history)
+    if extra:
+        msgs.extend(extra)
+    return msgs
+
+
+async def _stream_and_persist(
+    db: aiosqlite.Connection,
+    http: httpx.AsyncClient,
+    cid: str,
+    upstream_messages: list[dict],
+    model: str,
+    temperature: float | None,
+    top_p: float | None,
+    stop: list[str] | None,
+) -> AsyncIterator[bytes]:
+    """Stream a chat completion from upstream and persist the assembled assistant reply.
+
+    Re-emits upstream `data: …` SSE lines verbatim. On generator close (normal or
+    early cancel) the assembled tokens are written as a single assistant message so
+    aborted streams still save what arrived.
+    """
+    assembled: list[str] = []
+    payload: dict[str, Any] = {
+        "model": model,
+        "messages": upstream_messages,
+        "stream": True,
+    }
+    if temperature is not None:
+        payload["temperature"] = temperature
+    if top_p is not None:
+        payload["top_p"] = top_p
+    if stop:
+        payload["stop"] = stop
+
+    try:
+        async with http.stream("POST", "/chat/completions", json=payload) as r:
+            if r.status_code >= 400:
+                err = (await r.aread()).decode(errors="replace")
+                yield f"data: {json.dumps({'error': err})}\n\n".encode()
+                return
+            async for line in r.aiter_lines():
+                if not line:
+                    continue
+                if line.startswith("data: ") and not line.endswith("[DONE]"):
+                    try:
+                        chunk = json.loads(line[6:])
+                        delta = (
+                            chunk.get("choices", [{}])[0].get("delta", {}).get("content")
+                        )
+                        if isinstance(delta, str) and delta:
+                            assembled.append(delta)
+                    except json.JSONDecodeError:
+                        pass
+                yield f"{line}\n\n".encode()
+    finally:
+        final = "".join(assembled)
+        if final:
+            ts = int(time.time())
+            await db.execute(
+                "INSERT INTO messages (conversation_id, role, content, created_at) VALUES (?, ?, ?, ?)",
+                (cid, "assistant", final, ts),
+            )
+            await db.execute(
+                "UPDATE conversations SET updated_at = ? WHERE id = ?", (ts, cid)
+            )
+            await db.commit()
 
 
 @router.get("", response_model=list[ConversationSummary])
@@ -88,7 +215,10 @@ async def create_conversation(body: CreateBody, request: Request):
 async def get_conversation(cid: str, request: Request):
     db = _db(request)
     cur = await db.execute(
-        "SELECT id, title, model, created_at, updated_at FROM conversations WHERE id = ?",
+        """
+        SELECT id, title, model, system_prompt, temperature, top_p, stop, created_at, updated_at
+        FROM conversations WHERE id = ?
+        """,
         (cid,),
     )
     row = await cur.fetchone()
@@ -103,12 +233,39 @@ async def get_conversation(cid: str, request: Request):
         id=row[0],
         title=row[1],
         model=row[2],
-        created_at=row[3],
-        updated_at=row[4],
+        system_prompt=row[3],
+        temperature=row[4],
+        top_p=row[5],
+        stop=json.loads(row[6]) if row[6] else None,
+        created_at=row[7],
+        updated_at=row[8],
         messages=[
             StoredMessage(id=m[0], role=m[1], content=m[2], created_at=m[3]) for m in msg_rows
         ],
     )
+
+
+@router.patch("/{cid}", response_model=Conversation)
+async def update_conversation(cid: str, body: UpdateBody, request: Request):
+    db = _db(request)
+    fields = body.model_dump(exclude_unset=True)
+    if fields:
+        sets: list[str] = []
+        params: list[Any] = []
+        for key, value in fields.items():
+            sets.append(f"{key} = ?")
+            if key == "stop":
+                params.append(json.dumps(value) if value else None)
+            else:
+                params.append(value)
+        params.append(cid)
+        cur = await db.execute(
+            f"UPDATE conversations SET {', '.join(sets)} WHERE id = ?", params
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="conversation not found")
+        await db.commit()
+    return await get_conversation(cid, request)
 
 
 @router.delete("/{cid}", status_code=204)
@@ -118,86 +275,126 @@ async def delete_conversation(cid: str, request: Request):
     await db.commit()
 
 
+async def _maybe_update_title(
+    db: aiosqlite.Connection, cid: str, title: str, first_user: str
+) -> None:
+    if title == "new chat":
+        new_title = first_user[:60].replace("\n", " ").strip() or "new chat"
+        await db.execute(
+            "UPDATE conversations SET title = ? WHERE id = ?", (new_title, cid)
+        )
+
+
+async def _maybe_update_model(
+    db: aiosqlite.Connection, cid: str, requested: str | None, current: str | None
+) -> str:
+    chosen = requested or current or settings.default_model
+    if requested and requested != current:
+        await db.execute(
+            "UPDATE conversations SET model = ? WHERE id = ?", (requested, cid)
+        )
+    return chosen
+
+
 @router.post("/{cid}/messages")
 async def send_message(cid: str, body: SendBody, request: Request) -> StreamingResponse:
     db = _db(request)
     http = _http(request)
 
-    cur = await db.execute(
-        "SELECT title, model FROM conversations WHERE id = ?", (cid,)
-    )
-    row = await cur.fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="conversation not found")
-    title, conv_model = row
-
-    cur = await db.execute(
-        "SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY id", (cid,)
-    )
-    history_rows = await cur.fetchall()
-    history = [{"role": r[0], "content": r[1]} for r in history_rows]
+    conv = await _conv_settings(db, cid)
+    history = await _load_history(db, cid)
 
     now = int(time.time())
     await db.execute(
         "INSERT INTO messages (conversation_id, role, content, created_at) VALUES (?, ?, ?, ?)",
         (cid, "user", body.content, now),
     )
-    if title == "new chat":
-        new_title = body.content[:60].replace("\n", " ").strip() or "new chat"
-        await db.execute("UPDATE conversations SET title = ? WHERE id = ?", (new_title, cid))
-    chosen_model = body.model or conv_model or settings.default_model
-    if body.model and body.model != conv_model:
-        await db.execute(
-            "UPDATE conversations SET model = ? WHERE id = ?", (body.model, cid)
-        )
+    await _maybe_update_title(db, cid, conv["title"], body.content)
+    chosen_model = await _maybe_update_model(db, cid, body.model, conv["model"])
     await db.commit()
 
-    upstream_messages = history + [{"role": "user", "content": body.content}]
-    upstream_payload = {
-        "model": chosen_model,
-        "messages": upstream_messages,
-        "stream": True,
-    }
-
-    async def proxy() -> AsyncIterator[bytes]:
-        assembled: list[str] = []
-        try:
-            async with http.stream("POST", "/chat/completions", json=upstream_payload) as r:
-                if r.status_code >= 400:
-                    err = (await r.aread()).decode(errors="replace")
-                    yield f"data: {json.dumps({'error': err})}\n\n".encode()
-                    return
-                async for line in r.aiter_lines():
-                    if not line:
-                        continue
-                    if line.startswith("data: ") and not line.endswith("[DONE]"):
-                        try:
-                            chunk = json.loads(line[6:])
-                            delta = (
-                                chunk.get("choices", [{}])[0]
-                                .get("delta", {})
-                                .get("content")
-                            )
-                            if isinstance(delta, str) and delta:
-                                assembled.append(delta)
-                        except json.JSONDecodeError:
-                            pass
-                    yield f"{line}\n\n".encode()
-        finally:
-            final = "".join(assembled)
-            if final:
-                ts = int(time.time())
-                await db.execute(
-                    "INSERT INTO messages (conversation_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-                    (cid, "assistant", final, ts),
-                )
-                await db.execute(
-                    "UPDATE conversations SET updated_at = ? WHERE id = ?", (ts, cid)
-                )
-                await db.commit()
-
+    upstream = _build_upstream_messages(
+        conv["system_prompt"], history, [{"role": "user", "content": body.content}]
+    )
     return StreamingResponse(
-        proxy(),
+        _stream_and_persist(
+            db, http, cid, upstream, chosen_model,
+            conv["temperature"], conv["top_p"], conv["stop"],
+        ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/{cid}/regenerate")
+async def regenerate(cid: str, body: RegenerateBody, request: Request) -> StreamingResponse:
+    """Drop the last assistant message and re-stream from the previous user turn."""
+    db = _db(request)
+    http = _http(request)
+
+    conv = await _conv_settings(db, cid)
+
+    cur = await db.execute(
+        "SELECT id, role FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 1",
+        (cid,),
+    )
+    last = await cur.fetchone()
+    if not last or last[1] != "assistant":
+        raise HTTPException(
+            status_code=400, detail="nothing to regenerate (no trailing assistant message)"
+        )
+    await db.execute("DELETE FROM messages WHERE id = ?", (last[0],))
+    chosen_model = await _maybe_update_model(db, cid, body.model, conv["model"])
+    await db.commit()
+
+    history = await _load_history(db, cid)
+    upstream = _build_upstream_messages(conv["system_prompt"], history)
+    return StreamingResponse(
+        _stream_and_persist(
+            db, http, cid, upstream, chosen_model,
+            conv["temperature"], conv["top_p"], conv["stop"],
+        ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.patch("/{cid}/messages/{msg_id}")
+async def edit_message(
+    cid: str, msg_id: int, body: EditBody, request: Request
+) -> StreamingResponse:
+    """Edit a user message in place, truncate everything after it, and re-stream."""
+    db = _db(request)
+    http = _http(request)
+
+    cur = await db.execute(
+        "SELECT role FROM messages WHERE id = ? AND conversation_id = ?", (msg_id, cid)
+    )
+    row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="message not found")
+    if row[0] != "user":
+        raise HTTPException(status_code=400, detail="only user messages can be edited")
+
+    conv = await _conv_settings(db, cid)
+
+    await db.execute(
+        "UPDATE messages SET content = ? WHERE id = ?", (body.content, msg_id)
+    )
+    await db.execute(
+        "DELETE FROM messages WHERE conversation_id = ? AND id > ?", (cid, msg_id)
+    )
+    await _maybe_update_title(db, cid, conv["title"], body.content)
+    chosen_model = await _maybe_update_model(db, cid, body.model, conv["model"])
+    await db.commit()
+
+    history = await _load_history(db, cid)
+    upstream = _build_upstream_messages(conv["system_prompt"], history)
+    return StreamingResponse(
+        _stream_and_persist(
+            db, http, cid, upstream, chosen_model,
+            conv["temperature"], conv["top_p"], conv["stop"],
+        ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

@@ -24,11 +24,11 @@ If `open-webui` is the kitchen-sink reference, `free-webui` aims to be the lean,
 ## Screenshots
 
 <p align="center">
-  <img src="./docs/img/screenshot-empty.png" alt="empty chat state" width="49%"/>
-  <img src="./docs/img/screenshot-chat.png" alt="streamed reply from qwen2.5-coder via Ollama" width="49%"/>
+  <img src="./docs/img/screenshot-chat.png" alt="streamed reply with syntax-highlighted code, edit + regenerate buttons" width="49%"/>
+  <img src="./docs/img/screenshot-settings.png" alt="per-chat settings drawer: system prompt, temperature, top-p, stop" width="49%"/>
 </p>
 
-<p align="center"><sub>left: fresh tab · right: streamed reply from <code>qwen2.5-coder:14b</code> via local Ollama</sub></p>
+<p align="center"><sub>left: streamed reply with shiki-highlighted code, hover-revealed edit / regenerate · right: per-chat settings drawer (system prompt, temperature, top-p, stop sequences)</sub></p>
 
 ---
 
@@ -224,10 +224,10 @@ We're aiming at the 95% workflow people actually want from open-webui — not st
 - ✅ **Persistence** — SQLite for conversations + messages.
 - ✅ **Sidebar with conversation list** — create / open / delete; auto-titled from first user message.
 - ✅ **Markdown rendering** — fenced code with shiki syntax highlighting + copy; tables; sanitized (DOMPurify). LaTeX + mermaid as follow-ups.
-- **Edit + regenerate messages** — including branching off an edit.
-- **Per-chat parameters** — model, temperature, top-p, system prompt, stop sequences.
+- ✅ **Edit + regenerate messages** — in-place edit on any user message truncates everything after and re-streams; regenerate replays the last assistant turn. Proper branching is a follow-up.
+- ✅ **Per-chat parameters** — model, temperature, top-p, system prompt, stop sequences via a settings drawer + `PATCH /api/conversations/{id}`.
 - **Mobile / responsive layout + dark/light themes.**
-- **Regenerate / continue affordances** (stop already wired).
+- **"Continue" affordance** (stop and regenerate already wired).
 
 ### Tier 2 — the things people pick open-webui *for*
 

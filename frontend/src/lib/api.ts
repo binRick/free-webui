@@ -23,9 +23,22 @@ export interface Conversation {
   id: string;
   title: string;
   model: string | null;
+  system_prompt: string | null;
+  temperature: number | null;
+  top_p: number | null;
+  stop: string[] | null;
   created_at: number;
   updated_at: number;
   messages: StoredMessage[];
+}
+
+export interface UpdateConversation {
+  title?: string | null;
+  model?: string | null;
+  system_prompt?: string | null;
+  temperature?: number | null;
+  top_p?: number | null;
+  stop?: string[] | null;
 }
 
 export async function listConversations(): Promise<ConversationSummary[]> {
@@ -54,6 +67,19 @@ export async function deleteConversation(id: string): Promise<void> {
   await fetch(`/api/conversations/${id}`, { method: 'DELETE' });
 }
 
+export async function updateConversation(
+  id: string,
+  patch: UpdateConversation
+): Promise<Conversation> {
+  const res = await fetch(`/api/conversations/${id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(patch)
+  });
+  if (!res.ok) throw new Error(`update failed: ${res.status}`);
+  return res.json();
+}
+
 export async function listModels(): Promise<string[]> {
   const res = await fetch('/api/models');
   if (!res.ok) return [];
@@ -61,34 +87,20 @@ export async function listModels(): Promise<string[]> {
   return (json.data ?? []).map((m: { id: string }) => m.id);
 }
 
-export interface SendOpts {
+export interface StreamOpts {
   signal?: AbortSignal;
   onDelta: (delta: string) => void;
 }
 
-export async function sendMessage(
-  conversationId: string,
-  content: string,
-  model: string | null,
-  opts: SendOpts
-): Promise<void> {
-  const res = await fetch(`/api/conversations/${conversationId}/messages`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ content, model }),
-    signal: opts.signal
-  });
-  if (!res.ok || !res.body) throw new Error(`send failed: ${res.status}`);
-
+async function consumeStream(res: Response, opts: StreamOpts): Promise<void> {
+  if (!res.ok || !res.body) throw new Error(`stream failed: ${res.status}`);
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buf = '';
-
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
     buf += decoder.decode(value, { stream: true });
-
     let sep: number;
     while ((sep = buf.indexOf('\n\n')) !== -1) {
       const event = buf.slice(0, sep);
@@ -102,9 +114,57 @@ export async function sendMessage(
           const delta = json.choices?.[0]?.delta?.content;
           if (typeof delta === 'string' && delta.length) opts.onDelta(delta);
         } catch {
-          // upstream sometimes emits keep-alives; ignore
+          // keep-alives etc.
         }
       }
     }
   }
+}
+
+export async function sendMessage(
+  conversationId: string,
+  content: string,
+  model: string | null,
+  opts: StreamOpts
+): Promise<void> {
+  const res = await fetch(`/api/conversations/${conversationId}/messages`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ content, model }),
+    signal: opts.signal
+  });
+  await consumeStream(res, opts);
+}
+
+export async function regenerate(
+  conversationId: string,
+  model: string | null,
+  opts: StreamOpts
+): Promise<void> {
+  const res = await fetch(`/api/conversations/${conversationId}/regenerate`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model }),
+    signal: opts.signal
+  });
+  await consumeStream(res, opts);
+}
+
+export async function editMessage(
+  conversationId: string,
+  messageId: number,
+  content: string,
+  model: string | null,
+  opts: StreamOpts
+): Promise<void> {
+  const res = await fetch(
+    `/api/conversations/${conversationId}/messages/${messageId}`,
+    {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content, model }),
+      signal: opts.signal
+    }
+  );
+  await consumeStream(res, opts);
 }

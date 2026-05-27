@@ -223,7 +223,7 @@ We're aiming at the 95% workflow people actually want from open-webui — not st
 
 - ✅ **Persistence** — SQLite for conversations + messages.
 - ✅ **Sidebar with conversation list** — create / open / delete; auto-titled from first user message.
-- **Markdown rendering** — fenced code with syntax highlighting + copy; tables; LaTeX; mermaid; sanitized.
+- ✅ **Markdown rendering** — fenced code with shiki syntax highlighting + copy; tables; sanitized (DOMPurify). LaTeX + mermaid as follow-ups.
 - **Edit + regenerate messages** — including branching off an edit.
 - **Per-chat parameters** — model, temperature, top-p, system prompt, stop sequences.
 - **Mobile / responsive layout + dark/light themes.**

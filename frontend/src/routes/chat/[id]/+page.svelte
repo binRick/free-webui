@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { tick } from 'svelte';
   import { page } from '$app/state';
   import { getConversation, listModels, sendMessage, type Role } from '$lib/api';
   import { convs } from '$lib/conversations.svelte';
+  import Markdown from '$lib/Markdown.svelte';
 
   let models = $state<string[]>([]);
   let model = $state<string | null>(null);
@@ -111,7 +112,9 @@
   {#each messages as msg}
     <div class="msg {msg.role}">
       <div class="role">{msg.role}</div>
-      <div class="content">{msg.content}</div>
+      <div class="content">
+        <Markdown source={msg.content} />
+      </div>
     </div>
   {/each}
 </div>
@@ -186,7 +189,7 @@
   }
   .msg.user .role { color: #22d3ee; }
   .msg.assistant .role { color: #a78bfa; }
-  .content { white-space: pre-wrap; line-height: 1.5; }
+  .content { line-height: 1.5; word-wrap: break-word; }
   .composer {
     display: flex;
     gap: 0.5rem;

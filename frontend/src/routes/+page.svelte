@@ -31,9 +31,9 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    color: #64748b;
+    color: var(--text-muted);
     gap: 0.5rem;
   }
-  .err { color: #ef4444; }
+  .err { color: var(--danger); }
   .hint { font-size: 0.85rem; }
 </style>

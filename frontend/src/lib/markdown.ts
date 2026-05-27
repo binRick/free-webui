@@ -2,7 +2,7 @@ import DOMPurify from 'dompurify';
 import { marked, type Tokens } from 'marked';
 import { createHighlighter, type Highlighter } from 'shiki';
 
-const THEME = 'github-dark';
+const THEMES = { light: 'github-light', dark: 'github-dark' } as const;
 
 const LANGS = [
   'typescript', 'javascript', 'tsx', 'jsx',
@@ -19,7 +19,10 @@ let highlighterPromise: Promise<Highlighter> | null = null;
 
 function loadHighlighter(): Promise<Highlighter> {
   if (!highlighterPromise) {
-    highlighterPromise = createHighlighter({ themes: [THEME], langs: [...LANGS] });
+    highlighterPromise = createHighlighter({
+      themes: [THEMES.light, THEMES.dark],
+      langs: [...LANGS]
+    });
   }
   return highlighterPromise;
 }
@@ -42,7 +45,11 @@ marked.use({
       const hl = await loadHighlighter();
       const loaded = hl.getLoadedLanguages() as readonly string[];
       if (lang && loaded.includes(lang)) {
-        t.__html = hl.codeToHtml(t.text, { lang, theme: THEME });
+        t.__html = hl.codeToHtml(t.text, {
+          lang,
+          themes: THEMES,
+          defaultColor: false
+        });
       } else {
         t.__html = `<pre><code>${escapeHtml(t.text)}</code></pre>`;
       }

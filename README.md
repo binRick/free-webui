@@ -24,11 +24,18 @@ If `open-webui` is the kitchen-sink reference, `free-webui` aims to be the lean,
 ## Screenshots
 
 <p align="center">
-  <img src="./docs/img/screenshot-chat.png" alt="streamed reply with syntax-highlighted code, edit + regenerate buttons" width="49%"/>
-  <img src="./docs/img/screenshot-settings.png" alt="per-chat settings drawer: system prompt, temperature, top-p, stop" width="49%"/>
+  <img src="./docs/img/screenshot-chat.png" alt="dark theme — streamed reply with shiki-highlighted code and hover-visible edit + regenerate buttons" width="49%"/>
+  <img src="./docs/img/screenshot-chat-light.png" alt="light theme — same conversation with github-light shiki tokens" width="49%"/>
 </p>
 
-<p align="center"><sub>left: streamed reply with shiki-highlighted code, hover-revealed edit / regenerate · right: per-chat settings drawer (system prompt, temperature, top-p, stop sequences)</sub></p>
+<p align="center"><sub>dark / light themes share a CSS-var palette; shiki re-tokens code per theme</sub></p>
+
+<p align="center">
+  <img src="./docs/img/screenshot-settings.png" alt="per-chat settings drawer: system prompt, temperature, top-p, stop" width="58%"/>
+  <img src="./docs/img/screenshot-mobile.png" alt="mobile width: sidebar overlays chat with a hamburger toggle" width="22%"/>
+</p>
+
+<p align="center"><sub>per-chat settings drawer · responsive sidebar overlay at &lt; 768 px</sub></p>
 
 ---
 
@@ -226,8 +233,8 @@ We're aiming at the 95% workflow people actually want from open-webui — not st
 - ✅ **Markdown rendering** — fenced code with shiki syntax highlighting + copy; tables; sanitized (DOMPurify). LaTeX + mermaid as follow-ups.
 - ✅ **Edit + regenerate messages** — in-place edit on any user message truncates everything after and re-streams; regenerate replays the last assistant turn. Proper branching is a follow-up.
 - ✅ **Per-chat parameters** — model, temperature, top-p, system prompt, stop sequences via a settings drawer + `PATCH /api/conversations/{id}`.
-- **Mobile / responsive layout + dark/light themes.**
-- **"Continue" affordance** (stop and regenerate already wired).
+- ✅ **Mobile / responsive layout + dark/light themes** — CSS-var theming (system / light / dark, persisted), shiki dual-theme highlighting, sidebar slides over content on narrow viewports.
+- **"Continue" affordance** — deferred: no clean cross-provider API for true continuation (most upstreams don't support an assistant-prefix mode); revisit per-provider later.
 
 ### Tier 2 — the things people pick open-webui *for*
 

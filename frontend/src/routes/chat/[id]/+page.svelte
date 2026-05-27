@@ -12,6 +12,7 @@
   } from '$lib/api';
   import { convs } from '$lib/conversations.svelte';
   import Markdown from '$lib/Markdown.svelte';
+  import { sidebar } from '$lib/sidebarState.svelte';
 
   interface UIMessage {
     id: number | null;
@@ -188,6 +189,7 @@
 </script>
 
 <header>
+  <button class="hamburger" aria-label="open sidebar" onclick={() => sidebar.toggle()}>☰</button>
   <div class="title">{title}</div>
   <div class="header-controls">
     <select bind:value={model} disabled={streaming}>
@@ -298,10 +300,21 @@
     justify-content: space-between;
     gap: 1rem;
     padding: 0.75rem 1rem;
-    border-bottom: 1px solid #1e293b;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .hamburger {
+    display: none;
+    background: transparent;
+    border: 0;
+    color: var(--text);
+    font-size: 1.4rem;
+    line-height: 1;
+    padding: 0.25rem 0.5rem;
+    cursor: pointer;
   }
   .title {
-    color: #cbd5e1;
+    flex: 1;
+    color: var(--text);
     font-size: 0.95rem;
     overflow: hidden;
     white-space: nowrap;
@@ -318,13 +331,13 @@
     line-height: 1;
   }
   .settings-toggle.active {
-    background: #1e293b;
-    border-color: #475569;
-    color: #fff;
+    background: var(--bg-hover);
+    border-color: var(--text-faint);
+    color: var(--text);
   }
   .settings {
-    border-bottom: 1px solid #1e293b;
-    background: #07091a;
+    border-bottom: 1px solid var(--border-soft);
+    background: var(--bg-sidebar);
     padding: 0.85rem 1rem;
     display: flex;
     flex-direction: column;
@@ -341,12 +354,12 @@
   .settings .lbl {
     font-size: 0.72rem;
     text-transform: uppercase;
-    color: #64748b;
+    color: var(--text-muted);
     letter-spacing: 0.05em;
   }
   .settings .hint {
     text-transform: none;
-    color: #475569;
+    color: var(--text-faint);
     letter-spacing: 0;
     margin-left: 0.4rem;
   }
@@ -366,10 +379,11 @@
   }
   select,
   button,
-  textarea {
-    background: #0f172a;
-    color: #e2e8f0;
-    border: 1px solid #334155;
+  textarea,
+  input {
+    background: var(--bg-elev);
+    color: var(--text);
+    border: 1px solid var(--border);
     border-radius: 6px;
     padding: 0.5rem 0.75rem;
     font: inherit;
@@ -385,11 +399,11 @@
     gap: 1rem;
   }
   .empty {
-    color: #64748b;
+    color: var(--text-muted);
     text-align: center;
     margin-top: 4rem;
   }
-  .empty.err { color: #ef4444; }
+  .empty.err { color: var(--danger); }
   .msg {
     max-width: 760px;
     width: 100%;
@@ -406,10 +420,10 @@
   .role {
     font-size: 0.75rem;
     text-transform: uppercase;
-    color: #64748b;
+    color: var(--text-muted);
   }
-  .msg.user .role { color: #22d3ee; }
-  .msg.assistant .role { color: #a78bfa; }
+  .msg.user .role { color: var(--accent); }
+  .msg.assistant .role { color: var(--accent-2); }
   .actions {
     display: flex;
     gap: 0.35rem;
@@ -422,12 +436,12 @@
     font-size: 0.72rem;
     border-radius: 4px;
     background: transparent;
-    border: 1px solid #334155;
-    color: #94a3b8;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
   }
-  .action:hover { color: #fff; background: #1e293b; }
-  .action.primary { background: #1e293b; color: #e2e8f0; }
-  .action.primary:hover { background: #334155; }
+  .action:hover { color: var(--text); background: var(--bg-hover); }
+  .action.primary { background: var(--bg-hover); color: var(--text); }
+  .action.primary:hover { background: var(--border); }
   .content { line-height: 1.5; word-wrap: break-word; }
   .edit {
     width: 100%;
@@ -445,7 +459,7 @@
     display: flex;
     gap: 0.5rem;
     padding: 1rem;
-    border-top: 1px solid #1e293b;
+    border-top: 1px solid var(--border-soft);
     max-width: 760px;
     margin: 0 auto;
     width: calc(100% - 2rem);
@@ -455,5 +469,11 @@
     resize: vertical;
     min-height: 2.5rem;
     max-height: 12rem;
+  }
+
+  @media (max-width: 768px) {
+    .hamburger { display: block; }
+    .composer { padding: 0.75rem; width: calc(100% - 1.5rem); }
+    .scroller { padding: 0.75rem; }
   }
 </style>

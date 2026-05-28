@@ -93,6 +93,17 @@ CREATE TABLE IF NOT EXISTS memories (
     updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS mcp_servers (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    url        TEXT NOT NULL,
+    headers    TEXT,
+    enabled    INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, id);
 CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_documents_conv ON documents(conversation_id);
@@ -101,6 +112,7 @@ CREATE INDEX IF NOT EXISTS idx_prompts_user ON prompts(user_id, updated_at DESC)
 CREATE INDEX IF NOT EXISTS idx_presets_user ON presets(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id);
 CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_mcp_servers_user ON mcp_servers(user_id, enabled);
 """
 
 _MIGRATIONS: tuple[tuple[str, str, str], ...] = (

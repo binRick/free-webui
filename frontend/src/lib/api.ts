@@ -125,6 +125,70 @@ export async function deleteDocument(
   );
 }
 
+export interface McpServer {
+  id: number;
+  name: string;
+  url: string;
+  headers: Record<string, string> | null;
+  enabled: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+export async function listMcpServers(): Promise<McpServer[]> {
+  const res = await fetch('/api/mcp_servers');
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function createMcpServer(body: {
+  name: string;
+  url: string;
+  headers?: Record<string, string> | null;
+}): Promise<McpServer> {
+  const res = await fetch('/api/mcp_servers', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}));
+    throw new Error(b.detail ?? `create failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function patchMcpServer(
+  id: number,
+  patch: Partial<{ name: string; url: string; headers: Record<string, string> | null; enabled: boolean }>
+): Promise<McpServer> {
+  const res = await fetch(`/api/mcp_servers/${id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(patch)
+  });
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}));
+    throw new Error(b.detail ?? `patch failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteMcpServer(id: number): Promise<void> {
+  await fetch(`/api/mcp_servers/${id}`, { method: 'DELETE' });
+}
+
+export async function probeMcpServer(
+  id: number
+): Promise<{ tools: { name: string; description?: string }[] }> {
+  const res = await fetch(`/api/mcp_servers/${id}/probe`, { method: 'POST' });
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}));
+    throw new Error(b.detail ?? `probe failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 export interface AdminUser {
   id: number;
   username: string;

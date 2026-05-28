@@ -286,7 +286,7 @@ We're aiming at the 95% workflow people actually want from open-webui — not st
 - ✅ **Voice** — browser Web Speech API: 🎤 mic button in the composer streams partial transcripts into the textarea (Chrome / Safari), 🔊 button on assistant messages reads them aloud via `speechSynthesis`. Server-side Whisper deferred.
 - ✅ **Model management** — admin-only `/admin/models` page lists installed Ollama models, supports streaming `pull` (with progress bar) and `delete`. Backend proxies Ollama's native `/api/tags`, `/api/pull`, `/api/delete`. Multiple upstream connections deferred.
 - ✅ **Custom presets / "modelfiles"** — per-user named bundles of (model, system_prompt, temperature, top_p, stop). "Save current" in the settings drawer captures the chat's params; "apply" copies them onto the current conversation.
-- ✅ **Tools / function calling** — per-chat toggle. Built-in safe tools (`now()`, `calculate(expression)` via AST whitelist). Backend runs the full OpenAI-style tool loop server-side: streams partial content, drains `tool_calls` deltas, executes locally, surfaces each call as an `event: tool_call` SSE frame, feeds the result back, and continues — up to 5 loops per turn. Frontend renders 🔧 chips inline above the model's reply. MCP server support deferred.
+- ✅ **Tools / function calling** — per-chat toggle. Built-in safe tools (`now()`, `calculate(expression)` via AST whitelist) plus per-user **MCP server support**: configure any JSON-RPC MCP endpoint at `/account/mcp`, its `tools/list` is merged into the catalogue (namespaced `mcp_<id>_<tool>`), and `tools/call` is fanned out during the loop. Backend runs the full OpenAI-style tool loop server-side: streams partial content, drains `tool_calls` deltas, executes locally or via MCP, surfaces each call as an `event: tool_call` SSE frame, feeds the result back, and continues — up to 5 loops per turn. Frontend renders 🔧 chips inline above the model's reply.
 - ✅ **Memories** — per-user manually-curated facts in the settings drawer; prepended as a system message in every conversation alongside RAG and web-search context. LLM-based auto-extraction deferred.
 - ✅ **Prompt library** — per-user CRUD; save the current composer text as a named prompt, click any saved prompt to insert. Variables deferred.
 - ✅ **Conversation export** — JSON or Markdown download from the settings drawer. Public share links deferred.
@@ -297,7 +297,7 @@ We're aiming at the 95% workflow people actually want from open-webui — not st
 - ✅ **KaTeX + mermaid in markdown** (initially deferred from Tier 1).
 - ✅ **Admin panel** — user management at `/admin/users`.
 - ✅ **PWA install** — `manifest.webmanifest`, service worker, theme color, SVG + PNG icons.
-- **MCP server support** — connect to external Model Context Protocol servers and expose their tools alongside the built-in `now` / `calculate`.
+- ✅ **MCP server support** — per-user JSON-RPC MCP servers configured at `/account/mcp`; `tools/list` is auto-merged into the tool catalogue and `tools/call` is dispatched through the same tool loop.
 
 Skippable / not planned: image generation, code interpreter sandbox, Pipelines / plugin framework, evaluation / leaderboard, channels / spaces, LDAP / SAML, full i18n.
 

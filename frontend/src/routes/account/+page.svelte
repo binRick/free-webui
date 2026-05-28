@@ -57,6 +57,7 @@
 <header>
   <a class="back" href="/">← back to chat</a>
   <h1>account · api keys</h1>
+  <a class="tabs" href="/account/mcp">MCP servers →</a>
 </header>
 
 <main>
@@ -132,6 +133,13 @@
   }
   .back { color: var(--text-dim); text-decoration: none; font-size: 0.85rem; }
   .back:hover { color: var(--text); }
+  .tabs {
+    margin-left: auto;
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 0.85rem;
+  }
+  .tabs:hover { text-decoration: underline; }
   h1 { margin: 0; font-size: 1.05rem; font-weight: 500; color: var(--text); }
 
   main {

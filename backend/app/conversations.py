@@ -14,9 +14,9 @@ from pydantic import BaseModel
 
 from .auth import current_user
 from .config import settings
+from .mcp import compose_tool_specs, run_tool as run_dispatch
 from .memories import load_memory_context
 from .rag import retrieve_context
-from .tools import TOOL_SPECS, run_tool
 from .web_search import format_context as format_web_context
 from .web_search import search as web_search
 
@@ -204,6 +204,7 @@ async def _stream_and_persist(
     top_p: float | None,
     stop: list[str] | None,
     tools_enabled: bool = False,
+    user_id: int | None = None,
     max_tool_loops: int = 5,
 ) -> AsyncIterator[bytes]:
     """Stream a chat completion. If tools_enabled, runs a tool loop until
@@ -213,6 +214,13 @@ async def _stream_and_persist(
     msgs = list(upstream_messages)
     final_content: list[str] = []
     tools_executed: list[dict] = []
+
+    # Compose the tool catalogue once at the start of the turn (built-in
+    # + every enabled MCP server's tools/list); reused across tool loops.
+    tool_specs: list[dict] = []
+    dispatch: dict[str, tuple[int, str]] = {}
+    if tools_enabled and user_id is not None:
+        tool_specs, dispatch = await compose_tool_specs(db, user_id)
 
     def _payload() -> dict[str, Any]:
         body: dict[str, Any] = {
@@ -226,8 +234,8 @@ async def _stream_and_persist(
             body["top_p"] = top_p
         if stop:
             body["stop"] = stop
-        if tools_enabled:
-            body["tools"] = TOOL_SPECS
+        if tools_enabled and tool_specs:
+            body["tools"] = tool_specs
             body["tool_choice"] = "auto"
         return body
 
@@ -310,7 +318,9 @@ async def _stream_and_persist(
                     args = json.loads(rec["args"]) if rec["args"] else {}
                 except json.JSONDecodeError:
                     args = {}
-                result = run_tool(rec["name"], args)
+                result = await run_dispatch(
+                    db, user_id or 0, dispatch, rec["name"], args
+                )
                 tools_executed.append(
                     {"name": rec["name"], "arguments": args, "result": result}
                 )
@@ -563,7 +573,7 @@ async def send_message(
     return StreamingResponse(
         _stream_and_persist(
             db, http, cid, upstream, chosen_model,
-            conv["temperature"], conv["top_p"], conv["stop"], tools_enabled=conv["tools_enabled"],
+            conv["temperature"], conv["top_p"], conv["stop"], tools_enabled=conv["tools_enabled"], user_id=user["id"],
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -609,7 +619,7 @@ async def regenerate(
     return StreamingResponse(
         _stream_and_persist(
             db, http, cid, upstream, chosen_model,
-            conv["temperature"], conv["top_p"], conv["stop"], tools_enabled=conv["tools_enabled"],
+            conv["temperature"], conv["top_p"], conv["stop"], tools_enabled=conv["tools_enabled"], user_id=user["id"],
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -661,7 +671,7 @@ async def edit_message(
     return StreamingResponse(
         _stream_and_persist(
             db, http, cid, upstream, chosen_model,
-            conv["temperature"], conv["top_p"], conv["stop"], tools_enabled=conv["tools_enabled"],
+            conv["temperature"], conv["top_p"], conv["stop"], tools_enabled=conv["tools_enabled"], user_id=user["id"],
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

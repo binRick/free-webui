@@ -50,6 +50,13 @@ If `open-webui` is the kitchen-sink reference, `free-webui` aims to be the lean,
 
 <p align="center"><sub>RAG: upload docs in the settings drawer; the 📎 badge shows when RAG is active. Here the model correctly cites a fact from <code>product_notes.md</code> that never appeared in the visible message history.</sub></p>
 
+<p align="center">
+  <img src="./docs/img/screenshot-account.png" alt="account / api keys page" width="49%"/>
+  <img src="./docs/img/screenshot-admin-models.png" alt="admin-only installed-models page" width="49%"/>
+</p>
+
+<p align="center"><sub>per-user API keys (Bearer auth for the OpenAI-compatible <code>/v1/*</code> surface) · admin-only Ollama model list with streaming pull / delete</sub></p>
+
 ---
 
 ## Status

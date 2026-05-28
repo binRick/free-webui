@@ -12,6 +12,7 @@
     editMessage,
     exportConversationUrl,
     getConversation,
+    getImageStatus,
     getWebSearchStatus,
     listDocuments,
     listMemories,
@@ -41,6 +42,7 @@
     role: Role;
     content: string;
     tool_calls?: ToolCallEvent[];
+    images?: string[];
   }
 
   let models = $state<string[]>([]);
@@ -70,6 +72,7 @@
   let webSearch = $state(false);
   let webSearchAvailable = $state(false);
   let toolsEnabled = $state(false);
+  let imageGenAvailable = $state(false);
   let recognising = $state(false);
   let speakingIdx = $state<number | null>(null);
   let recognition: any = null;
@@ -106,6 +109,7 @@
       webSearch = !!conv.web_search;
       webSearchAvailable = (await getWebSearchStatus()).available;
       toolsEnabled = !!conv.tools_enabled;
+      imageGenAvailable = (await getImageStatus()).available;
       await tick();
       scroller?.scrollTo({ top: scroller.scrollHeight });
     } catch (err) {
@@ -317,11 +321,19 @@
     scroller?.scrollTo({ top: scroller.scrollHeight });
   }
 
+  function appendImage(url: string) {
+    const last = messages[messages.length - 1];
+    const images = [...(last.images ?? []), url];
+    messages[messages.length - 1] = { ...last, images };
+    scroller?.scrollTo({ top: scroller.scrollHeight });
+  }
+
   async function runStream(
     operation: (opts: {
       signal: AbortSignal;
       onDelta: (d: string) => void;
       onToolCall: (tc: ToolCallEvent) => void;
+      onImage: (url: string) => void;
     }) => Promise<void>
   ) {
     streaming = true;
@@ -330,7 +342,8 @@
       await operation({
         signal: abort.signal,
         onDelta: appendDelta,
-        onToolCall: appendToolCall
+        onToolCall: appendToolCall,
+        onImage: appendImage
       });
       await load(currentId);
     } catch (err) {
@@ -489,7 +502,7 @@
       <span class="rag-badge web" title="web search active for this chat">🌐 web</span>
     {/if}
     {#if toolsEnabled}
-      <span class="rag-badge tools" title="tools enabled (now, calculate)">🔧 tools</span>
+      <span class="rag-badge tools" title="tools enabled (now, calculate{imageGenAvailable ? ', imagine' : ''})">🔧 tools</span>
     {/if}
   </div>
   <div class="header-controls">
@@ -546,7 +559,7 @@
     <label class="toggle">
       <input type="checkbox" bind:checked={toolsEnabled} />
       <span class="lbl" style="text-transform: none; letter-spacing: 0;">
-        tools <span class="hint">— built-in: <code>now</code>, <code>calculate</code></span>
+        tools <span class="hint">— built-in: <code>now</code>, <code>calculate</code>{#if imageGenAvailable}, <code>imagine</code>{/if}</span>
       </span>
     </label>
     <div class="settings-actions">
@@ -684,7 +697,7 @@
             {#if msg.role === 'assistant' && i === messages.length - 1 && msg.content}
               <button class="action" onclick={regen}>regenerate</button>
             {/if}
-            {#if msg.role === 'assistant' && msg.content}
+            {#if msg.role === 'assistant' && messagePlainText(msg.content)}
               <button class="action" onclick={() => speakMessage(i, messagePlainText(msg.content))}>
                 {speakingIdx === i ? '⏹ stop' : '🔊 speak'}
               </button>
@@ -720,6 +733,11 @@
               {:else if part.type === 'image_url'}
                 <img class="attached" src={part.image_url.url} alt="attachment" />
               {/if}
+            {/each}
+          {/if}
+          {#if msg.images && msg.images.length}
+            {#each msg.images as src, ii (ii)}
+              <img class="attached generated" src={src} alt="generated" />
             {/each}
           {/if}
         {/if}
@@ -1148,6 +1166,10 @@
     max-height: 320px;
     border-radius: 6px;
     margin: 0.5rem 0;
+  }
+  .attached.generated {
+    max-height: 512px;
+    border: 1px solid color-mix(in srgb, var(--accent-2) 40%, transparent);
   }
   textarea {
     flex: 1;

@@ -1,18 +1,35 @@
 """Built-in safe tools exposed to the LLM via OpenAI function-calling.
 
-Adding a tool requires:
+Adding a synchronous tool requires:
   1. A handler function that takes a dict of args and returns a string.
   2. An entry in TOOL_SPECS (OpenAI tool schema).
   3. An entry in HANDLERS keyed by tool name.
+
+Async tools (which do I/O, e.g. `imagine`) live in ASYNC_HANDLERS and take a
+ToolContext so they can surface artifacts (like generated images) back to the
+streaming tool loop in conversations.py.
 """
 from __future__ import annotations
 
 import ast
 import datetime
 import operator
-from typing import Any, Callable
+from dataclasses import dataclass, field
+from typing import Any, Awaitable, Callable
 
-# OpenAI function/tool schemas.
+from . import images
+from .config import settings
+
+
+@dataclass
+class ToolContext:
+    """Side channel from a tool back to the streaming loop. Tools append any
+    generated image `data:` URLs here; the loop emits + persists them."""
+
+    images: list[str] = field(default_factory=list)
+
+
+# OpenAI function/tool schemas for the always-on built-ins.
 TOOL_SPECS: list[dict] = [
     {
         "type": "function",
@@ -100,6 +117,74 @@ HANDLERS: dict[str, Callable[[dict[str, Any]], str]] = {
 }
 
 
+# ---- image generation (async, gated on config) ----
+
+IMAGINE_SPEC: dict = {
+    "type": "function",
+    "function": {
+        "name": "imagine",
+        "description": (
+            "Generate an image from a text prompt. The generated image is "
+            "shown to the user automatically — you do not need to render, link, "
+            "or describe the raw image. Use this whenever the user asks you to "
+            "create, draw, paint, generate, or imagine a picture or image."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "A detailed description of the image to generate.",
+                },
+                "size": {
+                    "type": "string",
+                    "description": 'Optional WxH, e.g. "1024x1024" or "512x768".',
+                },
+                "negative_prompt": {
+                    "type": "string",
+                    "description": "Optional things to avoid (ignored by some backends).",
+                },
+            },
+            "required": ["prompt"],
+        },
+    },
+}
+
+
+async def _imagine(args: dict[str, Any], ctx: ToolContext | None) -> str:
+    prompt = str(args.get("prompt", "")).strip()
+    if not prompt:
+        return "error: missing 'prompt'"
+    try:
+        data_url = await images.generate(
+            prompt,
+            size=args.get("size"),
+            negative_prompt=args.get("negative_prompt"),
+        )
+    except images.ImageError as e:
+        return f"error: {e}"
+    if ctx is not None:
+        ctx.images.append(data_url)
+    return (
+        f"Successfully generated an image for the prompt: {prompt!r}. "
+        "The image is now displayed to the user in the chat."
+    )
+
+
+ASYNC_HANDLERS: dict[str, Callable[[dict[str, Any], "ToolContext | None"], Awaitable[str]]] = {
+    "imagine": _imagine,
+}
+
+
+def builtin_tool_specs() -> list[dict]:
+    """OpenAI tool schemas for every built-in available right now. The
+    `imagine` tool only appears when an image backend is configured."""
+    specs = list(TOOL_SPECS)
+    if settings.image_backend:
+        specs.append(IMAGINE_SPEC)
+    return specs
+
+
 def run_tool(name: str, args: dict[str, Any]) -> str:
     handler = HANDLERS.get(name)
     if handler is None:
@@ -108,3 +193,17 @@ def run_tool(name: str, args: dict[str, Any]) -> str:
         return handler(args)
     except Exception as e:
         return f"error: {e}"
+
+
+async def run_tool_async(
+    name: str, args: dict[str, Any], ctx: ToolContext | None = None
+) -> str:
+    """Dispatch a built-in tool. Async tools (e.g. `imagine`) run here;
+    everything else falls through to the synchronous registry."""
+    async_handler = ASYNC_HANDLERS.get(name)
+    if async_handler is not None:
+        try:
+            return await async_handler(args, ctx)
+        except Exception as e:
+            return f"error: {e}"
+    return run_tool(name, args)

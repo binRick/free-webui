@@ -12,6 +12,7 @@ from .config import settings
 from .conversations import router as conversations_router
 from .db import open_db
 from .documents import router as documents_router
+from .images import router as images_router
 from .mcp import router as mcp_router
 from .memories import router as memories_router
 from .openai_compat import router as openai_compat_router
@@ -57,6 +58,7 @@ app.include_router(api_keys_router)
 app.include_router(memories_router)
 app.include_router(openai_compat_router)
 app.include_router(mcp_router)
+app.include_router(images_router)
 
 
 @app.get("/api/health")

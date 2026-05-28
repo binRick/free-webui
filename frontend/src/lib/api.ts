@@ -56,6 +56,17 @@ export async function getWebSearchStatus(): Promise<WebSearchStatus> {
   return res.json();
 }
 
+export interface ImageStatus {
+  available: boolean;
+  backend: string | null;
+}
+
+export async function getImageStatus(): Promise<ImageStatus> {
+  const res = await fetch('/api/images/status');
+  if (!res.ok) return { available: false, backend: null };
+  return res.json();
+}
+
 export async function listConversations(): Promise<ConversationSummary[]> {
   const res = await fetch('/api/conversations');
   if (!res.ok) return [];
@@ -477,6 +488,7 @@ export interface StreamOpts {
   signal?: AbortSignal;
   onDelta: (delta: string) => void;
   onToolCall?: (tc: ToolCallEvent) => void;
+  onImage?: (url: string) => void;
 }
 
 async function consumeStream(res: Response, opts: StreamOpts): Promise<void> {
@@ -504,6 +516,8 @@ async function consumeStream(res: Response, opts: StreamOpts): Promise<void> {
         const json = JSON.parse(data);
         if (eventType === 'tool_call') {
           opts.onToolCall?.(json as ToolCallEvent);
+        } else if (eventType === 'image') {
+          if (typeof json.url === 'string') opts.onImage?.(json.url);
         } else {
           const delta = json.choices?.[0]?.delta?.content;
           if (typeof delta === 'string' && delta.length) opts.onDelta(delta);

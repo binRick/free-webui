@@ -16,6 +16,7 @@ from .auth import current_user
 from .config import settings
 from .mcp import compose_tool_specs, run_tool as run_dispatch
 from .memories import load_memory_context
+from .tools import ToolContext
 from .rag import retrieve_context
 from .web_search import format_context as format_web_context
 from .web_search import search as web_search
@@ -144,12 +145,26 @@ def _content_text(content: str | list[dict]) -> str:
     return content
 
 
+def _history_content_for_upstream(role: str, content: str | list[dict]):
+    """Generated images persist inside assistant messages as image_url parts,
+    but most chat-completion providers reject image parts in assistant turns
+    (and replaying the large data: URL bloats context). Downcast assistant
+    multimodal content to its text on the way upstream; user messages keep
+    their images (vision input). The stored/displayed message is untouched."""
+    if role == "assistant" and isinstance(content, list):
+        return _content_text(content) or "[generated an image]"
+    return content
+
+
 async def _load_history(db: aiosqlite.Connection, cid: str) -> list[dict]:
     cur = await db.execute(
         "SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY id", (cid,)
     )
     rows = await cur.fetchall()
-    return [{"role": r[0], "content": _decode_content(r[1])} for r in rows]
+    return [
+        {"role": r[0], "content": _history_content_for_upstream(r[0], _decode_content(r[1]))}
+        for r in rows
+    ]
 
 
 async def _conv_settings(db: aiosqlite.Connection, cid: str) -> dict[str, Any]:
@@ -214,6 +229,8 @@ async def _stream_and_persist(
     msgs = list(upstream_messages)
     final_content: list[str] = []
     tools_executed: list[dict] = []
+    generated_images: list[str] = []
+    tool_ctx = ToolContext()
 
     # Compose the tool catalogue once at the start of the turn (built-in
     # + every enabled MCP server's tools/list); reused across tool loops.
@@ -318,8 +335,9 @@ async def _stream_and_persist(
                     args = json.loads(rec["args"]) if rec["args"] else {}
                 except json.JSONDecodeError:
                     args = {}
+                images_before = len(tool_ctx.images)
                 result = await run_dispatch(
-                    db, user_id or 0, dispatch, rec["name"], args
+                    db, user_id or 0, dispatch, rec["name"], args, tool_ctx
                 )
                 tools_executed.append(
                     {"name": rec["name"], "arguments": args, "result": result}
@@ -328,6 +346,12 @@ async def _stream_and_persist(
                     {"name": rec["name"], "arguments": args, "result": result}
                 )
                 yield f"event: tool_call\ndata: {event}\n\n".encode()
+                # Surface any images this tool produced (e.g. `imagine`) so the
+                # live UI can render them; also collect them for persistence.
+                for data_url in tool_ctx.images[images_before:]:
+                    generated_images.append(data_url)
+                    img_event = json.dumps({"url": data_url})
+                    yield f"event: image\ndata: {img_event}\n\n".encode()
                 msgs.append(
                     {
                         "role": "tool",
@@ -338,11 +362,25 @@ async def _stream_and_persist(
     finally:
         yield b"data: [DONE]\n\n"
         text = "".join(final_content)
-        if text:
+        if text or generated_images:
+            if generated_images:
+                # Persist as a multimodal message so the generated image(s)
+                # survive a reload, rendered by the same image-part path as
+                # user-uploaded images.
+                parts: list[dict] = []
+                if text:
+                    parts.append({"type": "text", "text": text})
+                parts += [
+                    {"type": "image_url", "image_url": {"url": url}}
+                    for url in generated_images
+                ]
+                stored = _encode_content(parts)
+            else:
+                stored = text
             ts = int(time.time())
             await db.execute(
                 "INSERT INTO messages (conversation_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-                (cid, "assistant", text, ts),
+                (cid, "assistant", stored, ts),
             )
             await db.execute(
                 "UPDATE conversations SET updated_at = ? WHERE id = ?", (ts, cid)

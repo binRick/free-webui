@@ -38,6 +38,24 @@ class Settings(BaseSettings):
     web_search_top_k: int = 5
     web_search_timeout_seconds: float = 10.0
 
+    # Image generation. Set image_backend to one of "openai", "automatic1111",
+    # or "comfyui" to expose the built-in `imagine` tool. Leave empty to disable.
+    image_backend: str = ""
+    # Base URL of the image backend, e.g. https://api.openai.com/v1 (openai),
+    # http://localhost:7860 (automatic1111), http://localhost:8188 (comfyui).
+    image_base_url: str = ""
+    image_api_key: str = ""  # bearer token for the openai-style backend
+    image_model: str = "dall-e-3"  # openai model id / sd checkpoint name
+    image_size: str = "1024x1024"  # default WxH; clients may override per call
+    image_steps: int = 25  # sampling steps (automatic1111 / comfyui)
+    image_timeout_seconds: float = 180.0
+    image_max_dimension: int = 2048  # clamp requested width/height to this
+    image_max_bytes: int = 10 * 1024 * 1024  # reject generated images larger than this
+    # ComfyUI only: path to an API-format workflow JSON template. The tokens
+    # %prompt%, %negative_prompt%, %width%, %height%, %seed%, %steps% are
+    # substituted. If empty, a built-in SD1.5 txt2img graph is used.
+    comfyui_workflow_path: str = ""
+
     # CORS: SvelteKit dev server.
     allowed_origins: list[str] = ["http://localhost:5173"]
 

@@ -12,8 +12,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from .auth import current_user
-from .tools import TOOL_SPECS as BUILTIN_SPECS
-from .tools import run_tool as run_builtin
+from .tools import ToolContext, builtin_tool_specs
+from .tools import run_tool_async as run_builtin_async
 
 router = APIRouter(
     prefix="/api/mcp_servers",
@@ -238,10 +238,11 @@ async def compose_tool_specs(
     original_tool_name) so the executor can route the call. Built-in tools
     use server_id=0 and their unprefixed name.
     """
-    specs: list[dict] = list(BUILTIN_SPECS)
+    builtins = builtin_tool_specs()
+    specs: list[dict] = list(builtins)
     dispatch: dict[str, tuple[int, str]] = {}
     # Built-ins
-    for spec in BUILTIN_SPECS:
+    for spec in builtins:
         name = spec["function"]["name"]
         dispatch[name] = (0, name)
 
@@ -277,6 +278,7 @@ async def run_tool(
     dispatch: dict[str, tuple[int, str]],
     name: str,
     args: dict[str, Any],
+    ctx: ToolContext | None = None,
 ) -> str:
     """Execute a tool by dispatched name. Built-ins (server_id=0) run
     locally; MCP tools fan out to the right server via tools/call."""
@@ -285,7 +287,7 @@ async def run_tool(
         return f"error: unknown tool {name!r}"
     server_id, real_name = target
     if server_id == 0:
-        return run_builtin(real_name, args)
+        return await run_builtin_async(real_name, args, ctx)
 
     cur = await db.execute(
         "SELECT url, headers FROM mcp_servers WHERE id = ? AND user_id = ?",

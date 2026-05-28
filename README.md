@@ -217,6 +217,10 @@ All backend config is environment-driven (prefix `FREE_WEBUI_`):
 | `FREE_WEBUI_UPSTREAM_API_KEY`     | `ollama`                         | Bearer token sent to upstream                    |
 | `FREE_WEBUI_DEFAULT_MODEL`        | `llama3.2`                       | Fallback when the request omits `model`          |
 | `FREE_WEBUI_ALLOWED_ORIGINS`      | `["http://localhost:5173"]`      | CORS allow-list (JSON array)                     |
+| `FREE_WEBUI_IMAGE_BACKEND`        | _(empty — disabled)_             | `openai` \| `automatic1111` \| `comfyui` — enables the `imagine` tool |
+| `FREE_WEBUI_IMAGE_BASE_URL`       | _(empty)_                        | Image backend base URL (e.g. `http://localhost:7860`) |
+| `FREE_WEBUI_IMAGE_API_KEY`        | _(empty)_                        | Bearer token for the `openai` image backend      |
+| `FREE_WEBUI_IMAGE_MODEL`          | `dall-e-3`                       | OpenAI model id / SD checkpoint name             |
 
 ### Talking to OpenAI directly
 
@@ -233,6 +237,29 @@ export FREE_WEBUI_UPSTREAM_BASE_URL=http://vllm.internal:8000/v1
 export FREE_WEBUI_UPSTREAM_API_KEY=anything
 export FREE_WEBUI_DEFAULT_MODEL=meta-llama/Llama-3.1-8B-Instruct
 ```
+
+### Image generation
+
+Set a backend to expose the built-in `imagine` tool. Pick one:
+
+```sh
+# OpenAI Images (DALL·E / gpt-image-compatible)
+export FREE_WEBUI_IMAGE_BACKEND=openai
+export FREE_WEBUI_IMAGE_BASE_URL=https://api.openai.com/v1
+export FREE_WEBUI_IMAGE_API_KEY=sk-…
+export FREE_WEBUI_IMAGE_MODEL=dall-e-3
+
+# AUTOMATIC1111 (local Stable Diffusion WebUI, --api)
+export FREE_WEBUI_IMAGE_BACKEND=automatic1111
+export FREE_WEBUI_IMAGE_BASE_URL=http://localhost:7860
+
+# ComfyUI (headless; point at your own API-format workflow export)
+export FREE_WEBUI_IMAGE_BACKEND=comfyui
+export FREE_WEBUI_IMAGE_BASE_URL=http://localhost:8188
+export FREE_WEBUI_COMFYUI_WORKFLOW_PATH=/path/to/workflow.json   # optional; %prompt% %negative_prompt% %width% %height% %seed% %steps% substituted
+```
+
+With a backend set and the per-chat **tools** toggle on, asking the model to "draw…" / "generate an image of…" triggers `imagine`; the picture is generated server-side, streamed to the chat as it lands, and saved with the conversation.
 
 ---
 
@@ -298,8 +325,9 @@ We're aiming at the 95% workflow people actually want from open-webui — not st
 - ✅ **Admin panel** — user management at `/admin/users`.
 - ✅ **PWA install** — `manifest.webmanifest`, service worker, theme color, SVG + PNG icons.
 - ✅ **MCP server support** — per-user JSON-RPC MCP servers configured at `/account/mcp`; `tools/list` is auto-merged into the tool catalogue and `tools/call` is dispatched through the same tool loop.
+- ✅ **Image generation** — built-in `imagine(prompt, size?, negative_prompt?)` tool that proxies OpenAI Images / AUTOMATIC1111 / ComfyUI (selected by `FREE_WEBUI_IMAGE_BACKEND`). It rides the existing tool loop: the model calls it, the backend generates the image, returns it as a `data:` URL surfaced over an `event: image` SSE frame, and persists it inside a multimodal assistant message so it survives reload — rendered by the same image-part path as uploaded images. Gated on config: the tool only appears when a backend is set. Disabled → no tool offered.
 
-Skippable / not planned: image generation, code interpreter sandbox, Pipelines / plugin framework, evaluation / leaderboard, channels / spaces, LDAP / SAML, full i18n.
+Skippable / not planned: code interpreter sandbox, Pipelines / plugin framework, evaluation / leaderboard, channels / spaces, LDAP / SAML, full i18n.
 
 ### Constraint
 

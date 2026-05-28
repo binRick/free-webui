@@ -1,8 +1,10 @@
 # Runtime data
 backend/data/
+/data/
 *.db
 *.db-shm
 *.db-wal
+*.key
 
 # Python
 __pycache__/

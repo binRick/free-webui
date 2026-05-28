@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
+  import { auth } from './auth.svelte';
   import { convs } from './conversations.svelte';
   import { deleteConversation } from './api';
   import { sidebar } from './sidebarState.svelte';
@@ -55,6 +56,12 @@
       <div class="empty">no chats yet</div>
     {/each}
   </nav>
+  {#if auth.user}
+    <footer>
+      <span class="user" title={auth.user.role}>{auth.user.username}</span>
+      <button class="logout" onclick={() => auth.logout()}>log out</button>
+    </footer>
+  {/if}
 </aside>
 
 <style>
@@ -149,6 +156,32 @@
     font-size: 0.85rem;
     text-align: center;
   }
+  footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.6rem 0.75rem;
+    border-top: 1px solid var(--border-soft);
+    font-size: 0.8rem;
+  }
+  .user {
+    color: var(--text-dim);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .logout {
+    background: transparent;
+    border: 1px solid var(--border-soft);
+    color: var(--text-muted);
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font: inherit;
+    font-size: 0.72rem;
+    cursor: pointer;
+  }
+  .logout:hover { color: var(--text); background: var(--bg-hover); }
 
   @media (max-width: 768px) {
     aside {

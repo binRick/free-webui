@@ -4,6 +4,7 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+from .auth import router as auth_router
 from .config import settings
 from .conversations import router as conversations_router
 from .db import open_db
@@ -34,6 +35,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router)
 app.include_router(conversations_router)
 
 

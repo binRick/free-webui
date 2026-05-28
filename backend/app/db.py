@@ -3,8 +3,17 @@ from pathlib import Path
 import aiosqlite
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    username      TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    role          TEXT NOT NULL DEFAULT 'user',
+    created_at    INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS conversations (
     id            TEXT PRIMARY KEY,
+    user_id       INTEGER REFERENCES users(id) ON DELETE CASCADE,
     title         TEXT NOT NULL DEFAULT 'new chat',
     model         TEXT,
     system_prompt TEXT,
@@ -24,6 +33,7 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, id);
+CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(user_id, updated_at DESC);
 """
 
 _MIGRATIONS: tuple[tuple[str, str, str], ...] = (
@@ -31,6 +41,7 @@ _MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("conversations", "temperature", "REAL"),
     ("conversations", "top_p", "REAL"),
     ("conversations", "stop", "TEXT"),
+    ("conversations", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"),
 )
 
 

@@ -2,10 +2,14 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { createConversation } from '$lib/api';
+  import { auth } from '$lib/auth.svelte';
 
   let error = $state<string | null>(null);
 
   onMount(async () => {
+    // Wait for layout's auth check; if it redirected away, do nothing.
+    if (!auth.loaded) await auth.refresh();
+    if (!auth.user) return;
     try {
       const conv = await createConversation(null);
       await goto(`/chat/${conv.id}`, { replaceState: true });

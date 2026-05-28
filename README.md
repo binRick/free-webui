@@ -31,11 +31,12 @@ If `open-webui` is the kitchen-sink reference, `free-webui` aims to be the lean,
 <p align="center"><sub>dark / light themes share a CSS-var palette; shiki re-tokens code per theme</sub></p>
 
 <p align="center">
-  <img src="./docs/img/screenshot-settings.png" alt="per-chat settings drawer: system prompt, temperature, top-p, stop" width="58%"/>
-  <img src="./docs/img/screenshot-mobile.png" alt="mobile width: sidebar overlays chat with a hamburger toggle" width="22%"/>
+  <img src="./docs/img/screenshot-settings.png" alt="per-chat settings drawer: system prompt, temperature, top-p, stop" width="48%"/>
+  <img src="./docs/img/screenshot-setup.png" alt="first-run admin setup screen" width="30%"/>
+  <img src="./docs/img/screenshot-mobile.png" alt="mobile width: sidebar overlays chat with a hamburger toggle" width="18%"/>
 </p>
 
-<p align="center"><sub>per-chat settings drawer · responsive sidebar overlay at &lt; 768 px</sub></p>
+<p align="center"><sub>per-chat settings drawer · first-run admin setup · responsive sidebar overlay at &lt; 768 px</sub></p>
 
 ---
 
@@ -238,7 +239,7 @@ We're aiming at the 95% workflow people actually want from open-webui — not st
 
 ### Tier 2 — the things people pick open-webui *for*
 
-- **Auth** — single-user → multi-user with roles; OAuth optional.
+- ✅ **Auth** — first-run `/setup` creates an admin (argon2id hashing); signed HTTP-only cookie session; all conversation routes are scoped per-user. Additional users via direct DB insert for now (admin UI is a follow-up). OAuth deferred.
 - **RAG** — uploads, chunking, embeddings (Ollama / OpenAI), vector store, retrieval with citations.
 - **Web search** — pluggable providers (SearXNG, Brave, Tavily, Google PSE) with citations.
 - **Multimodal input** — image attachments for vision models.

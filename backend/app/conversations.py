@@ -5,13 +5,18 @@ from typing import Any, AsyncIterator
 
 import aiosqlite
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from .auth import current_user
 from .config import settings
 
-router = APIRouter(prefix="/api/conversations", tags=["conversations"])
+router = APIRouter(
+    prefix="/api/conversations",
+    tags=["conversations"],
+    dependencies=[Depends(current_user)],
+)
 
 
 class ConversationSummary(BaseModel):
@@ -76,6 +81,14 @@ def _http(request: Request) -> httpx.AsyncClient:
     return request.app.state.http
 
 
+async def _owned(db: aiosqlite.Connection, cid: str, user_id: int) -> None:
+    cur = await db.execute(
+        "SELECT 1 FROM conversations WHERE id = ? AND user_id = ?", (cid, user_id)
+    )
+    if not await cur.fetchone():
+        raise HTTPException(status_code=404, detail="conversation not found")
+
+
 async def _load_history(db: aiosqlite.Connection, cid: str) -> list[dict]:
     cur = await db.execute(
         "SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY id", (cid,)
@@ -128,12 +141,6 @@ async def _stream_and_persist(
     top_p: float | None,
     stop: list[str] | None,
 ) -> AsyncIterator[bytes]:
-    """Stream a chat completion from upstream and persist the assembled assistant reply.
-
-    Re-emits upstream `data: …` SSE lines verbatim. On generator close (normal or
-    early cancel) the assembled tokens are written as a single assistant message so
-    aborted streams still save what arrived.
-    """
     assembled: list[str] = []
     payload: dict[str, Any] = {
         "model": model,
@@ -182,15 +189,19 @@ async def _stream_and_persist(
 
 
 @router.get("", response_model=list[ConversationSummary])
-async def list_conversations(request: Request):
+async def list_conversations(
+    request: Request, user: dict = Depends(current_user)
+):
     db = _db(request)
     cur = await db.execute(
         """
         SELECT id, title, model, updated_at
         FROM conversations
-        WHERE EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = conversations.id)
+        WHERE user_id = ?
+          AND EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = conversations.id)
         ORDER BY updated_at DESC
-        """
+        """,
+        (user["id"],),
     )
     rows = await cur.fetchall()
     return [
@@ -199,21 +210,27 @@ async def list_conversations(request: Request):
 
 
 @router.post("", response_model=ConversationSummary)
-async def create_conversation(body: CreateBody, request: Request):
+async def create_conversation(
+    body: CreateBody, request: Request, user: dict = Depends(current_user)
+):
     db = _db(request)
     cid = uuid.uuid4().hex
     now = int(time.time())
     await db.execute(
-        "INSERT INTO conversations (id, title, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-        (cid, "new chat", body.model, now, now),
+        "INSERT INTO conversations (id, user_id, title, model, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (cid, user["id"], "new chat", body.model, now, now),
     )
     await db.commit()
     return ConversationSummary(id=cid, title="new chat", model=body.model, updated_at=now)
 
 
 @router.get("/{cid}", response_model=Conversation)
-async def get_conversation(cid: str, request: Request):
+async def get_conversation(
+    cid: str, request: Request, user: dict = Depends(current_user)
+):
     db = _db(request)
+    await _owned(db, cid, user["id"])
     cur = await db.execute(
         """
         SELECT id, title, model, system_prompt, temperature, top_p, stop, created_at, updated_at
@@ -246,8 +263,11 @@ async def get_conversation(cid: str, request: Request):
 
 
 @router.patch("/{cid}", response_model=Conversation)
-async def update_conversation(cid: str, body: UpdateBody, request: Request):
+async def update_conversation(
+    cid: str, body: UpdateBody, request: Request, user: dict = Depends(current_user)
+):
     db = _db(request)
+    await _owned(db, cid, user["id"])
     fields = body.model_dump(exclude_unset=True)
     if fields:
         sets: list[str] = []
@@ -259,18 +279,19 @@ async def update_conversation(cid: str, body: UpdateBody, request: Request):
             else:
                 params.append(value)
         params.append(cid)
-        cur = await db.execute(
+        await db.execute(
             f"UPDATE conversations SET {', '.join(sets)} WHERE id = ?", params
         )
-        if cur.rowcount == 0:
-            raise HTTPException(status_code=404, detail="conversation not found")
         await db.commit()
-    return await get_conversation(cid, request)
+    return await get_conversation(cid, request, user)
 
 
 @router.delete("/{cid}", status_code=204)
-async def delete_conversation(cid: str, request: Request):
+async def delete_conversation(
+    cid: str, request: Request, user: dict = Depends(current_user)
+):
     db = _db(request)
+    await _owned(db, cid, user["id"])
     await db.execute("DELETE FROM conversations WHERE id = ?", (cid,))
     await db.commit()
 
@@ -297,8 +318,11 @@ async def _maybe_update_model(
 
 
 @router.post("/{cid}/messages")
-async def send_message(cid: str, body: SendBody, request: Request) -> StreamingResponse:
+async def send_message(
+    cid: str, body: SendBody, request: Request, user: dict = Depends(current_user)
+) -> StreamingResponse:
     db = _db(request)
+    await _owned(db, cid, user["id"])
     http = _http(request)
 
     conv = await _conv_settings(db, cid)
@@ -327,9 +351,11 @@ async def send_message(cid: str, body: SendBody, request: Request) -> StreamingR
 
 
 @router.post("/{cid}/regenerate")
-async def regenerate(cid: str, body: RegenerateBody, request: Request) -> StreamingResponse:
-    """Drop the last assistant message and re-stream from the previous user turn."""
+async def regenerate(
+    cid: str, body: RegenerateBody, request: Request, user: dict = Depends(current_user)
+) -> StreamingResponse:
     db = _db(request)
+    await _owned(db, cid, user["id"])
     http = _http(request)
 
     conv = await _conv_settings(db, cid)
@@ -361,10 +387,14 @@ async def regenerate(cid: str, body: RegenerateBody, request: Request) -> Stream
 
 @router.patch("/{cid}/messages/{msg_id}")
 async def edit_message(
-    cid: str, msg_id: int, body: EditBody, request: Request
+    cid: str,
+    msg_id: int,
+    body: EditBody,
+    request: Request,
+    user: dict = Depends(current_user),
 ) -> StreamingResponse:
-    """Edit a user message in place, truncate everything after it, and re-stream."""
     db = _db(request)
+    await _owned(db, cid, user["id"])
     http = _http(request)
 
     cur = await db.execute(

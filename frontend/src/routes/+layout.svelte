@@ -1,18 +1,36 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
+  import { page } from '$app/state';
   import Sidebar from '$lib/Sidebar.svelte';
+  import { auth } from '$lib/auth.svelte';
   import { sidebar } from '$lib/sidebarState.svelte';
   import { theme } from '$lib/theme.svelte';
 
   let { children } = $props();
 
-  onMount(() => theme.init());
+  // Routes that don't require auth; sidebar is hidden on these.
+  const PUBLIC_ROUTES = ['/login', '/setup'];
+  let isPublic = $derived(PUBLIC_ROUTES.includes(page.url.pathname));
+
+  onMount(async () => {
+    theme.init();
+    const s = await auth.refresh();
+    const path = page.url.pathname;
+    if (s.setup_required && path !== '/setup') {
+      await goto('/setup', { replaceState: true });
+    } else if (!s.setup_required && !s.user && !PUBLIC_ROUTES.includes(path)) {
+      await goto('/login', { replaceState: true });
+    }
+  });
 </script>
 
 <div class="shell" class:sidebar-open={sidebar.open}>
-  <Sidebar />
-  {#if sidebar.open}
-    <button class="backdrop" aria-label="close sidebar" onclick={() => sidebar.close()}></button>
+  {#if !isPublic}
+    <Sidebar />
+    {#if sidebar.open}
+      <button class="backdrop" aria-label="close sidebar" onclick={() => sidebar.close()}></button>
+    {/if}
   {/if}
   <section class="main">
     {@render children()}

@@ -12,6 +12,14 @@ class Settings(BaseSettings):
     # SQLite file path. Created on first run.
     db_path: str = "data/free-webui.db"
 
+    # Session cookie signing key. If empty, a persistent random key is
+    # generated and stored next to the DB.
+    secret_key: str = ""
+    secret_key_path: str = "data/secret.key"
+
+    # Session cookie max age (seconds). Default: 30 days.
+    session_max_age: int = 60 * 60 * 24 * 30
+
     # CORS: SvelteKit dev server.
     allowed_origins: list[str] = ["http://localhost:5173"]
 

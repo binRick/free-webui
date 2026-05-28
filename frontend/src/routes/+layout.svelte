@@ -15,6 +15,10 @@
 
   onMount(async () => {
     theme.init();
+    // Register the PWA service worker; ignore failures (e.g. http with no TLS).
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/service-worker.js').catch(() => {});
+    }
     const s = await auth.refresh();
     const path = page.url.pathname;
     if (s.setup_required && path !== '/setup') {

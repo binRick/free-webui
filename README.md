@@ -292,9 +292,14 @@ We're aiming at the 95% workflow people actually want from open-webui — not st
 - ✅ **Conversation export** — JSON or Markdown download from the settings drawer. Public share links deferred.
 - ✅ **OpenAI-compatible API of our own** — per-user Bearer-auth `/v1/chat/completions` and `/v1/models`. Mint and revoke keys from `/account`. The full hashed-secret never leaves the DB; the raw key is shown exactly once at mint time.
 
-### Tier 3 — larger initiatives, mostly skippable
+### Tier 3 — larger initiatives
 
-Image generation (A1111 / ComfyUI / DALL-E), code interpreter sandbox, Pipelines / plugin framework, evaluation / leaderboard, channels / spaces, LDAP / SAML, full i18n, PWA install, admin panel.
+- ✅ **KaTeX + mermaid in markdown** (initially deferred from Tier 1).
+- ✅ **Admin panel** — user management at `/admin/users`.
+- ✅ **PWA install** — `manifest.webmanifest`, service worker, theme color, SVG + PNG icons.
+- **MCP server support** — connect to external Model Context Protocol servers and expose their tools alongside the built-in `now` / `calculate`.
+
+Skippable / not planned: image generation, code interpreter sandbox, Pipelines / plugin framework, evaluation / leaderboard, channels / spaces, LDAP / SAML, full i18n.
 
 ### Constraint
 

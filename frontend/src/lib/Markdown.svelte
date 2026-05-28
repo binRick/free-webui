@@ -1,8 +1,30 @@
 <script lang="ts">
+  import 'katex/dist/katex.min.css';
+  import { tick } from 'svelte';
   import { renderMarkdown } from './markdown';
+  import { theme } from './theme.svelte';
 
   let { source }: { source: string } = $props();
   let html = $state('');
+  let container: HTMLDivElement;
+
+  let mermaidPromise: Promise<typeof import('mermaid')['default']> | null = null;
+  function loadMermaid() {
+    if (!mermaidPromise) {
+      mermaidPromise = import('mermaid').then((m) => {
+        m.default.initialize({
+          startOnLoad: false,
+          // 'loose' lets mermaid render in-place (avoids the sandbox iframe
+          // which doesn't play well with svelte hydration). We've already
+          // run user content through DOMPurify upstream, so this is safe.
+          securityLevel: 'loose',
+          theme: theme.effective === 'light' ? 'default' : 'dark'
+        });
+        return m.default;
+      });
+    }
+    return mermaidPromise;
+  }
 
   $effect(() => {
     const src = source;
@@ -13,6 +35,26 @@
     return () => {
       cancelled = true;
     };
+  });
+
+  // Run mermaid on any new diagrams after each html update.
+  $effect(() => {
+    html;
+    if (!container) return;
+    (async () => {
+      await tick();
+      const nodes = container.querySelectorAll<HTMLElement>(
+        'pre.mermaid:not([data-mermaid-done])'
+      );
+      if (!nodes.length) return;
+      nodes.forEach((n) => n.setAttribute('data-mermaid-done', '1'));
+      try {
+        const mermaid = await loadMermaid();
+        await mermaid.run({ nodes: Array.from(nodes) });
+      } catch {
+        // mermaid throws on syntax errors; leave the raw source visible
+      }
+    })();
   });
 
   function onClick(e: MouseEvent) {
@@ -31,7 +73,7 @@
   }
 </script>
 
-<div class="md" onclick={onClick} role="presentation">{@html html}</div>
+<div class="md" bind:this={container} onclick={onClick} role="presentation">{@html html}</div>
 
 <style>
   .md :global(p) { margin: 0.5em 0; }
@@ -131,4 +173,16 @@
   .md :global(h3) { font-size: 1.1rem; margin: 0.75rem 0 0.5rem; }
   .md :global(h4), .md :global(h5), .md :global(h6) { font-size: 1rem; margin: 0.75rem 0 0.5rem; }
   .md :global(hr) { border: 0; border-top: 1px solid var(--border-soft); margin: 1rem 0; }
+
+  /* mermaid diagrams */
+  .md :global(pre.mermaid) {
+    background: var(--bg-elev);
+    padding: 0.85rem 1rem;
+    overflow-x: auto;
+    text-align: center;
+  }
+  .md :global(pre.mermaid svg) { max-width: 100%; height: auto; }
+
+  /* KaTeX rendered math: keep slightly inset from text */
+  .md :global(.katex-display) { margin: 0.65rem 0; overflow-x: auto; }
 </style>

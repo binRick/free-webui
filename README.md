@@ -57,6 +57,12 @@ If `open-webui` is the kitchen-sink reference, `free-webui` aims to be the lean,
 
 <p align="center"><sub>per-user API keys (Bearer auth for the OpenAI-compatible <code>/v1/*</code> surface) · admin-only Ollama model list with streaming pull / delete</sub></p>
 
+<p align="center">
+  <img src="./docs/img/screenshot-math-mermaid.png" alt="markdown with KaTeX math and a mermaid flowchart" width="70%"/>
+</p>
+
+<p align="center"><sub>KaTeX math (<code>$inline$</code> + <code>$$display$$</code>) and mermaid flowcharts render inline; mermaid is lazy-loaded the first time a diagram appears.</sub></p>
+
 ---
 
 ## Status
@@ -265,7 +271,7 @@ We're aiming at the 95% workflow people actually want from open-webui — not st
 
 - ✅ **Persistence** — SQLite for conversations + messages.
 - ✅ **Sidebar with conversation list** — create / open / delete; auto-titled from first user message.
-- ✅ **Markdown rendering** — fenced code with shiki syntax highlighting + copy; tables; sanitized (DOMPurify). LaTeX + mermaid as follow-ups.
+- ✅ **Markdown rendering** — fenced code with shiki syntax highlighting + copy; tables; LaTeX via KaTeX (`$inline$` + `$$display$$`); mermaid diagrams (lazy-loaded, theme-aware); sanitized through DOMPurify with html + svg + mathml profiles.
 - ✅ **Edit + regenerate messages** — in-place edit on any user message truncates everything after and re-streams; regenerate replays the last assistant turn. Proper branching is a follow-up.
 - ✅ **Per-chat parameters** — model, temperature, top-p, system prompt, stop sequences via a settings drawer + `PATCH /api/conversations/{id}`.
 - ✅ **Mobile / responsive layout + dark/light themes** — CSS-var theming (system / light / dark, persisted), shiki dual-theme highlighting, sidebar slides over content on narrow viewports.

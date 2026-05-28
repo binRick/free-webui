@@ -1,5 +1,6 @@
 import DOMPurify from 'dompurify';
 import { marked, type Tokens } from 'marked';
+import markedKatex from 'marked-katex-extension';
 import { createHighlighter, type Highlighter } from 'shiki';
 
 const THEMES = { light: 'github-light', dark: 'github-dark' } as const;
@@ -33,6 +34,8 @@ function escapeHtml(s: string): string {
   );
 }
 
+marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
+
 marked.use({
   async: true,
   gfm: true,
@@ -41,6 +44,7 @@ marked.use({
     if (token.type !== 'code') return;
     const t = token as Tokens.Code & { __html?: string };
     const lang = (t.lang || '').toLowerCase();
+    if (lang === 'mermaid') return; // renderer handles mermaid blocks raw
     try {
       const hl = await loadHighlighter();
       const loaded = hl.getLoadedLanguages() as readonly string[];
@@ -60,6 +64,10 @@ marked.use({
   renderer: {
     code(token) {
       const t = token as Tokens.Code & { __html?: string };
+      if ((t.lang || '').toLowerCase() === 'mermaid') {
+        // Render the raw source; <Markdown> will run mermaid on it after DOM update.
+        return `<pre class="mermaid">${escapeHtml(t.text)}</pre>`;
+      }
       const inner = t.__html ?? `<pre><code>${escapeHtml(t.text)}</code></pre>`;
       const langLabel = t.lang
         ? `<span class="code-lang">${escapeHtml(t.lang)}</span>`
@@ -72,6 +80,7 @@ marked.use({
 export async function renderMarkdown(src: string): Promise<string> {
   const html = await marked.parse(src);
   return DOMPurify.sanitize(html, {
-    ADD_ATTR: ['data-copy', 'style']
+    USE_PROFILES: { html: true, svg: true, svgFilters: true, mathMl: true },
+    ADD_ATTR: ['data-copy', 'style', 'class']
   });
 }

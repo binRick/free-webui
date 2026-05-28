@@ -8,6 +8,7 @@ from .admin_models import router as admin_models_router
 from .admin_users import router as admin_users_router
 from .api_keys import router as api_keys_router
 from .auth import router as auth_router
+from .code_exec import router as code_router
 from .config import settings
 from .conversations import router as conversations_router
 from .db import open_db
@@ -59,6 +60,7 @@ app.include_router(memories_router)
 app.include_router(openai_compat_router)
 app.include_router(mcp_router)
 app.include_router(images_router)
+app.include_router(code_router)
 
 
 @app.get("/api/health")

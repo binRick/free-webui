@@ -11,6 +11,7 @@
     deletePrompt,
     editMessage,
     exportConversationUrl,
+    getCodeStatus,
     getConversation,
     getImageStatus,
     getWebSearchStatus,
@@ -73,6 +74,11 @@
   let webSearchAvailable = $state(false);
   let toolsEnabled = $state(false);
   let imageGenAvailable = $state(false);
+  let codeInterpreterAvailable = $state(false);
+
+  let builtinTools = $derived(
+    ['now', 'calculate', ...(imageGenAvailable ? ['imagine'] : []), ...(codeInterpreterAvailable ? ['run_python'] : [])]
+  );
   let recognising = $state(false);
   let speakingIdx = $state<number | null>(null);
   let recognition: any = null;
@@ -110,6 +116,7 @@
       webSearchAvailable = (await getWebSearchStatus()).available;
       toolsEnabled = !!conv.tools_enabled;
       imageGenAvailable = (await getImageStatus()).available;
+      codeInterpreterAvailable = (await getCodeStatus()).available;
       await tick();
       scroller?.scrollTo({ top: scroller.scrollHeight });
     } catch (err) {
@@ -502,7 +509,7 @@
       <span class="rag-badge web" title="web search active for this chat">🌐 web</span>
     {/if}
     {#if toolsEnabled}
-      <span class="rag-badge tools" title="tools enabled (now, calculate{imageGenAvailable ? ', imagine' : ''})">🔧 tools</span>
+      <span class="rag-badge tools" title="tools enabled ({builtinTools.join(', ')})">🔧 tools</span>
     {/if}
   </div>
   <div class="header-controls">
@@ -559,7 +566,7 @@
     <label class="toggle">
       <input type="checkbox" bind:checked={toolsEnabled} />
       <span class="lbl" style="text-transform: none; letter-spacing: 0;">
-        tools <span class="hint">— built-in: <code>now</code>, <code>calculate</code>{#if imageGenAvailable}, <code>imagine</code>{/if}</span>
+        tools <span class="hint">— built-in: {#each builtinTools as t, ti (t)}{ti > 0 ? ', ' : ''}<code>{t}</code>{/each}</span>
       </span>
     </label>
     <div class="settings-actions">

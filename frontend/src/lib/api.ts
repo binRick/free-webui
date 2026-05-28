@@ -67,6 +67,17 @@ export async function getImageStatus(): Promise<ImageStatus> {
   return res.json();
 }
 
+export interface CodeStatus {
+  available: boolean;
+  backend: string | null;
+}
+
+export async function getCodeStatus(): Promise<CodeStatus> {
+  const res = await fetch('/api/code/status');
+  if (!res.ok) return { available: false, backend: null };
+  return res.json();
+}
+
 export async function listConversations(): Promise<ConversationSummary[]> {
   const res = await fetch('/api/conversations');
   if (!res.ok) return [];

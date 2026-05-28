@@ -17,7 +17,7 @@ import operator
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
-from . import images
+from . import code_exec, images
 from .config import settings
 
 
@@ -171,17 +171,80 @@ async def _imagine(args: dict[str, Any], ctx: ToolContext | None) -> str:
     )
 
 
+# ---- code interpreter (async, gated on config) ----
+
+RUN_PYTHON_SPEC: dict = {
+    "type": "function",
+    "function": {
+        "name": "run_python",
+        "description": (
+            "Execute Python 3 code in a sandbox and return its stdout/stderr. "
+            "Use this to compute, analyse data, or verify logic. Print the "
+            "results you want to see. The sandbox has no network access and is "
+            "reset on every call (no state persists between calls). To show the "
+            "user a chart or image, save it to a file (e.g. "
+            "matplotlib.pyplot.savefig('plot.png')) — saved images are displayed "
+            "automatically."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "code": {"type": "string", "description": "The Python source to run."}
+            },
+            "required": ["code"],
+        },
+    },
+}
+
+
+def _format_exec(result: "code_exec.ExecResult") -> str:
+    parts: list[str] = []
+    if result.stdout.strip():
+        parts.append("stdout:\n" + result.stdout.rstrip())
+    if result.stderr.strip():
+        parts.append("stderr:\n" + result.stderr.rstrip())
+    if result.timed_out:
+        parts.append(
+            f"(execution exceeded the {settings.code_timeout_seconds:g}s time "
+            "limit and was killed)"
+        )
+    elif result.exit_code not in (0, None):
+        parts.append(f"(process exited with code {result.exit_code})")
+    if result.images:
+        n = len(result.images)
+        parts.append(f"({n} image{'s' if n != 1 else ''} produced and shown to the user)")
+    if not parts:
+        parts.append("(no output)")
+    return "\n\n".join(parts)
+
+
+async def _run_python(args: dict[str, Any], ctx: ToolContext | None) -> str:
+    code = str(args.get("code", ""))
+    if not code.strip():
+        return "error: missing 'code'"
+    try:
+        result = await code_exec.execute(code)
+    except code_exec.CodeExecError as e:
+        return f"error: {e}"
+    if ctx is not None:
+        ctx.images.extend(result.images)
+    return _format_exec(result)
+
+
 ASYNC_HANDLERS: dict[str, Callable[[dict[str, Any], "ToolContext | None"], Awaitable[str]]] = {
     "imagine": _imagine,
+    "run_python": _run_python,
 }
 
 
 def builtin_tool_specs() -> list[dict]:
-    """OpenAI tool schemas for every built-in available right now. The
-    `imagine` tool only appears when an image backend is configured."""
+    """OpenAI tool schemas for every built-in available right now. `imagine`
+    and `run_python` only appear when their backends are configured."""
     specs = list(TOOL_SPECS)
     if settings.image_backend:
         specs.append(IMAGINE_SPEC)
+    if code_exec._resolve_backend():
+        specs.append(RUN_PYTHON_SPEC)
     return specs
 
 

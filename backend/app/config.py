@@ -56,6 +56,23 @@ class Settings(BaseSettings):
     # substituted. If empty, a built-in SD1.5 txt2img graph is used.
     comfyui_workflow_path: str = ""
 
+    # Code interpreter. Exposes the built-in `run_python` tool. Backends:
+    #   "docker"     — strongest isolation (no network, read-only rootfs,
+    #                  non-root, dropped caps, mem/cpu/pids limits). Preferred.
+    #   "subprocess" — same-host subprocess: timeouts + RLIMITs + stripped env,
+    #                  but NOT a security boundary (the code can read the host
+    #                  filesystem). Only for trusted, single-user deployments.
+    #   "auto"       — docker if the docker binary is present, else subprocess.
+    #   ""           — disabled (default); the tool is not offered.
+    code_interpreter: str = ""
+    code_docker_image: str = "python:3-alpine"
+    code_timeout_seconds: float = 15.0
+    code_max_memory_mb: int = 512
+    code_cpus: str = "1.0"  # docker --cpus
+    code_pids_limit: int = 128  # docker --pids-limit / subprocess RLIMIT_NPROC (linux)
+    code_max_output_chars: int = 20000  # cap captured stdout/stderr beyond this
+    code_max_concurrency: int = 2  # max simultaneous executions across all chats
+
     # CORS: SvelteKit dev server.
     allowed_origins: list[str] = ["http://localhost:5173"]
 

@@ -221,6 +221,9 @@ All backend config is environment-driven (prefix `FREE_WEBUI_`):
 | `FREE_WEBUI_IMAGE_BASE_URL`       | _(empty)_                        | Image backend base URL (e.g. `http://localhost:7860`) |
 | `FREE_WEBUI_IMAGE_API_KEY`        | _(empty)_                        | Bearer token for the `openai` image backend      |
 | `FREE_WEBUI_IMAGE_MODEL`          | `dall-e-3`                       | OpenAI model id / SD checkpoint name             |
+| `FREE_WEBUI_CODE_INTERPRETER`     | _(empty — disabled)_             | `docker` \| `subprocess` \| `auto` — enables `run_python` |
+| `FREE_WEBUI_CODE_DOCKER_IMAGE`    | `python:3-alpine`                | Image used by the `docker` code-interpreter backend |
+| `FREE_WEBUI_CODE_TIMEOUT_SECONDS` | `15`                             | Wall-clock limit per code execution              |
 
 ### Talking to OpenAI directly
 
@@ -260,6 +263,18 @@ export FREE_WEBUI_COMFYUI_WORKFLOW_PATH=/path/to/workflow.json   # optional; %pr
 ```
 
 With a backend set and the per-chat **tools** toggle on, asking the model to "draw…" / "generate an image of…" triggers `imagine`; the picture is generated server-side, streamed to the chat as it lands, and saved with the conversation.
+
+### Code interpreter
+
+Expose the built-in `run_python` tool. **Prefer the `docker` backend** — it is a real sandbox (no network, read-only rootfs, non-root user, dropped capabilities, memory/cpu/pid limits), so executed code can't reach the host DB or secret key:
+
+```sh
+export FREE_WEBUI_CODE_INTERPRETER=docker        # or: auto (docker if present, else subprocess)
+export FREE_WEBUI_CODE_DOCKER_IMAGE=python:3-alpine   # use a custom image for libs (e.g. matplotlib)
+export FREE_WEBUI_CODE_TIMEOUT_SECONDS=15
+```
+
+The `subprocess` backend runs code as a same-host child with timeouts, POSIX rlimits, and a stripped environment, but **is not a security boundary** (the code can read the host filesystem) — use it only for trusted, single-user deployments. Saved image files (e.g. `plt.savefig('plot.png')`) are surfaced to the chat just like generated images.
 
 ---
 
@@ -326,8 +341,9 @@ We're aiming at the 95% workflow people actually want from open-webui — not st
 - ✅ **PWA install** — `manifest.webmanifest`, service worker, theme color, SVG + PNG icons.
 - ✅ **MCP server support** — per-user JSON-RPC MCP servers configured at `/account/mcp`; `tools/list` is auto-merged into the tool catalogue and `tools/call` is dispatched through the same tool loop.
 - ✅ **Image generation** — built-in `imagine(prompt, size?, negative_prompt?)` tool that proxies OpenAI Images / AUTOMATIC1111 / ComfyUI (selected by `FREE_WEBUI_IMAGE_BACKEND`). It rides the existing tool loop: the model calls it, the backend generates the image, returns it as a `data:` URL surfaced over an `event: image` SSE frame, and persists it inside a multimodal assistant message so it survives reload — rendered by the same image-part path as uploaded images. Gated on config: the tool only appears when a backend is set. Disabled → no tool offered.
+- ✅ **Code interpreter** — built-in `run_python(code)` tool (selected by `FREE_WEBUI_CODE_INTERPRETER`). The `docker` backend is a real sandbox (no network, read-only rootfs, non-root, dropped caps, mem/cpu/pid limits); a `subprocess` fallback adds timeouts + rlimits + a stripped env for trusted single-user use (not a security boundary). Code runs in a throwaway per-call workdir; raster images it writes (e.g. matplotlib plots) are surfaced + persisted via the same path as image generation. Gated on config.
 
-Skippable / not planned: code interpreter sandbox, Pipelines / plugin framework, evaluation / leaderboard, channels / spaces, LDAP / SAML, full i18n.
+Skippable / not planned: Pipelines / plugin framework, evaluation / leaderboard, channels / spaces, LDAP / SAML, full i18n.
 
 ### Constraint
 

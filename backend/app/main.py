@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from .admin_models import router as admin_models_router
+from .admin_users import router as admin_users_router
 from .api_keys import router as api_keys_router
 from .auth import router as auth_router
 from .config import settings
@@ -49,6 +50,7 @@ app.include_router(documents_router)
 app.include_router(prompts_router)
 app.include_router(presets_router)
 app.include_router(admin_models_router)
+app.include_router(admin_users_router)
 app.include_router(web_search_router)
 app.include_router(api_keys_router)
 app.include_router(memories_router)

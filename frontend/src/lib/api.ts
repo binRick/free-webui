@@ -125,6 +125,60 @@ export async function deleteDocument(
   );
 }
 
+export interface AdminUser {
+  id: number;
+  username: string;
+  role: string;
+  created_at: number;
+}
+
+export async function adminListUsers(): Promise<AdminUser[]> {
+  const res = await fetch('/api/admin/users');
+  if (!res.ok) throw new Error(`load failed: ${res.status}`);
+  return res.json();
+}
+
+export async function adminCreateUser(
+  username: string,
+  password: string,
+  role: 'admin' | 'user'
+): Promise<AdminUser> {
+  const res = await fetch('/api/admin/users', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username, password, role })
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail ?? `create failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function adminPatchUser(
+  id: number,
+  patch: { role?: 'admin' | 'user'; password?: string }
+): Promise<AdminUser> {
+  const res = await fetch(`/api/admin/users/${id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(patch)
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail ?? `patch failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function adminDeleteUser(id: number): Promise<void> {
+  const res = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail ?? `delete failed: ${res.status}`);
+  }
+}
+
 export interface InstalledModel {
   name: string;
   size: number | null;

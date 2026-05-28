@@ -2,9 +2,11 @@
   import { tick } from 'svelte';
   import { page } from '$app/state';
   import {
+    createMemory,
     createPreset,
     createPrompt,
     deleteDocument,
+    deleteMemory,
     deletePreset,
     deletePrompt,
     editMessage,
@@ -12,6 +14,7 @@
     getConversation,
     getWebSearchStatus,
     listDocuments,
+    listMemories,
     listModels,
     listPresets,
     listPrompts,
@@ -22,6 +25,7 @@
     uploadDocument,
     type ContentPart,
     type Document,
+    type Memory,
     type MessageContent,
     type Preset,
     type Prompt,
@@ -60,6 +64,7 @@
   let docInput: HTMLInputElement;
   let prompts = $state<Prompt[]>([]);
   let presets = $state<Preset[]>([]);
+  let memories = $state<Memory[]>([]);
   let webSearch = $state(false);
   let webSearchAvailable = $state(false);
   let recognising = $state(false);
@@ -94,6 +99,7 @@
       docs = await listDocuments(id);
       prompts = await listPrompts();
       presets = await listPresets();
+      memories = await listMemories();
       webSearch = !!conv.web_search;
       webSearchAvailable = (await getWebSearchStatus()).available;
       await tick();
@@ -185,6 +191,19 @@
     if (!confirm('delete this preset?')) return;
     await deletePreset(id);
     presets = await listPresets();
+  }
+
+  async function addMemory() {
+    const text = window.prompt('add a memory — what should the model always remember?');
+    if (!text || !text.trim()) return;
+    await createMemory(text.trim());
+    memories = await listMemories();
+  }
+
+  async function removeMemory(id: number) {
+    if (!confirm('forget this memory?')) return;
+    await deleteMemory(id);
+    memories = await listMemories();
   }
 
   function toggleMic() {
@@ -545,6 +564,25 @@
                 {p.title}
               </button>
               <button class="doc-x" aria-label="delete" onclick={() => removePrompt(p.id)}>×</button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
+
+    <div class="docs">
+      <div class="docs-head">
+        <span class="lbl">memories <span class="hint">applied to every chat</span></span>
+        <button class="action" type="button" onclick={addMemory}>+ add</button>
+      </div>
+      {#if memories.length === 0}
+        <div class="doc-empty">no memories — add facts you want the model to remember everywhere</div>
+      {:else}
+        <ul class="doc-list">
+          {#each memories as m (m.id)}
+            <li>
+              <span class="doc-name" title={m.content}>{m.content}</span>
+              <button class="doc-x" aria-label="forget" onclick={() => removeMemory(m.id)}>×</button>
             </li>
           {/each}
         </ul>

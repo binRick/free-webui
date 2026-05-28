@@ -274,10 +274,10 @@ We're aiming at the 95% workflow people actually want from open-webui — not st
 - ✅ **Model management** — admin-only `/admin/models` page lists installed Ollama models, supports streaming `pull` (with progress bar) and `delete`. Backend proxies Ollama's native `/api/tags`, `/api/pull`, `/api/delete`. Multiple upstream connections deferred.
 - ✅ **Custom presets / "modelfiles"** — per-user named bundles of (model, system_prompt, temperature, top_p, stop). "Save current" in the settings drawer captures the chat's params; "apply" copies them onto the current conversation.
 - **Tools / function calling** — server-side registry + execution; MCP server support.
-- **Memories** — long-lived facts persisted across conversations.
+- ✅ **Memories** — per-user manually-curated facts in the settings drawer; prepended as a system message in every conversation alongside RAG and web-search context. LLM-based auto-extraction deferred.
 - ✅ **Prompt library** — per-user CRUD; save the current composer text as a named prompt, click any saved prompt to insert. Variables deferred.
 - ✅ **Conversation export** — JSON or Markdown download from the settings drawer. Public share links deferred.
-- **OpenAI-compatible API of our own** — let other clients hit free-webui as if it were OpenAI.
+- ✅ **OpenAI-compatible API of our own** — per-user Bearer-auth `/v1/chat/completions` and `/v1/models`. Mint and revoke keys from `/account`. The full hashed-secret never leaves the DB; the raw key is shown exactly once at mint time.
 
 ### Tier 3 — larger initiatives, mostly skippable
 

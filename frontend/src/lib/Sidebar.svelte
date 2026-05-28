@@ -60,6 +60,7 @@
     <footer>
       <span class="user" title={auth.user.role}>{auth.user.username}</span>
       <div class="footer-actions">
+        <a class="admin-link" href="/account" title="api keys">🔑 api</a>
         {#if auth.user.role === 'admin'}
           <a class="admin-link" href="/admin/models" title="manage installed models">⚙ models</a>
         {/if}

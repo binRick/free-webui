@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from .auth import current_user
 from .config import settings
+from .memories import load_memory_context
 from .rag import retrieve_context
 from .web_search import format_context as format_web_context
 from .web_search import search as web_search
@@ -456,7 +457,8 @@ async def send_message(
     web_ctx = None
     if conv.get("web_search"):
         web_ctx = format_web_context(await web_search(query_text))
-    context = "\n\n".join(c for c in (web_ctx, rag_ctx) if c) or None
+    mem_ctx = await load_memory_context(db, user["id"])
+    context = "\n\n".join(c for c in (mem_ctx, web_ctx, rag_ctx) if c) or None
     upstream = _build_upstream_messages(
         conv["system_prompt"],
         context,
@@ -506,7 +508,8 @@ async def regenerate(
     web_ctx = None
     if conv.get("web_search"):
         web_ctx = format_web_context(await web_search(last_user_text))
-    context = "\n\n".join(c for c in (web_ctx, rag_ctx) if c) or None
+    mem_ctx = await load_memory_context(db, user["id"])
+    context = "\n\n".join(c for c in (mem_ctx, web_ctx, rag_ctx) if c) or None
     upstream = _build_upstream_messages(conv["system_prompt"], context, history)
     return StreamingResponse(
         _stream_and_persist(
@@ -557,7 +560,8 @@ async def edit_message(
     web_ctx = None
     if conv.get("web_search"):
         web_ctx = format_web_context(await web_search(query_text))
-    context = "\n\n".join(c for c in (web_ctx, rag_ctx) if c) or None
+    mem_ctx = await load_memory_context(db, user["id"])
+    context = "\n\n".join(c for c in (mem_ctx, web_ctx, rag_ctx) if c) or None
     upstream = _build_upstream_messages(conv["system_prompt"], context, history)
     return StreamingResponse(
         _stream_and_persist(

@@ -177,6 +177,62 @@ export async function pullModel(name: string, opts: PullOpts): Promise<void> {
   }
 }
 
+export interface Memory {
+  id: number;
+  content: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export async function listMemories(): Promise<Memory[]> {
+  const res = await fetch('/api/memories');
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function createMemory(content: string): Promise<Memory> {
+  const res = await fetch('/api/memories', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ content })
+  });
+  if (!res.ok) throw new Error(`create memory failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteMemory(id: number): Promise<void> {
+  await fetch(`/api/memories/${id}`, { method: 'DELETE' });
+}
+
+export interface ApiKey {
+  id: number;
+  name: string;
+  key_prefix: string;
+  last_used_at: number | null;
+  created_at: number;
+  key?: string;
+}
+
+export async function listApiKeys(): Promise<ApiKey[]> {
+  const res = await fetch('/api/api_keys');
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function mintApiKey(name: string): Promise<ApiKey> {
+  const res = await fetch('/api/api_keys', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name })
+  });
+  if (!res.ok) throw new Error(`mint key failed: ${res.status}`);
+  return res.json();
+}
+
+export async function revokeApiKey(id: number): Promise<void> {
+  await fetch(`/api/api_keys/${id}`, { method: 'DELETE' });
+}
+
 export interface Preset {
   id: number;
   name: string;

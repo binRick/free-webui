@@ -74,12 +74,32 @@ CREATE TABLE IF NOT EXISTS presets (
     updated_at     INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS api_keys (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name         TEXT NOT NULL,
+    key_prefix   TEXT NOT NULL,
+    key_hash     TEXT NOT NULL UNIQUE,
+    last_used_at INTEGER,
+    created_at   INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS memories (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    content    TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, id);
 CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_documents_conv ON documents(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_chunks_doc ON chunks(document_id);
 CREATE INDEX IF NOT EXISTS idx_prompts_user ON prompts(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_presets_user ON presets(user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id);
+CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, updated_at DESC);
 """
 
 _MIGRATIONS: tuple[tuple[str, str, str], ...] = (

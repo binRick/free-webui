@@ -67,6 +67,49 @@ export async function deleteConversation(id: string): Promise<void> {
   await fetch(`/api/conversations/${id}`, { method: 'DELETE' });
 }
 
+export interface Document {
+  id: number;
+  filename: string;
+  mime: string | null;
+  bytes: number;
+  chunk_count: number;
+  embedding_model: string | null;
+  created_at: number;
+}
+
+export async function listDocuments(conversationId: string): Promise<Document[]> {
+  const res = await fetch(`/api/conversations/${conversationId}/documents`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function uploadDocument(
+  conversationId: string,
+  file: File
+): Promise<Document> {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch(`/api/conversations/${conversationId}/documents`, {
+    method: 'POST',
+    body: fd
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail ?? `upload failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteDocument(
+  conversationId: string,
+  documentId: number
+): Promise<void> {
+  await fetch(
+    `/api/conversations/${conversationId}/documents/${documentId}`,
+    { method: 'DELETE' }
+  );
+}
+
 export async function updateConversation(
   id: string,
   patch: UpdateConversation

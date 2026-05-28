@@ -32,8 +32,29 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at      INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS documents (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    filename        TEXT NOT NULL,
+    mime            TEXT,
+    bytes           INTEGER NOT NULL,
+    chunk_count     INTEGER NOT NULL DEFAULT 0,
+    embedding_model TEXT,
+    created_at      INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS chunks (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id  INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    seq          INTEGER NOT NULL,
+    text         TEXT NOT NULL,
+    embedding    BLOB NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, id);
 CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_documents_conv ON documents(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_chunks_doc ON chunks(document_id);
 """
 
 _MIGRATIONS: tuple[tuple[str, str, str], ...] = (

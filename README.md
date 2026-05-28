@@ -44,6 +44,12 @@ If `open-webui` is the kitchen-sink reference, `free-webui` aims to be the lean,
 
 <p align="center"><sub>multimodal: paste / drop / pick images — sent as OpenAI multimodal content. Pair with a vision model (e.g. <code>llama3.2-vision</code>) to actually interpret them.</sub></p>
 
+<p align="center">
+  <img src="./docs/img/screenshot-rag.png" alt="RAG: model answers correctly using an attached document it can't see in the visible chat history" width="70%"/>
+</p>
+
+<p align="center"><sub>RAG: upload docs in the settings drawer; the 📎 badge shows when RAG is active. Here the model correctly cites a fact from <code>product_notes.md</code> that never appeared in the visible message history.</sub></p>
+
 ---
 
 ## Status
@@ -219,13 +225,28 @@ export FREE_WEBUI_DEFAULT_MODEL=meta-llama/Llama-3.1-8B-Instruct
 
 ## API surface
 
-| Method | Path           | Body                                         | Returns                                         |
-| ------ | -------------- | -------------------------------------------- | ----------------------------------------------- |
-| GET    | `/api/health`  | —                                            | `{"status":"ok"}`                               |
-| GET    | `/api/models`  | —                                            | `{"data":[{"id":"llama3.2"}, …]}`               |
-| POST   | `/api/chat`    | `{model?, messages:[{role,content}], …}`     | `text/event-stream` — OpenAI delta chunks + `[DONE]` |
+| Method | Path | Body | Returns |
+| ------ | ---- | ---- | ------- |
+| GET    | `/api/health` | — | `{"status":"ok"}` |
+| GET    | `/api/models` | — | `{"data":[{"id":"llama3.2"}, …]}` |
+| GET    | `/api/auth/status` | — | `{user?, setup_required}` |
+| POST   | `/api/auth/setup` | `{username, password}` | `User` (sets cookie) — first-user only |
+| POST   | `/api/auth/login` | `{username, password}` | `User` (sets cookie) |
+| POST   | `/api/auth/logout` | — | 204 |
+| GET    | `/api/auth/me` | — | `User` |
+| GET    | `/api/conversations` | — | `[ConversationSummary]` (non-empty, scoped to user) |
+| POST   | `/api/conversations` | `{model?}` | `ConversationSummary` |
+| GET    | `/api/conversations/{id}` | — | `Conversation` (with messages + params) |
+| PATCH  | `/api/conversations/{id}` | `{title?, model?, system_prompt?, temperature?, top_p?, stop?}` | `Conversation` |
+| DELETE | `/api/conversations/{id}` | — | 204 |
+| POST   | `/api/conversations/{id}/messages` | `{content: string \| ContentPart[], model?}` | SSE — OpenAI delta + `[DONE]` |
+| POST   | `/api/conversations/{id}/regenerate` | `{model?}` | SSE — drops last assistant, re-streams |
+| PATCH  | `/api/conversations/{id}/messages/{msg_id}` | `{content, model?}` | SSE — truncates + re-streams |
+| GET    | `/api/conversations/{id}/documents` | — | `[Document]` |
+| POST   | `/api/conversations/{id}/documents` | `multipart file=` | `Document` (parses, chunks, embeds, stores) |
+| DELETE | `/api/conversations/{id}/documents/{doc_id}` | — | 204 |
 
-The SSE payload is the upstream's OpenAI delta format, re-emitted verbatim. That keeps the parser in `frontend/src/lib/chat.ts` trivial and lets you swap the backend for a different proxy without changing the client.
+The SSE payload is the upstream's OpenAI delta format, re-emitted verbatim, so the frontend parser stays trivial and the backend can be swapped for a different proxy without changing the client.
 
 ---
 
@@ -246,7 +267,7 @@ We're aiming at the 95% workflow people actually want from open-webui — not st
 ### Tier 2 — the things people pick open-webui *for*
 
 - ✅ **Auth** — first-run `/setup` creates an admin (argon2id hashing); signed HTTP-only cookie session; all conversation routes are scoped per-user. Additional users via direct DB insert for now (admin UI is a follow-up). OAuth deferred.
-- **RAG** — uploads, chunking, embeddings (Ollama / OpenAI), vector store, retrieval with citations.
+- ✅ **RAG** — per-chat document upload (txt / md / pdf / common code files), fixed-size chunking with overlap, embeddings via the upstream's OpenAI-compatible `/v1/embeddings` (default model: `nomic-embed-text`), float32 BLOB storage, brute-force cosine retrieval, retrieved excerpts prepended as a system message every turn. Settings drawer shows attached docs + a 📎 N badge appears in the chat header when RAG is active.
 - **Web search** — pluggable providers (SearXNG, Brave, Tavily, Google PSE) with citations.
 - ✅ **Multimodal input** — paste / drop / pick images in the composer; sent as OpenAI multimodal content arrays (`{type:"text"}` + `{type:"image_url"}`) and persisted as JSON. Use any vision model (Ollama `llama3.2-vision`, `qwen2.5-vl`, OpenAI `gpt-4o`, etc.) to actually interpret them.
 - **Voice** — STT for input, TTS for output.

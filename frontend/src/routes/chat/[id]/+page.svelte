@@ -2,14 +2,18 @@
   import { tick } from 'svelte';
   import { page } from '$app/state';
   import {
+    deleteDocument,
     editMessage,
     getConversation,
+    listDocuments,
     listModels,
     parseContent,
     regenerate,
     sendMessage,
     updateConversation,
+    uploadDocument,
     type ContentPart,
+    type Document,
     type MessageContent,
     type Role
   } from '$lib/api';
@@ -40,6 +44,10 @@
   let topP = $state<string>('');
   let stopText = $state('');
   let savingSettings = $state(false);
+  let docs = $state<Document[]>([]);
+  let docUploading = $state(false);
+  let docError = $state<string | null>(null);
+  let docInput: HTMLInputElement;
   let abort: AbortController | null = null;
   let scroller: HTMLDivElement;
 
@@ -66,11 +74,42 @@
       topP = conv.top_p != null ? String(conv.top_p) : '';
       stopText = (conv.stop ?? []).join(', ');
       editingIndex = null;
+      docs = await listDocuments(id);
       await tick();
       scroller?.scrollTo({ top: scroller.scrollHeight });
     } catch (err) {
       loadingError = (err as Error).message;
     }
+  }
+
+  async function onDocPick(e: Event) {
+    const target = e.target as HTMLInputElement;
+    if (!target.files || target.files.length === 0) return;
+    docUploading = true;
+    docError = null;
+    try {
+      for (const f of Array.from(target.files)) {
+        await uploadDocument(currentId, f);
+      }
+      docs = await listDocuments(currentId);
+    } catch (err) {
+      docError = (err as Error).message;
+    } finally {
+      target.value = '';
+      docUploading = false;
+    }
+  }
+
+  async function removeDoc(id: number) {
+    if (!confirm('remove this document?')) return;
+    await deleteDocument(currentId, id);
+    docs = await listDocuments(currentId);
+  }
+
+  function formatBytes(n: number): string {
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / 1024 / 1024).toFixed(1)} MB`;
   }
 
   function parseNumber(s: string): number | null {
@@ -258,7 +297,14 @@
 
 <header>
   <button class="hamburger" aria-label="open sidebar" onclick={() => sidebar.toggle()}>☰</button>
-  <div class="title">{title}</div>
+  <div class="title">
+    {title}
+    {#if docs.length > 0}
+      <span class="rag-badge" title="{docs.length} document{docs.length === 1 ? '' : 's'} attached — RAG active">
+        📎 {docs.length}
+      </span>
+    {/if}
+  </div>
   <div class="header-controls">
     <select bind:value={model} disabled={streaming}>
       {#if models.length === 0}
@@ -306,6 +352,40 @@
       <button class="action primary" onclick={saveSettings} disabled={savingSettings}>
         {savingSettings ? 'saving…' : 'save'}
       </button>
+    </div>
+
+    <div class="docs">
+      <div class="docs-head">
+        <span class="lbl">documents (rag)</span>
+        <input
+          bind:this={docInput}
+          type="file"
+          accept=".txt,.md,.pdf,.py,.ts,.tsx,.js,.jsx,.svelte,.go,.rs,.java,.json,.yaml,.yml,.toml,.csv,.html,.css,.sql"
+          multiple
+          hidden
+          onchange={onDocPick}
+        />
+        <button
+          class="action"
+          type="button"
+          onclick={() => docInput.click()}
+          disabled={docUploading}
+        >{docUploading ? 'uploading…' : '+ upload'}</button>
+      </div>
+      {#if docError}<div class="doc-err">{docError}</div>{/if}
+      {#if docs.length === 0}
+        <div class="doc-empty">no documents — upload .txt, .md, .pdf or a code file to ground replies in its contents</div>
+      {:else}
+        <ul class="doc-list">
+          {#each docs as d (d.id)}
+            <li>
+              <span class="doc-name" title={d.filename}>{d.filename}</span>
+              <span class="doc-meta">{d.chunk_count} chunks · {formatBytes(d.bytes)}</span>
+              <button class="doc-x" aria-label="remove" onclick={() => removeDoc(d.id)}>×</button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
     </div>
   </section>
 {/if}
@@ -434,6 +514,19 @@
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+  .rag-badge {
+    flex-shrink: 0;
+    background: color-mix(in srgb, var(--accent-2) 18%, transparent);
+    color: var(--accent-2);
+    border: 1px solid color-mix(in srgb, var(--accent-2) 40%, transparent);
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
   }
   .header-controls {
     display: flex;
@@ -492,6 +585,73 @@
     gap: 0.4rem;
     margin-top: 0.25rem;
   }
+  .docs {
+    border-top: 1px solid var(--border-soft);
+    padding-top: 0.65rem;
+    margin-top: 0.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .docs-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  .doc-err {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+    padding: 0.35rem 0.55rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+  }
+  .doc-empty {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    padding: 0.25rem 0;
+  }
+  .doc-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .doc-list li {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.5rem;
+    background: var(--bg-elev);
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    font-size: 0.82rem;
+  }
+  .doc-name {
+    flex: 1;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--text);
+  }
+  .doc-meta {
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    white-space: nowrap;
+  }
+  .doc-x {
+    background: transparent;
+    border: 0;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0 0.35rem;
+    border-radius: 4px;
+  }
+  .doc-x:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
   select,
   button,
   textarea,

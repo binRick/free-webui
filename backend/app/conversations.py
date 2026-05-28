@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from .auth import current_user
 from .config import settings
+from .rag import retrieve_context
 
 router = APIRouter(
     prefix="/api/conversations",
@@ -123,6 +124,15 @@ def _content_preview(content: str | list[dict]) -> str:
     return content
 
 
+def _content_text(content: str | list[dict]) -> str:
+    """Plain-text view of a message, used for RAG query embedding."""
+    if isinstance(content, list):
+        return " ".join(
+            p.get("text", "") for p in content if p.get("type") == "text"
+        ).strip()
+    return content
+
+
 async def _load_history(db: aiosqlite.Connection, cid: str) -> list[dict]:
     cur = await db.execute(
         "SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY id", (cid,)
@@ -154,11 +164,16 @@ async def _conv_settings(db: aiosqlite.Connection, cid: str) -> dict[str, Any]:
 
 
 def _build_upstream_messages(
-    system_prompt: str | None, history: list[dict], extra: list[dict] | None = None
+    system_prompt: str | None,
+    context: str | None,
+    history: list[dict],
+    extra: list[dict] | None = None,
 ) -> list[dict]:
     msgs: list[dict] = []
     if system_prompt:
         msgs.append({"role": "system", "content": system_prompt})
+    if context:
+        msgs.append({"role": "system", "content": context})
     msgs.extend(history)
     if extra:
         msgs.extend(extra)
@@ -371,8 +386,12 @@ async def send_message(
     chosen_model = await _maybe_update_model(db, cid, body.model, conv["model"])
     await db.commit()
 
+    context = await retrieve_context(db, http, cid, _content_text(body.content))
     upstream = _build_upstream_messages(
-        conv["system_prompt"], history, [{"role": "user", "content": body.content}]
+        conv["system_prompt"],
+        context,
+        history,
+        [{"role": "user", "content": body.content}],
     )
     return StreamingResponse(
         _stream_and_persist(
@@ -408,7 +427,13 @@ async def regenerate(
     await db.commit()
 
     history = await _load_history(db, cid)
-    upstream = _build_upstream_messages(conv["system_prompt"], history)
+    last_user_text = ""
+    for m in reversed(history):
+        if m["role"] == "user":
+            last_user_text = _content_text(m["content"])
+            break
+    context = await retrieve_context(db, http, cid, last_user_text)
+    upstream = _build_upstream_messages(conv["system_prompt"], context, history)
     return StreamingResponse(
         _stream_and_persist(
             db, http, cid, upstream, chosen_model,
@@ -453,7 +478,8 @@ async def edit_message(
     await db.commit()
 
     history = await _load_history(db, cid)
-    upstream = _build_upstream_messages(conv["system_prompt"], history)
+    context = await retrieve_context(db, http, cid, _content_text(body.content))
+    upstream = _build_upstream_messages(conv["system_prompt"], context, history)
     return StreamingResponse(
         _stream_and_persist(
             db, http, cid, upstream, chosen_model,

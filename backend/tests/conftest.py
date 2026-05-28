@@ -50,13 +50,16 @@ async def _fake_handler(request: httpx.Request) -> httpx.Response:
         inputs = body.get("input", [])
         if isinstance(inputs, str):
             inputs = [inputs]
-        # Deterministic toy embeddings derived from text length, so retrieval
-        # tests can build expectations.
+        # Deterministic toy embeddings: never the zero vector, so cosine
+        # similarity is well-defined for any input.
         return httpx.Response(
             200,
             json={
                 "data": [
-                    {"embedding": [float(len(t) % 7) / 7.0] * 8, "index": i}
+                    {
+                        "embedding": [1.0 + (float(len(t) % 7) / 7.0)] * 8,
+                        "index": i,
+                    }
                     for i, t in enumerate(inputs)
                 ]
             },

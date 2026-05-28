@@ -20,6 +20,14 @@ class Settings(BaseSettings):
     # Session cookie max age (seconds). Default: 30 days.
     session_max_age: int = 60 * 60 * 24 * 30
 
+    # RAG: embedding model + chunking params (set embedding_model to
+    # something your upstream actually serves, e.g. nomic-embed-text).
+    embedding_model: str = "nomic-embed-text"
+    chunk_size: int = 1000
+    chunk_overlap: int = 200
+    rag_top_k: int = 5
+    rag_max_upload_bytes: int = 20 * 1024 * 1024  # 20 MB
+
     # CORS: SvelteKit dev server.
     allowed_origins: list[str] = ["http://localhost:5173"]
 

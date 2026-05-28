@@ -177,6 +177,47 @@ export async function pullModel(name: string, opts: PullOpts): Promise<void> {
   }
 }
 
+export interface Preset {
+  id: number;
+  name: string;
+  model: string | null;
+  system_prompt: string | null;
+  temperature: number | null;
+  top_p: number | null;
+  stop: string[] | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface PresetIn {
+  name: string;
+  model?: string | null;
+  system_prompt?: string | null;
+  temperature?: number | null;
+  top_p?: number | null;
+  stop?: string[] | null;
+}
+
+export async function listPresets(): Promise<Preset[]> {
+  const res = await fetch('/api/presets');
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function createPreset(body: PresetIn): Promise<Preset> {
+  const res = await fetch('/api/presets', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error(`create preset failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deletePreset(id: number): Promise<void> {
+  await fetch(`/api/presets/${id}`, { method: 'DELETE' });
+}
+
 export interface Prompt {
   id: number;
   title: string;

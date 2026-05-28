@@ -2,8 +2,10 @@
   import { tick } from 'svelte';
   import { page } from '$app/state';
   import {
+    createPreset,
     createPrompt,
     deleteDocument,
+    deletePreset,
     deletePrompt,
     editMessage,
     exportConversationUrl,
@@ -11,6 +13,7 @@
     getWebSearchStatus,
     listDocuments,
     listModels,
+    listPresets,
     listPrompts,
     parseContent,
     regenerate,
@@ -20,6 +23,7 @@
     type ContentPart,
     type Document,
     type MessageContent,
+    type Preset,
     type Prompt,
     type Role
   } from '$lib/api';
@@ -55,8 +59,12 @@
   let docError = $state<string | null>(null);
   let docInput: HTMLInputElement;
   let prompts = $state<Prompt[]>([]);
+  let presets = $state<Preset[]>([]);
   let webSearch = $state(false);
   let webSearchAvailable = $state(false);
+  let recognising = $state(false);
+  let speakingIdx = $state<number | null>(null);
+  let recognition: any = null;
   let abort: AbortController | null = null;
   let scroller: HTMLDivElement;
 
@@ -85,6 +93,7 @@
       editingIndex = null;
       docs = await listDocuments(id);
       prompts = await listPrompts();
+      presets = await listPresets();
       webSearch = !!conv.web_search;
       webSearchAvailable = (await getWebSearchStatus()).available;
       await tick();
@@ -141,6 +150,105 @@
     if (!confirm('delete this saved prompt?')) return;
     await deletePrompt(id);
     prompts = await listPrompts();
+  }
+
+  async function saveCurrentAsPreset() {
+    const name = window.prompt('save preset — name?');
+    if (!name) return;
+    await createPreset({
+      name,
+      model,
+      system_prompt: systemPrompt.trim() || null,
+      temperature: parseNumber(temperature),
+      top_p: parseNumber(topP),
+      stop: parseStop(stopText)
+    });
+    presets = await listPresets();
+  }
+
+  async function applyPreset(p: Preset) {
+    if (p.model) model = p.model;
+    systemPrompt = p.system_prompt ?? '';
+    temperature = p.temperature != null ? String(p.temperature) : '';
+    topP = p.top_p != null ? String(p.top_p) : '';
+    stopText = (p.stop ?? []).join(', ');
+    await updateConversation(currentId, {
+      model: p.model ?? model,
+      system_prompt: p.system_prompt ?? null,
+      temperature: p.temperature,
+      top_p: p.top_p,
+      stop: p.stop
+    });
+  }
+
+  async function removePreset(id: number) {
+    if (!confirm('delete this preset?')) return;
+    await deletePreset(id);
+    presets = await listPresets();
+  }
+
+  function toggleMic() {
+    const SR =
+      (globalThis as any).SpeechRecognition ?? (globalThis as any).webkitSpeechRecognition;
+    if (!SR) {
+      alert('this browser does not support speech recognition (try Chrome)');
+      return;
+    }
+    if (recognising && recognition) {
+      recognition.stop();
+      return;
+    }
+    recognition = new SR();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = navigator.language || 'en-US';
+    recognising = true;
+    let finalText = '';
+    recognition.onresult = (e: any) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) finalText += t;
+        else interim += t;
+      }
+      input = (input ? input + ' ' : '') + (finalText + interim).trim();
+    };
+    recognition.onend = () => {
+      recognising = false;
+      recognition = null;
+    };
+    recognition.onerror = () => {
+      recognising = false;
+      recognition = null;
+    };
+    recognition.start();
+  }
+
+  function speakMessage(idx: number, text: string) {
+    if (!('speechSynthesis' in window)) {
+      alert('this browser does not support speech synthesis');
+      return;
+    }
+    if (speakingIdx === idx) {
+      speechSynthesis.cancel();
+      speakingIdx = null;
+      return;
+    }
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.onend = () => { if (speakingIdx === idx) speakingIdx = null; };
+    u.onerror = () => { if (speakingIdx === idx) speakingIdx = null; };
+    speakingIdx = idx;
+    speechSynthesis.speak(u);
+  }
+
+  function messagePlainText(content: string): string {
+    const parsed = parseContent(content);
+    if (typeof parsed === 'string') return parsed;
+    return parsed
+      .filter((p) => p.type === 'text')
+      .map((p) => (p as { text: string }).text)
+      .join(' ');
   }
 
   function parseNumber(s: string): number | null {
@@ -400,6 +508,28 @@
 
     <div class="docs">
       <div class="docs-head">
+        <span class="lbl">presets ("modelfiles")</span>
+        <button class="action" type="button" onclick={saveCurrentAsPreset}>+ save current</button>
+      </div>
+      {#if presets.length === 0}
+        <div class="doc-empty">no presets — save the current model + system prompt + params as a named bundle</div>
+      {:else}
+        <ul class="doc-list">
+          {#each presets as p (p.id)}
+            <li>
+              <button class="prompt-pick" type="button" onclick={() => applyPreset(p)} title="{p.model ?? 'any model'} · {p.system_prompt ?? 'no system prompt'}">
+                {p.name}
+              </button>
+              <span class="doc-meta">{p.model ?? '—'}</span>
+              <button class="doc-x" aria-label="delete" onclick={() => removePreset(p.id)}>×</button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
+
+    <div class="docs">
+      <div class="docs-head">
         <span class="lbl">prompts</span>
         <button class="action" type="button" onclick={savePromptFromInput} disabled={!input.trim()}>
           + save current
@@ -485,6 +615,11 @@
             {#if msg.role === 'assistant' && i === messages.length - 1 && msg.content}
               <button class="action" onclick={regen}>regenerate</button>
             {/if}
+            {#if msg.role === 'assistant' && msg.content}
+              <button class="action" onclick={() => speakMessage(i, messagePlainText(msg.content))}>
+                {speakingIdx === i ? '⏹ stop' : '🔊 speak'}
+              </button>
+            {/if}
           </div>
         {/if}
       </div>
@@ -546,6 +681,14 @@
       onclick={() => fileInput.click()}
       disabled={streaming || editingIndex !== null}
     >📎</button>
+    <button
+      type="button"
+      class="attach mic"
+      class:active={recognising}
+      aria-label="voice input"
+      onclick={toggleMic}
+      disabled={streaming || editingIndex !== null}
+    >🎤</button>
     <textarea
       placeholder="message…  (paste / drop images, or click 📎)"
       bind:value={input}
@@ -882,6 +1025,16 @@
     padding: 0.5rem 0.75rem;
     font-size: 1.1rem;
     line-height: 1;
+  }
+  .mic.active {
+    background: color-mix(in srgb, var(--danger) 30%, var(--bg-elev));
+    border-color: var(--danger);
+    color: #fff;
+    animation: mic-pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes mic-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 60%, transparent); }
+    50%      { box-shadow: 0 0 0 6px color-mix(in srgb, var(--danger) 0%, transparent); }
   }
   .attached {
     display: block;

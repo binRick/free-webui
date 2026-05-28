@@ -270,9 +270,9 @@ We're aiming at the 95% workflow people actually want from open-webui — not st
 - ✅ **RAG** — per-chat document upload (txt / md / pdf / common code files), fixed-size chunking with overlap, embeddings via the upstream's OpenAI-compatible `/v1/embeddings` (default model: `nomic-embed-text`), float32 BLOB storage, brute-force cosine retrieval, retrieved excerpts prepended as a system message every turn. Settings drawer shows attached docs + a 📎 N badge appears in the chat header when RAG is active.
 - ✅ **Web search** — SearXNG-compatible provider. Per-chat toggle in the settings drawer; when on, the user's query is searched, top results' title/url/snippet are prepended as a system message, and a 🌐 web badge appears in the chat header. Brave / Tavily / Google PSE as follow-ups.
 - ✅ **Multimodal input** — paste / drop / pick images in the composer; sent as OpenAI multimodal content arrays (`{type:"text"}` + `{type:"image_url"}`) and persisted as JSON. Use any vision model (Ollama `llama3.2-vision`, `qwen2.5-vl`, OpenAI `gpt-4o`, etc.) to actually interpret them.
-- **Voice** — STT for input, TTS for output.
+- ✅ **Voice** — browser Web Speech API: 🎤 mic button in the composer streams partial transcripts into the textarea (Chrome / Safari), 🔊 button on assistant messages reads them aloud via `speechSynthesis`. Server-side Whisper deferred.
 - ✅ **Model management** — admin-only `/admin/models` page lists installed Ollama models, supports streaming `pull` (with progress bar) and `delete`. Backend proxies Ollama's native `/api/tags`, `/api/pull`, `/api/delete`. Multiple upstream connections deferred.
-- **Custom presets / "modelfiles"** — saved (model, system prompt, params) bundles.
+- ✅ **Custom presets / "modelfiles"** — per-user named bundles of (model, system_prompt, temperature, top_p, stop). "Save current" in the settings drawer captures the chat's params; "apply" copies them onto the current conversation.
 - **Tools / function calling** — server-side registry + execution; MCP server support.
 - **Memories** — long-lived facts persisted across conversations.
 - ✅ **Prompt library** — per-user CRUD; save the current composer text as a named prompt, click any saved prompt to insert. Variables deferred.

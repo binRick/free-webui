@@ -3,10 +3,13 @@ import time
 import uuid
 from typing import Any, AsyncIterator
 
+import datetime
+import re
+
 import aiosqlite
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from .auth import current_user
@@ -343,6 +346,61 @@ async def delete_conversation(
     await _owned(db, cid, user["id"])
     await db.execute("DELETE FROM conversations WHERE id = ?", (cid,))
     await db.commit()
+
+
+def _safe_filename(name: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-")
+    return cleaned or "conversation"
+
+
+def _format_markdown(conv: dict) -> str:
+    out: list[str] = [f"# {conv['title']}", ""]
+    if conv.get("system_prompt"):
+        out += ["**system prompt:**", "", "> " + conv["system_prompt"].replace("\n", "\n> "), ""]
+    for m in conv["messages"]:
+        ts = datetime.datetime.fromtimestamp(m["created_at"]).isoformat(timespec="seconds")
+        content = m["content"]
+        if isinstance(content, list):
+            text_parts = [p.get("text", "") for p in content if p.get("type") == "text"]
+            img_parts = [p for p in content if p.get("type") == "image_url"]
+            content_str = "\n".join(text_parts)
+            if img_parts:
+                content_str += "\n\n" + "\n".join(
+                    f"![attachment]({p['image_url']['url'][:80]}…)" for p in img_parts
+                )
+        else:
+            content_str = content
+        out += [f"## {m['role']}  _{ts}_", "", content_str, ""]
+    return "\n".join(out)
+
+
+@router.get("/{cid}/export")
+async def export_conversation(
+    cid: str,
+    request: Request,
+    user: dict = Depends(current_user),
+    format: str = Query("json", pattern="^(json|md)$"),
+):
+    conv = await get_conversation(cid, request, user)
+    conv_dict = conv.model_dump()
+    # decode multimodal contents for export readability
+    for m in conv_dict["messages"]:
+        m["content"] = _decode_content(m["content"])
+    base = _safe_filename(conv_dict["title"])
+    if format == "md":
+        body = _format_markdown(conv_dict).encode("utf-8")
+        return Response(
+            content=body,
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{base}.md"'},
+        )
+    import json as _json
+    body = _json.dumps(conv_dict, indent=2).encode("utf-8")
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{base}.json"'},
+    )
 
 
 async def _maybe_update_title(

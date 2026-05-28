@@ -275,8 +275,8 @@ We're aiming at the 95% workflow people actually want from open-webui — not st
 - **Custom presets / "modelfiles"** — saved (model, system prompt, params) bundles.
 - **Tools / function calling** — server-side registry + execution; MCP server support.
 - **Memories** — long-lived facts persisted across conversations.
-- **Prompt library** — saved reusable prompts with variables.
-- **Share / export** — public share links; JSON / Markdown export; ChatGPT-format import.
+- ✅ **Prompt library** — per-user CRUD; save the current composer text as a named prompt, click any saved prompt to insert. Variables deferred.
+- ✅ **Conversation export** — JSON or Markdown download from the settings drawer. Public share links deferred.
 - **OpenAI-compatible API of our own** — let other clients hit free-webui as if it were OpenAI.
 
 ### Tier 3 — larger initiatives, mostly skippable

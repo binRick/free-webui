@@ -51,10 +51,20 @@ CREATE TABLE IF NOT EXISTS chunks (
     embedding    BLOB NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS prompts (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title      TEXT NOT NULL,
+    content    TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, id);
 CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_documents_conv ON documents(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_chunks_doc ON chunks(document_id);
+CREATE INDEX IF NOT EXISTS idx_prompts_user ON prompts(user_id, updated_at DESC);
 """
 
 _MIGRATIONS: tuple[tuple[str, str, str], ...] = (

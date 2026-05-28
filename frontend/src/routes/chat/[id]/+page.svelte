@@ -2,11 +2,15 @@
   import { tick } from 'svelte';
   import { page } from '$app/state';
   import {
+    createPrompt,
     deleteDocument,
+    deletePrompt,
     editMessage,
+    exportConversationUrl,
     getConversation,
     listDocuments,
     listModels,
+    listPrompts,
     parseContent,
     regenerate,
     sendMessage,
@@ -15,6 +19,7 @@
     type ContentPart,
     type Document,
     type MessageContent,
+    type Prompt,
     type Role
   } from '$lib/api';
   import { convs } from '$lib/conversations.svelte';
@@ -48,6 +53,7 @@
   let docUploading = $state(false);
   let docError = $state<string | null>(null);
   let docInput: HTMLInputElement;
+  let prompts = $state<Prompt[]>([]);
   let abort: AbortController | null = null;
   let scroller: HTMLDivElement;
 
@@ -75,6 +81,7 @@
       stopText = (conv.stop ?? []).join(', ');
       editingIndex = null;
       docs = await listDocuments(id);
+      prompts = await listPrompts();
       await tick();
       scroller?.scrollTo({ top: scroller.scrollHeight });
     } catch (err) {
@@ -110,6 +117,25 @@
     if (n < 1024) return `${n} B`;
     if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
     return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  }
+
+  async function savePromptFromInput() {
+    const content = input.trim();
+    if (!content) return;
+    const title = window.prompt('save as prompt — title?');
+    if (!title) return;
+    await createPrompt(title, content);
+    prompts = await listPrompts();
+  }
+
+  function insertPrompt(p: Prompt) {
+    input = input ? `${input}\n${p.content}` : p.content;
+  }
+
+  async function removePrompt(id: number) {
+    if (!confirm('delete this saved prompt?')) return;
+    await deletePrompt(id);
+    prompts = await listPrompts();
   }
 
   function parseNumber(s: string): number | null {
@@ -352,6 +378,39 @@
       <button class="action primary" onclick={saveSettings} disabled={savingSettings}>
         {savingSettings ? 'saving…' : 'save'}
       </button>
+    </div>
+
+    <div class="docs">
+      <div class="docs-head">
+        <span class="lbl">prompts</span>
+        <button class="action" type="button" onclick={savePromptFromInput} disabled={!input.trim()}>
+          + save current
+        </button>
+      </div>
+      {#if prompts.length === 0}
+        <div class="doc-empty">no saved prompts — type something then click "save current"</div>
+      {:else}
+        <ul class="doc-list">
+          {#each prompts as p (p.id)}
+            <li>
+              <button class="prompt-pick" type="button" onclick={() => insertPrompt(p)} title={p.content}>
+                {p.title}
+              </button>
+              <button class="doc-x" aria-label="delete" onclick={() => removePrompt(p.id)}>×</button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
+
+    <div class="docs">
+      <div class="docs-head">
+        <span class="lbl">export this chat</span>
+        <div style="display: flex; gap: 0.35rem;">
+          <a class="action" href={exportConversationUrl(currentId, 'json')} download>↓ json</a>
+          <a class="action" href={exportConversationUrl(currentId, 'md')} download>↓ markdown</a>
+        </div>
+      </div>
     </div>
 
     <div class="docs">
@@ -652,6 +711,25 @@
     border-radius: 4px;
   }
   .doc-x:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+  .prompt-pick {
+    flex: 1;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    color: var(--text);
+    cursor: pointer;
+    padding: 0;
+    font: inherit;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .prompt-pick:hover { color: var(--accent); }
+  a.action {
+    text-decoration: none;
+    color: var(--text-dim);
+  }
+  a.action:hover { color: var(--text); background: var(--bg-hover); }
   select,
   button,
   textarea,

@@ -156,7 +156,10 @@ async def test_multimodal_message_persists_and_streams(client):
 
 async def test_user_isolation(client):
     """Conversations are scoped to their owner; cross-user access 404s."""
-    # alice creates a conversation
+    import time as _t
+    from app.auth import hash_password
+    from app.main import app
+
     await _signup(client, "alice", "passpass")
     cid = (await client.post("/api/conversations", json={})).json()["id"]
     await _consume_stream(
@@ -164,26 +167,17 @@ async def test_user_isolation(client):
     )
     assert (await client.get(f"/api/conversations/{cid}")).status_code == 200
 
-    # bob logs in (no /setup available — must be created via second user
-    # path). Since /setup blocks after a user exists, we need an alt path:
-    # for now, manually insert bob via the DB and log in.
-    from app.auth import hash_password
-    from app.config import settings
-    import aiosqlite
-    import time as _t
-
-    async with aiosqlite.connect(settings.db_path) as raw:
-        await raw.execute(
-            "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
-            ("bob", hash_password("passpass"), "user", int(_t.time())),
-        )
-        await raw.commit()
+    # /setup is locked after first user; create bob directly via the app's DB.
+    await app.state.db.execute(
+        "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
+        ("bob", hash_password("passpass"), "user", int(_t.time())),
+    )
+    await app.state.db.commit()
 
     await client.post("/api/auth/logout")
     await client.post(
         "/api/auth/login", json={"username": "bob", "password": "passpass"}
     )
-    # bob can't see alice's chat
     assert (await client.get(f"/api/conversations/{cid}")).status_code == 404
     assert (await client.delete(f"/api/conversations/{cid}")).status_code == 404
     assert (await client.get("/api/conversations")).json() == []

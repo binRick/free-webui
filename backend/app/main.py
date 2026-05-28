@@ -9,6 +9,7 @@ from .config import settings
 from .conversations import router as conversations_router
 from .db import open_db
 from .documents import router as documents_router
+from .prompts import router as prompts_router
 from .schemas import ModelInfo, ModelList
 
 
@@ -39,6 +40,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(conversations_router)
 app.include_router(documents_router)
+app.include_router(prompts_router)
 
 
 @app.get("/api/health")

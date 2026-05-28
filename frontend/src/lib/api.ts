@@ -110,6 +110,41 @@ export async function deleteDocument(
   );
 }
 
+export interface Prompt {
+  id: number;
+  title: string;
+  content: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export async function listPrompts(): Promise<Prompt[]> {
+  const res = await fetch('/api/prompts');
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function createPrompt(title: string, content: string): Promise<Prompt> {
+  const res = await fetch('/api/prompts', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ title, content })
+  });
+  if (!res.ok) throw new Error(`create prompt failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deletePrompt(id: number): Promise<void> {
+  await fetch(`/api/prompts/${id}`, { method: 'DELETE' });
+}
+
+export function exportConversationUrl(
+  conversationId: string,
+  format: 'json' | 'md'
+): string {
+  return `/api/conversations/${conversationId}/export?format=${format}`;
+}
+
 export async function updateConversation(
   id: string,
   patch: UpdateConversation

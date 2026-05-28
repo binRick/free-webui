@@ -271,7 +271,7 @@ We're aiming at the 95% workflow people actually want from open-webui — not st
 - **Web search** — pluggable providers (SearXNG, Brave, Tavily, Google PSE) with citations.
 - ✅ **Multimodal input** — paste / drop / pick images in the composer; sent as OpenAI multimodal content arrays (`{type:"text"}` + `{type:"image_url"}`) and persisted as JSON. Use any vision model (Ollama `llama3.2-vision`, `qwen2.5-vl`, OpenAI `gpt-4o`, etc.) to actually interpret them.
 - **Voice** — STT for input, TTS for output.
-- **Model management** — list / pull / delete Ollama models from the UI; multiple upstream connections.
+- ✅ **Model management** — admin-only `/admin/models` page lists installed Ollama models, supports streaming `pull` (with progress bar) and `delete`. Backend proxies Ollama's native `/api/tags`, `/api/pull`, `/api/delete`. Multiple upstream connections deferred.
 - **Custom presets / "modelfiles"** — saved (model, system prompt, params) bundles.
 - **Tools / function calling** — server-side registry + execution; MCP server support.
 - **Memories** — long-lived facts persisted across conversations.

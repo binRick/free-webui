@@ -4,6 +4,7 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+from .admin_models import router as admin_models_router
 from .auth import router as auth_router
 from .config import settings
 from .conversations import router as conversations_router
@@ -41,6 +42,7 @@ app.include_router(auth_router)
 app.include_router(conversations_router)
 app.include_router(documents_router)
 app.include_router(prompts_router)
+app.include_router(admin_models_router)
 
 
 @app.get("/api/health")

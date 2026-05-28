@@ -59,7 +59,12 @@
   {#if auth.user}
     <footer>
       <span class="user" title={auth.user.role}>{auth.user.username}</span>
-      <button class="logout" onclick={() => auth.logout()}>log out</button>
+      <div class="footer-actions">
+        {#if auth.user.role === 'admin'}
+          <a class="admin-link" href="/admin/models" title="manage installed models">⚙ models</a>
+        {/if}
+        <button class="logout" onclick={() => auth.logout()}>log out</button>
+      </div>
     </footer>
   {/if}
 </aside>
@@ -171,6 +176,16 @@
     white-space: nowrap;
     text-overflow: ellipsis;
   }
+  .footer-actions { display: flex; gap: 0.35rem; align-items: center; }
+  .admin-link {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.72rem;
+    padding: 0.2rem 0.5rem;
+    border: 1px solid var(--border-soft);
+    border-radius: 4px;
+  }
+  .admin-link:hover { color: var(--text); background: var(--bg-hover); }
   .logout {
     background: transparent;
     border: 1px solid var(--border-soft);

@@ -111,6 +111,12 @@ async def current_user(request: Request) -> dict[str, Any]:
     return {"id": row[0], "username": row[1], "role": row[2]}
 
 
+async def require_admin(user: dict = Depends(current_user)) -> dict:
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="admin only")
+    return user
+
+
 def _set_cookie(response: Response, token: str) -> None:
     response.set_cookie(
         SESSION_COOKIE,

@@ -110,6 +110,60 @@ export async function deleteDocument(
   );
 }
 
+export interface InstalledModel {
+  name: string;
+  size: number | null;
+  modified_at: string | null;
+  digest: string | null;
+}
+
+export async function listInstalledModels(): Promise<InstalledModel[]> {
+  const res = await fetch('/api/admin/models');
+  if (!res.ok) throw new Error(`load failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteInstalledModel(name: string): Promise<void> {
+  const res = await fetch(`/api/admin/models?name=${encodeURIComponent(name)}`, {
+    method: 'DELETE'
+  });
+  if (!res.ok) throw new Error(`delete failed: ${res.status}`);
+}
+
+export interface PullOpts {
+  signal?: AbortSignal;
+  onEvent: (event: Record<string, unknown>) => void;
+}
+
+export async function pullModel(name: string, opts: PullOpts): Promise<void> {
+  const res = await fetch('/api/admin/models/pull', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name }),
+    signal: opts.signal
+  });
+  if (!res.ok || !res.body) throw new Error(`pull failed: ${res.status}`);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let nl: number;
+    while ((nl = buf.indexOf('\n')) !== -1) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line) continue;
+      try {
+        opts.onEvent(JSON.parse(line));
+      } catch {
+        // ignore non-JSON lines
+      }
+    }
+  }
+}
+
 export interface Prompt {
   id: number;
   title: string;

@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     upstream_api_key: str = "ollama"
     default_model: str = "llama3.2"
 
+    # Ollama native admin URL (used for pulling/deleting models). If empty,
+    # derived from upstream_base_url by stripping the trailing /v1.
+    ollama_admin_url: str = ""
+
     # SQLite file path. Created on first run.
     db_path: str = "data/free-webui.db"
 

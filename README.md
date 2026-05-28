@@ -38,6 +38,12 @@ If `open-webui` is the kitchen-sink reference, `free-webui` aims to be the lean,
 
 <p align="center"><sub>per-chat settings drawer · first-run admin setup · responsive sidebar overlay at &lt; 768 px</sub></p>
 
+<p align="center">
+  <img src="./docs/img/screenshot-multimodal.png" alt="image attachment in the composer, rendered inline in the user message" width="70%"/>
+</p>
+
+<p align="center"><sub>multimodal: paste / drop / pick images — sent as OpenAI multimodal content. Pair with a vision model (e.g. <code>llama3.2-vision</code>) to actually interpret them.</sub></p>
+
 ---
 
 ## Status
@@ -242,7 +248,7 @@ We're aiming at the 95% workflow people actually want from open-webui — not st
 - ✅ **Auth** — first-run `/setup` creates an admin (argon2id hashing); signed HTTP-only cookie session; all conversation routes are scoped per-user. Additional users via direct DB insert for now (admin UI is a follow-up). OAuth deferred.
 - **RAG** — uploads, chunking, embeddings (Ollama / OpenAI), vector store, retrieval with citations.
 - **Web search** — pluggable providers (SearXNG, Brave, Tavily, Google PSE) with citations.
-- **Multimodal input** — image attachments for vision models.
+- ✅ **Multimodal input** — paste / drop / pick images in the composer; sent as OpenAI multimodal content arrays (`{type:"text"}` + `{type:"image_url"}`) and persisted as JSON. Use any vision model (Ollama `llama3.2-vision`, `qwen2.5-vl`, OpenAI `gpt-4o`, etc.) to actually interpret them.
 - **Voice** — STT for input, TTS for output.
 - **Model management** — list / pull / delete Ollama models from the UI; multiple upstream connections.
 - **Custom presets / "modelfiles"** — saved (model, system prompt, params) bundles.

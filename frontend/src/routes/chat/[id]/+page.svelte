@@ -5,9 +5,12 @@
     editMessage,
     getConversation,
     listModels,
+    parseContent,
     regenerate,
     sendMessage,
     updateConversation,
+    type ContentPart,
+    type MessageContent,
     type Role
   } from '$lib/api';
   import { convs } from '$lib/conversations.svelte';
@@ -25,10 +28,12 @@
   let title = $state('new chat');
   let messages = $state<UIMessage[]>([]);
   let input = $state('');
+  let pendingImages = $state<string[]>([]);
   let streaming = $state(false);
   let loadingError = $state<string | null>(null);
   let editingIndex = $state<number | null>(null);
   let editText = $state('');
+  let fileInput: HTMLInputElement;
   let settingsOpen = $state(false);
   let systemPrompt = $state('');
   let temperature = $state<string>('');
@@ -123,18 +128,81 @@
     }
   }
 
+  function buildOutgoing(text: string, images: string[]): MessageContent {
+    if (images.length === 0) return text;
+    const parts: ContentPart[] = [];
+    if (text) parts.push({ type: 'text', text });
+    for (const url of images) parts.push({ type: 'image_url', image_url: { url } });
+    return parts;
+  }
+
+  function serializeForLocal(text: string, images: string[]): string {
+    const content = buildOutgoing(text, images);
+    return typeof content === 'string' ? content : JSON.stringify(content);
+  }
+
   async function send() {
     const text = input.trim();
-    if (!text || streaming) return;
+    if ((!text && pendingImages.length === 0) || streaming) return;
+    const outgoing = buildOutgoing(text, pendingImages);
+    const localContent = serializeForLocal(text, pendingImages);
     input = '';
+    pendingImages = [];
     messages = [
       ...messages,
-      { id: null, role: 'user', content: text },
+      { id: null, role: 'user', content: localContent },
       { id: null, role: 'assistant', content: '' }
     ];
     await tick();
     scroller?.scrollTo({ top: scroller.scrollHeight });
-    await runStream((opts) => sendMessage(currentId, text, model, opts));
+    await runStream((opts) => sendMessage(currentId, outgoing, model, opts));
+  }
+
+  async function filesToDataUrls(files: FileList | File[]): Promise<string[]> {
+    const out: string[] = [];
+    for (const f of Array.from(files)) {
+      if (!f.type.startsWith('image/')) continue;
+      out.push(await new Promise<string>((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result));
+        r.onerror = () => reject(r.error ?? new Error('read failed'));
+        r.readAsDataURL(f);
+      }));
+    }
+    return out;
+  }
+
+  async function onFilePick(e: Event) {
+    const target = e.target as HTMLInputElement;
+    if (!target.files) return;
+    pendingImages = [...pendingImages, ...(await filesToDataUrls(target.files))];
+    target.value = '';
+  }
+
+  async function onPaste(e: ClipboardEvent) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imgs: File[] = [];
+    for (const item of items) {
+      if (item.kind === 'file' && item.type.startsWith('image/')) {
+        const f = item.getAsFile();
+        if (f) imgs.push(f);
+      }
+    }
+    if (imgs.length) {
+      e.preventDefault();
+      pendingImages = [...pendingImages, ...(await filesToDataUrls(imgs))];
+    }
+  }
+
+  async function onDrop(e: DragEvent) {
+    if (!e.dataTransfer?.files?.length) return;
+    e.preventDefault();
+    pendingImages = [...pendingImages, ...(await filesToDataUrls(e.dataTransfer.files))];
+  }
+
+  function removeImage(i: number) {
+    pendingImages = pendingImages.filter((_, idx) => idx !== i);
   }
 
   async function regen() {
@@ -271,26 +339,73 @@
             <button class="action primary" onclick={saveEdit} disabled={!editText.trim()}>save &amp; rerun</button>
           </div>
         {:else}
-          <Markdown source={msg.content} />
+          {@const parsed = parseContent(msg.content)}
+          {#if typeof parsed === 'string'}
+            <Markdown source={parsed} />
+          {:else}
+            {#each parsed as part}
+              {#if part.type === 'text'}
+                <Markdown source={part.text} />
+              {:else if part.type === 'image_url'}
+                <img class="attached" src={part.image_url.url} alt="attachment" />
+              {/if}
+            {/each}
+          {/if}
         {/if}
       </div>
     </div>
   {/each}
 </div>
 
-<form class="composer" onsubmit={(e) => { e.preventDefault(); send(); }}>
-  <textarea
-    placeholder="message…"
-    bind:value={input}
-    onkeydown={onKey}
-    rows="2"
-    disabled={streaming || editingIndex !== null}
-  ></textarea>
-  {#if streaming}
-    <button type="button" onclick={stop}>stop</button>
-  {:else}
-    <button type="submit" disabled={!input.trim() || editingIndex !== null}>send</button>
+<form
+  class="composer"
+  ondragover={(e) => e.preventDefault()}
+  ondrop={onDrop}
+  onsubmit={(e) => { e.preventDefault(); send(); }}
+>
+  {#if pendingImages.length}
+    <div class="pending">
+      {#each pendingImages as src, i (src)}
+        <div class="thumb">
+          <img src={src} alt="pending {i + 1}" />
+          <button type="button" class="thumb-x" aria-label="remove" onclick={() => removeImage(i)}>×</button>
+        </div>
+      {/each}
+    </div>
   {/if}
+  <div class="row">
+    <input
+      bind:this={fileInput}
+      type="file"
+      accept="image/*"
+      multiple
+      hidden
+      onchange={onFilePick}
+    />
+    <button
+      type="button"
+      class="attach"
+      aria-label="attach image"
+      onclick={() => fileInput.click()}
+      disabled={streaming || editingIndex !== null}
+    >📎</button>
+    <textarea
+      placeholder="message…  (paste / drop images, or click 📎)"
+      bind:value={input}
+      onkeydown={onKey}
+      onpaste={onPaste}
+      rows="2"
+      disabled={streaming || editingIndex !== null}
+    ></textarea>
+    {#if streaming}
+      <button type="button" onclick={stop}>stop</button>
+    {:else}
+      <button
+        type="submit"
+        disabled={(!input.trim() && pendingImages.length === 0) || editingIndex !== null}
+      >send</button>
+    {/if}
+  </div>
 </form>
 
 <style>
@@ -457,12 +572,56 @@
   }
   .composer {
     display: flex;
+    flex-direction: column;
     gap: 0.5rem;
     padding: 1rem;
     border-top: 1px solid var(--border-soft);
     max-width: 760px;
     margin: 0 auto;
     width: calc(100% - 2rem);
+  }
+  .composer .row { display: flex; gap: 0.5rem; align-items: stretch; }
+  .pending {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .thumb {
+    position: relative;
+    width: 72px;
+    height: 72px;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: var(--bg-elev);
+  }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb-x {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.7);
+    color: #fff;
+    cursor: pointer;
+    font-size: 0.85rem;
+    line-height: 18px;
+  }
+  .attach {
+    padding: 0.5rem 0.75rem;
+    font-size: 1.1rem;
+    line-height: 1;
+  }
+  .attached {
+    display: block;
+    max-width: 100%;
+    max-height: 320px;
+    border-radius: 6px;
+    margin: 0.5rem 0;
   }
   textarea {
     flex: 1;

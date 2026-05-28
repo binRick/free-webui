@@ -51,7 +51,9 @@ class CreateBody(BaseModel):
 
 
 class SendBody(BaseModel):
-    content: str
+    # Plain text, or an OpenAI multimodal content array
+    # ([{type: "text", text: "..."}, {type: "image_url", image_url: {"url": "data:..."}}]).
+    content: str | list[dict]
     model: str | None = None
 
 
@@ -60,7 +62,7 @@ class RegenerateBody(BaseModel):
 
 
 class EditBody(BaseModel):
-    content: str
+    content: str | list[dict]
     model: str | None = None
 
 
@@ -89,12 +91,44 @@ async def _owned(db: aiosqlite.Connection, cid: str, user_id: int) -> None:
         raise HTTPException(status_code=404, detail="conversation not found")
 
 
+def _decode_content(raw: str) -> str | list[dict]:
+    """Multimodal messages are stored as JSON-encoded part arrays.
+
+    Heuristic-then-parse: if the raw value looks like a JSON array, try to
+    parse it. Anything else is plain text.
+    """
+    if raw.startswith("[") and raw.endswith("]"):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+    return raw
+
+
+def _encode_content(content: str | list[dict]) -> str:
+    if isinstance(content, list):
+        return json.dumps(content)
+    return content
+
+
+def _content_preview(content: str | list[dict]) -> str:
+    """Short summary of a message (used for auto-title)."""
+    if isinstance(content, list):
+        for part in content:
+            if part.get("type") == "text" and isinstance(part.get("text"), str):
+                return part["text"]
+        return "image"
+    return content
+
+
 async def _load_history(db: aiosqlite.Connection, cid: str) -> list[dict]:
     cur = await db.execute(
         "SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY id", (cid,)
     )
     rows = await cur.fetchall()
-    return [{"role": r[0], "content": r[1]} for r in rows]
+    return [{"role": r[0], "content": _decode_content(r[1])} for r in rows]
 
 
 async def _conv_settings(db: aiosqlite.Connection, cid: str) -> dict[str, Any]:
@@ -331,9 +365,9 @@ async def send_message(
     now = int(time.time())
     await db.execute(
         "INSERT INTO messages (conversation_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-        (cid, "user", body.content, now),
+        (cid, "user", _encode_content(body.content), now),
     )
-    await _maybe_update_title(db, cid, conv["title"], body.content)
+    await _maybe_update_title(db, cid, conv["title"], _content_preview(body.content))
     chosen_model = await _maybe_update_model(db, cid, body.model, conv["model"])
     await db.commit()
 
@@ -409,12 +443,12 @@ async def edit_message(
     conv = await _conv_settings(db, cid)
 
     await db.execute(
-        "UPDATE messages SET content = ? WHERE id = ?", (body.content, msg_id)
+        "UPDATE messages SET content = ? WHERE id = ?", (_encode_content(body.content), msg_id)
     )
     await db.execute(
         "DELETE FROM messages WHERE conversation_id = ? AND id > ?", (cid, msg_id)
     )
-    await _maybe_update_title(db, cid, conv["title"], body.content)
+    await _maybe_update_title(db, cid, conv["title"], _content_preview(body.content))
     chosen_model = await _maybe_update_model(db, cid, body.model, conv["model"])
     await db.commit()
 

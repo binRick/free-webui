@@ -87,6 +87,24 @@ export async function listModels(): Promise<string[]> {
   return (json.data ?? []).map((m: { id: string }) => m.id);
 }
 
+export type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } };
+
+export type MessageContent = string | ContentPart[];
+
+export function parseContent(raw: string): MessageContent {
+  if (raw.startsWith('[') && raw.endsWith(']')) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed as ContentPart[];
+    } catch {
+      // fall through
+    }
+  }
+  return raw;
+}
+
 export interface StreamOpts {
   signal?: AbortSignal;
   onDelta: (delta: string) => void;
@@ -123,7 +141,7 @@ async function consumeStream(res: Response, opts: StreamOpts): Promise<void> {
 
 export async function sendMessage(
   conversationId: string,
-  content: string,
+  content: MessageContent,
   model: string | null,
   opts: StreamOpts
 ): Promise<void> {
@@ -153,7 +171,7 @@ export async function regenerate(
 export async function editMessage(
   conversationId: string,
   messageId: number,
-  content: string,
+  content: MessageContent,
   model: string | null,
   opts: StreamOpts
 ): Promise<void> {

@@ -123,6 +123,37 @@ async def test_update_conversation_params(client):
     assert body["stop"] == ["###", "END"]
 
 
+async def test_multimodal_message_persists_and_streams(client):
+    await _signup(client)
+    cid = (await client.post("/api/conversations", json={})).json()["id"]
+    content = [
+        {"type": "text", "text": "describe this image"},
+        {
+            "type": "image_url",
+            "image_url": {
+                "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABh6FO1AAAAABJRU5ErkJggg=="
+            },
+        },
+    ]
+    text = await _consume_stream(
+        client,
+        "POST",
+        f"/api/conversations/{cid}/messages",
+        {"content": content},
+    )
+    # Fake upstream echoes the text part only.
+    assert text.strip() == "echo: describe this image"
+
+    full = await client.get(f"/api/conversations/{cid}")
+    msgs = full.json()["messages"]
+    import json as _json
+    parts = _json.loads(msgs[0]["content"])
+    assert parts[0]["type"] == "text"
+    assert parts[1]["type"] == "image_url"
+    # Auto-title used the text part, not "[..."
+    assert full.json()["title"] == "describe this image"
+
+
 async def test_user_isolation(client):
     """Conversations are scoped to their owner; cross-user access 404s."""
     # alice creates a conversation

@@ -12,6 +12,7 @@ from .db import open_db
 from .documents import router as documents_router
 from .prompts import router as prompts_router
 from .schemas import ModelInfo, ModelList
+from .web_search import router as web_search_router
 
 
 @asynccontextmanager
@@ -43,6 +44,7 @@ app.include_router(conversations_router)
 app.include_router(documents_router)
 app.include_router(prompts_router)
 app.include_router(admin_models_router)
+app.include_router(web_search_router)
 
 
 @app.get("/api/health")

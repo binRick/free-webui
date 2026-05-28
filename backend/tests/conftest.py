@@ -74,20 +74,13 @@ async def client() -> AsyncIterator[httpx.AsyncClient]:
     os.environ["FREE_WEBUI_SECRET_KEY"] = "test-secret-for-unit-tests"
     os.environ["FREE_WEBUI_SECRET_KEY_PATH"] = str(tmp / "secret.key")
 
-    # Re-import config + app each test so env-driven settings are fresh.
+    # Re-import every app.* module each test so env-driven settings are
+    # fresh and module-level `from .config import settings` rebinds.
     import importlib
     import sys
 
-    for mod in [
-        "app.main",
-        "app.conversations",
-        "app.auth",
-        "app.db",
-        "app.config",
-        "app.schemas",
-    ]:
-        if mod in sys.modules:
-            del sys.modules[mod]
+    for mod in [m for m in list(sys.modules) if m == "app" or m.startswith("app.")]:
+        del sys.modules[mod]
     config = importlib.import_module("app.config")
     config.settings.db_path = str(tmp / "test.db")
     config.settings.secret_key = "test-secret-for-unit-tests"

@@ -15,6 +15,8 @@ from pydantic import BaseModel
 from .auth import current_user
 from .config import settings
 from .rag import retrieve_context
+from .web_search import format_context as format_web_context
+from .web_search import search as web_search
 
 router = APIRouter(
     prefix="/api/conversations",
@@ -45,6 +47,7 @@ class Conversation(BaseModel):
     temperature: float | None = None
     top_p: float | None = None
     stop: list[str] | None = None
+    web_search: bool = False
     created_at: int
     updated_at: int
     messages: list[StoredMessage]
@@ -77,6 +80,7 @@ class UpdateBody(BaseModel):
     temperature: float | None = None
     top_p: float | None = None
     stop: list[str] | None = None
+    web_search: bool | None = None
 
 
 def _db(request: Request) -> aiosqlite.Connection:
@@ -147,7 +151,7 @@ async def _load_history(db: aiosqlite.Connection, cid: str) -> list[dict]:
 async def _conv_settings(db: aiosqlite.Connection, cid: str) -> dict[str, Any]:
     cur = await db.execute(
         """
-        SELECT title, model, system_prompt, temperature, top_p, stop
+        SELECT title, model, system_prompt, temperature, top_p, stop, web_search
         FROM conversations WHERE id = ?
         """,
         (cid,),
@@ -163,6 +167,7 @@ async def _conv_settings(db: aiosqlite.Connection, cid: str) -> dict[str, Any]:
         "temperature": row[3],
         "top_p": row[4],
         "stop": json.loads(stop_raw) if stop_raw else None,
+        "web_search": bool(row[6]),
     }
 
 
@@ -285,7 +290,8 @@ async def get_conversation(
     await _owned(db, cid, user["id"])
     cur = await db.execute(
         """
-        SELECT id, title, model, system_prompt, temperature, top_p, stop, created_at, updated_at
+        SELECT id, title, model, system_prompt, temperature, top_p, stop,
+               web_search, created_at, updated_at
         FROM conversations WHERE id = ?
         """,
         (cid,),
@@ -306,8 +312,9 @@ async def get_conversation(
         temperature=row[4],
         top_p=row[5],
         stop=json.loads(row[6]) if row[6] else None,
-        created_at=row[7],
-        updated_at=row[8],
+        web_search=bool(row[7]),
+        created_at=row[8],
+        updated_at=row[9],
         messages=[
             StoredMessage(id=m[0], role=m[1], content=m[2], created_at=m[3]) for m in msg_rows
         ],
@@ -444,7 +451,12 @@ async def send_message(
     chosen_model = await _maybe_update_model(db, cid, body.model, conv["model"])
     await db.commit()
 
-    context = await retrieve_context(db, http, cid, _content_text(body.content))
+    query_text = _content_text(body.content)
+    rag_ctx = await retrieve_context(db, http, cid, query_text)
+    web_ctx = None
+    if conv.get("web_search"):
+        web_ctx = format_web_context(await web_search(query_text))
+    context = "\n\n".join(c for c in (web_ctx, rag_ctx) if c) or None
     upstream = _build_upstream_messages(
         conv["system_prompt"],
         context,
@@ -490,7 +502,11 @@ async def regenerate(
         if m["role"] == "user":
             last_user_text = _content_text(m["content"])
             break
-    context = await retrieve_context(db, http, cid, last_user_text)
+    rag_ctx = await retrieve_context(db, http, cid, last_user_text)
+    web_ctx = None
+    if conv.get("web_search"):
+        web_ctx = format_web_context(await web_search(last_user_text))
+    context = "\n\n".join(c for c in (web_ctx, rag_ctx) if c) or None
     upstream = _build_upstream_messages(conv["system_prompt"], context, history)
     return StreamingResponse(
         _stream_and_persist(
@@ -536,7 +552,12 @@ async def edit_message(
     await db.commit()
 
     history = await _load_history(db, cid)
-    context = await retrieve_context(db, http, cid, _content_text(body.content))
+    query_text = _content_text(body.content)
+    rag_ctx = await retrieve_context(db, http, cid, query_text)
+    web_ctx = None
+    if conv.get("web_search"):
+        web_ctx = format_web_context(await web_search(query_text))
+    context = "\n\n".join(c for c in (web_ctx, rag_ctx) if c) or None
     upstream = _build_upstream_messages(conv["system_prompt"], context, history)
     return StreamingResponse(
         _stream_and_persist(

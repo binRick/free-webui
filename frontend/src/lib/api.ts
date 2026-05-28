@@ -27,6 +27,7 @@ export interface Conversation {
   temperature: number | null;
   top_p: number | null;
   stop: string[] | null;
+  web_search: boolean;
   created_at: number;
   updated_at: number;
   messages: StoredMessage[];
@@ -39,6 +40,18 @@ export interface UpdateConversation {
   temperature?: number | null;
   top_p?: number | null;
   stop?: string[] | null;
+  web_search?: boolean | null;
+}
+
+export interface WebSearchStatus {
+  available: boolean;
+  url: string | null;
+}
+
+export async function getWebSearchStatus(): Promise<WebSearchStatus> {
+  const res = await fetch('/api/web_search/status');
+  if (!res.ok) return { available: false, url: null };
+  return res.json();
 }
 
 export async function listConversations(): Promise<ConversationSummary[]> {

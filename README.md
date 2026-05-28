@@ -268,7 +268,7 @@ We're aiming at the 95% workflow people actually want from open-webui — not st
 
 - ✅ **Auth** — first-run `/setup` creates an admin (argon2id hashing); signed HTTP-only cookie session; all conversation routes are scoped per-user. Additional users via direct DB insert for now (admin UI is a follow-up). OAuth deferred.
 - ✅ **RAG** — per-chat document upload (txt / md / pdf / common code files), fixed-size chunking with overlap, embeddings via the upstream's OpenAI-compatible `/v1/embeddings` (default model: `nomic-embed-text`), float32 BLOB storage, brute-force cosine retrieval, retrieved excerpts prepended as a system message every turn. Settings drawer shows attached docs + a 📎 N badge appears in the chat header when RAG is active.
-- **Web search** — pluggable providers (SearXNG, Brave, Tavily, Google PSE) with citations.
+- ✅ **Web search** — SearXNG-compatible provider. Per-chat toggle in the settings drawer; when on, the user's query is searched, top results' title/url/snippet are prepended as a system message, and a 🌐 web badge appears in the chat header. Brave / Tavily / Google PSE as follow-ups.
 - ✅ **Multimodal input** — paste / drop / pick images in the composer; sent as OpenAI multimodal content arrays (`{type:"text"}` + `{type:"image_url"}`) and persisted as JSON. Use any vision model (Ollama `llama3.2-vision`, `qwen2.5-vl`, OpenAI `gpt-4o`, etc.) to actually interpret them.
 - **Voice** — STT for input, TTS for output.
 - ✅ **Model management** — admin-only `/admin/models` page lists installed Ollama models, supports streaming `pull` (with progress bar) and `delete`. Backend proxies Ollama's native `/api/tags`, `/api/pull`, `/api/delete`. Multiple upstream connections deferred.

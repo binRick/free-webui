@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     rag_top_k: int = 5
     rag_max_upload_bytes: int = 20 * 1024 * 1024  # 20 MB
 
+    # Web search: SearXNG-compatible endpoint (returns JSON when ?format=json).
+    # Leave empty to disable globally.
+    searxng_url: str = ""
+    web_search_top_k: int = 5
+    web_search_timeout_seconds: float = 10.0
+
     # CORS: SvelteKit dev server.
     allowed_origins: list[str] = ["http://localhost:5173"]
 

@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     temperature   REAL,
     top_p         REAL,
     stop          TEXT,
+    web_search    INTEGER NOT NULL DEFAULT 0,
     created_at    INTEGER NOT NULL,
     updated_at    INTEGER NOT NULL
 );
@@ -73,6 +74,7 @@ _MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("conversations", "top_p", "REAL"),
     ("conversations", "stop", "TEXT"),
     ("conversations", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"),
+    ("conversations", "web_search", "INTEGER NOT NULL DEFAULT 0"),
 )
 
 

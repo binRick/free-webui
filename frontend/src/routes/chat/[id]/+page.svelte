@@ -8,6 +8,7 @@
     editMessage,
     exportConversationUrl,
     getConversation,
+    getWebSearchStatus,
     listDocuments,
     listModels,
     listPrompts,
@@ -54,6 +55,8 @@
   let docError = $state<string | null>(null);
   let docInput: HTMLInputElement;
   let prompts = $state<Prompt[]>([]);
+  let webSearch = $state(false);
+  let webSearchAvailable = $state(false);
   let abort: AbortController | null = null;
   let scroller: HTMLDivElement;
 
@@ -82,6 +85,8 @@
       editingIndex = null;
       docs = await listDocuments(id);
       prompts = await listPrompts();
+      webSearch = !!conv.web_search;
+      webSearchAvailable = (await getWebSearchStatus()).available;
       await tick();
       scroller?.scrollTo({ top: scroller.scrollHeight });
     } catch (err) {
@@ -158,7 +163,8 @@
         system_prompt: systemPrompt.trim() || null,
         temperature: parseNumber(temperature),
         top_p: parseNumber(topP),
-        stop: parseStop(stopText)
+        stop: parseStop(stopText),
+        web_search: webSearch
       });
       settingsOpen = false;
     } finally {
@@ -330,6 +336,9 @@
         📎 {docs.length}
       </span>
     {/if}
+    {#if webSearch}
+      <span class="rag-badge web" title="web search active for this chat">🌐 web</span>
+    {/if}
   </div>
   <div class="header-controls">
     <select bind:value={model} disabled={streaming}>
@@ -372,6 +381,15 @@
     <label>
       <span class="lbl">stop sequences <span class="hint">comma-separated</span></span>
       <input type="text" bind:value={stopText} placeholder="e.g. ###, END" />
+    </label>
+    <label class="toggle">
+      <input type="checkbox" bind:checked={webSearch} disabled={!webSearchAvailable} />
+      <span class="lbl" style="text-transform: none; letter-spacing: 0;">
+        web search
+        {#if !webSearchAvailable}
+          <span class="hint">— set <code>FREE_WEBUI_SEARXNG_URL</code> on the backend to enable</span>
+        {/if}
+      </span>
     </label>
     <div class="settings-actions">
       <button class="action" onclick={() => (settingsOpen = false)}>close</button>
@@ -586,6 +604,17 @@
     padding: 0.1rem 0.5rem;
     border-radius: 999px;
     font-size: 0.7rem;
+  }
+  .rag-badge.web {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+  .toggle {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center;
+    gap: 0.5rem !important;
   }
   .header-controls {
     display: flex;

@@ -16,6 +16,7 @@ from .auth import current_user
 from .config import settings
 from .memories import load_memory_context
 from .rag import retrieve_context
+from .tools import TOOL_SPECS, run_tool
 from .web_search import format_context as format_web_context
 from .web_search import search as web_search
 
@@ -49,6 +50,7 @@ class Conversation(BaseModel):
     top_p: float | None = None
     stop: list[str] | None = None
     web_search: bool = False
+    tools_enabled: bool = False
     created_at: int
     updated_at: int
     messages: list[StoredMessage]
@@ -82,6 +84,7 @@ class UpdateBody(BaseModel):
     top_p: float | None = None
     stop: list[str] | None = None
     web_search: bool | None = None
+    tools_enabled: bool | None = None
 
 
 def _db(request: Request) -> aiosqlite.Connection:
@@ -152,7 +155,8 @@ async def _load_history(db: aiosqlite.Connection, cid: str) -> list[dict]:
 async def _conv_settings(db: aiosqlite.Connection, cid: str) -> dict[str, Any]:
     cur = await db.execute(
         """
-        SELECT title, model, system_prompt, temperature, top_p, stop, web_search
+        SELECT title, model, system_prompt, temperature, top_p, stop,
+               web_search, tools_enabled
         FROM conversations WHERE id = ?
         """,
         (cid,),
@@ -169,6 +173,7 @@ async def _conv_settings(db: aiosqlite.Connection, cid: str) -> dict[str, Any]:
         "top_p": row[4],
         "stop": json.loads(stop_raw) if stop_raw else None,
         "web_search": bool(row[6]),
+        "tools_enabled": bool(row[7]),
     }
 
 
@@ -198,47 +203,136 @@ async def _stream_and_persist(
     temperature: float | None,
     top_p: float | None,
     stop: list[str] | None,
+    tools_enabled: bool = False,
+    max_tool_loops: int = 5,
 ) -> AsyncIterator[bytes]:
-    assembled: list[str] = []
-    payload: dict[str, Any] = {
-        "model": model,
-        "messages": upstream_messages,
-        "stream": True,
-    }
-    if temperature is not None:
-        payload["temperature"] = temperature
-    if top_p is not None:
-        payload["top_p"] = top_p
-    if stop:
-        payload["stop"] = stop
+    """Stream a chat completion. If tools_enabled, runs a tool loop until
+    the upstream finishes with a non-tool finish reason, surfacing each
+    tool call to the client as an `event: tool_call` SSE frame.
+    """
+    msgs = list(upstream_messages)
+    final_content: list[str] = []
+    tools_executed: list[dict] = []
+
+    def _payload() -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "model": model,
+            "messages": msgs,
+            "stream": True,
+        }
+        if temperature is not None:
+            body["temperature"] = temperature
+        if top_p is not None:
+            body["top_p"] = top_p
+        if stop:
+            body["stop"] = stop
+        if tools_enabled:
+            body["tools"] = TOOL_SPECS
+            body["tool_choice"] = "auto"
+        return body
 
     try:
-        async with http.stream("POST", "/chat/completions", json=payload) as r:
-            if r.status_code >= 400:
-                err = (await r.aread()).decode(errors="replace")
-                yield f"data: {json.dumps({'error': err})}\n\n".encode()
-                return
-            async for line in r.aiter_lines():
-                if not line:
-                    continue
-                if line.startswith("data: ") and not line.endswith("[DONE]"):
+        for _ in range(max_tool_loops):
+            iter_content: list[str] = []
+            tool_buf: dict[int, dict] = {}
+            saw_done = False
+
+            async with http.stream("POST", "/chat/completions", json=_payload()) as r:
+                if r.status_code >= 400:
+                    err = (await r.aread()).decode(errors="replace")
+                    yield f"data: {json.dumps({'error': err})}\n\n".encode()
+                    return
+
+                async for line in r.aiter_lines():
+                    if not line:
+                        continue
+                    if line.endswith("[DONE]"):
+                        saw_done = True
+                        # only emit [DONE] when the OUTER loop finishes
+                        continue
+                    if not line.startswith("data: "):
+                        continue
                     try:
                         chunk = json.loads(line[6:])
-                        delta = (
-                            chunk.get("choices", [{}])[0].get("delta", {}).get("content")
-                        )
-                        if isinstance(delta, str) and delta:
-                            assembled.append(delta)
                     except json.JSONDecodeError:
-                        pass
-                yield f"{line}\n\n".encode()
+                        continue
+
+                    delta = chunk.get("choices", [{}])[0].get("delta", {})
+                    content = delta.get("content")
+                    if isinstance(content, str) and content:
+                        iter_content.append(content)
+                        # forward content chunk to client
+                        yield f"{line}\n\n".encode()
+
+                    tc = delta.get("tool_calls")
+                    if isinstance(tc, list):
+                        for c in tc:
+                            idx = int(c.get("index", 0))
+                            rec = tool_buf.setdefault(
+                                idx, {"id": "", "name": "", "args": ""}
+                            )
+                            if c.get("id"):
+                                rec["id"] = c["id"]
+                            fn = c.get("function") or {}
+                            if fn.get("name"):
+                                rec["name"] = fn["name"]
+                            if fn.get("arguments") is not None:
+                                rec["args"] += fn["arguments"]
+
+            final_content.extend(iter_content)
+
+            if not tool_buf:
+                # natural end of generation
+                _ = saw_done
+                break
+
+            # Replay the assistant tool_calls message + each tool's result
+            # back to the upstream, and surface each tool call to the client.
+            assistant_tool_msg: dict[str, Any] = {
+                "role": "assistant",
+                "content": "".join(iter_content),
+                "tool_calls": [
+                    {
+                        "id": rec["id"],
+                        "type": "function",
+                        "function": {
+                            "name": rec["name"],
+                            "arguments": rec["args"],
+                        },
+                    }
+                    for _i, rec in sorted(tool_buf.items())
+                ],
+            }
+            msgs.append(assistant_tool_msg)
+
+            for _i, rec in sorted(tool_buf.items()):
+                try:
+                    args = json.loads(rec["args"]) if rec["args"] else {}
+                except json.JSONDecodeError:
+                    args = {}
+                result = run_tool(rec["name"], args)
+                tools_executed.append(
+                    {"name": rec["name"], "arguments": args, "result": result}
+                )
+                event = json.dumps(
+                    {"name": rec["name"], "arguments": args, "result": result}
+                )
+                yield f"event: tool_call\ndata: {event}\n\n".encode()
+                msgs.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": rec["id"],
+                        "content": result,
+                    }
+                )
     finally:
-        final = "".join(assembled)
-        if final:
+        yield b"data: [DONE]\n\n"
+        text = "".join(final_content)
+        if text:
             ts = int(time.time())
             await db.execute(
                 "INSERT INTO messages (conversation_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-                (cid, "assistant", final, ts),
+                (cid, "assistant", text, ts),
             )
             await db.execute(
                 "UPDATE conversations SET updated_at = ? WHERE id = ?", (ts, cid)
@@ -292,7 +386,7 @@ async def get_conversation(
     cur = await db.execute(
         """
         SELECT id, title, model, system_prompt, temperature, top_p, stop,
-               web_search, created_at, updated_at
+               web_search, tools_enabled, created_at, updated_at
         FROM conversations WHERE id = ?
         """,
         (cid,),
@@ -314,8 +408,9 @@ async def get_conversation(
         top_p=row[5],
         stop=json.loads(row[6]) if row[6] else None,
         web_search=bool(row[7]),
-        created_at=row[8],
-        updated_at=row[9],
+        tools_enabled=bool(row[8]),
+        created_at=row[9],
+        updated_at=row[10],
         messages=[
             StoredMessage(id=m[0], role=m[1], content=m[2], created_at=m[3]) for m in msg_rows
         ],
@@ -468,7 +563,7 @@ async def send_message(
     return StreamingResponse(
         _stream_and_persist(
             db, http, cid, upstream, chosen_model,
-            conv["temperature"], conv["top_p"], conv["stop"],
+            conv["temperature"], conv["top_p"], conv["stop"], tools_enabled=conv["tools_enabled"],
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -514,7 +609,7 @@ async def regenerate(
     return StreamingResponse(
         _stream_and_persist(
             db, http, cid, upstream, chosen_model,
-            conv["temperature"], conv["top_p"], conv["stop"],
+            conv["temperature"], conv["top_p"], conv["stop"], tools_enabled=conv["tools_enabled"],
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -566,7 +661,7 @@ async def edit_message(
     return StreamingResponse(
         _stream_and_persist(
             db, http, cid, upstream, chosen_model,
-            conv["temperature"], conv["top_p"], conv["stop"],
+            conv["temperature"], conv["top_p"], conv["stop"], tools_enabled=conv["tools_enabled"],
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

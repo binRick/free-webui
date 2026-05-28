@@ -28,6 +28,7 @@ export interface Conversation {
   top_p: number | null;
   stop: string[] | null;
   web_search: boolean;
+  tools_enabled: boolean;
   created_at: number;
   updated_at: number;
   messages: StoredMessage[];
@@ -41,6 +42,7 @@ export interface UpdateConversation {
   top_p?: number | null;
   stop?: string[] | null;
   web_search?: boolean | null;
+  tools_enabled?: boolean | null;
 }
 
 export interface WebSearchStatus {
@@ -347,9 +349,16 @@ export function parseContent(raw: string): MessageContent {
   return raw;
 }
 
+export interface ToolCallEvent {
+  name: string;
+  arguments: Record<string, unknown>;
+  result: string;
+}
+
 export interface StreamOpts {
   signal?: AbortSignal;
   onDelta: (delta: string) => void;
+  onToolCall?: (tc: ToolCallEvent) => void;
 }
 
 async function consumeStream(res: Response, opts: StreamOpts): Promise<void> {
@@ -363,19 +372,26 @@ async function consumeStream(res: Response, opts: StreamOpts): Promise<void> {
     buf += decoder.decode(value, { stream: true });
     let sep: number;
     while ((sep = buf.indexOf('\n\n')) !== -1) {
-      const event = buf.slice(0, sep);
+      const frame = buf.slice(0, sep);
       buf = buf.slice(sep + 2);
-      for (const line of event.split('\n')) {
-        if (!line.startsWith('data:')) continue;
-        const data = line.slice(5).trim();
-        if (data === '[DONE]') return;
-        try {
-          const json = JSON.parse(data);
+      let eventType = '';
+      let data = '';
+      for (const line of frame.split('\n')) {
+        if (line.startsWith('event:')) eventType = line.slice(6).trim();
+        else if (line.startsWith('data:')) data = line.slice(5).trim();
+      }
+      if (!data) continue;
+      if (data === '[DONE]') return;
+      try {
+        const json = JSON.parse(data);
+        if (eventType === 'tool_call') {
+          opts.onToolCall?.(json as ToolCallEvent);
+        } else {
           const delta = json.choices?.[0]?.delta?.content;
           if (typeof delta === 'string' && delta.length) opts.onDelta(delta);
-        } catch {
-          // keep-alives etc.
         }
+      } catch {
+        // keep-alives etc.
       }
     }
   }

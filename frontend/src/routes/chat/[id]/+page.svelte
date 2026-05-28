@@ -29,7 +29,8 @@
     type MessageContent,
     type Preset,
     type Prompt,
-    type Role
+    type Role,
+    type ToolCallEvent
   } from '$lib/api';
   import { convs } from '$lib/conversations.svelte';
   import Markdown from '$lib/Markdown.svelte';
@@ -39,6 +40,7 @@
     id: number | null;
     role: Role;
     content: string;
+    tool_calls?: ToolCallEvent[];
   }
 
   let models = $state<string[]>([]);
@@ -67,6 +69,7 @@
   let memories = $state<Memory[]>([]);
   let webSearch = $state(false);
   let webSearchAvailable = $state(false);
+  let toolsEnabled = $state(false);
   let recognising = $state(false);
   let speakingIdx = $state<number | null>(null);
   let recognition: any = null;
@@ -102,6 +105,7 @@
       memories = await listMemories();
       webSearch = !!conv.web_search;
       webSearchAvailable = (await getWebSearchStatus()).available;
+      toolsEnabled = !!conv.tools_enabled;
       await tick();
       scroller?.scrollTo({ top: scroller.scrollHeight });
     } catch (err) {
@@ -291,7 +295,8 @@
         temperature: parseNumber(temperature),
         top_p: parseNumber(topP),
         stop: parseStop(stopText),
-        web_search: webSearch
+        web_search: webSearch,
+        tools_enabled: toolsEnabled
       });
       settingsOpen = false;
     } finally {
@@ -305,11 +310,28 @@
     scroller?.scrollTo({ top: scroller.scrollHeight });
   }
 
-  async function runStream(operation: (opts: { signal: AbortSignal; onDelta: (d: string) => void }) => Promise<void>) {
+  function appendToolCall(tc: ToolCallEvent) {
+    const last = messages[messages.length - 1];
+    const tool_calls = [...(last.tool_calls ?? []), tc];
+    messages[messages.length - 1] = { ...last, tool_calls };
+    scroller?.scrollTo({ top: scroller.scrollHeight });
+  }
+
+  async function runStream(
+    operation: (opts: {
+      signal: AbortSignal;
+      onDelta: (d: string) => void;
+      onToolCall: (tc: ToolCallEvent) => void;
+    }) => Promise<void>
+  ) {
     streaming = true;
     abort = new AbortController();
     try {
-      await operation({ signal: abort.signal, onDelta: appendDelta });
+      await operation({
+        signal: abort.signal,
+        onDelta: appendDelta,
+        onToolCall: appendToolCall
+      });
       await load(currentId);
     } catch (err) {
       const last = messages[messages.length - 1];
@@ -466,6 +488,9 @@
     {#if webSearch}
       <span class="rag-badge web" title="web search active for this chat">🌐 web</span>
     {/if}
+    {#if toolsEnabled}
+      <span class="rag-badge tools" title="tools enabled (now, calculate)">🔧 tools</span>
+    {/if}
   </div>
   <div class="header-controls">
     <select bind:value={model} disabled={streaming}>
@@ -516,6 +541,12 @@
         {#if !webSearchAvailable}
           <span class="hint">— set <code>FREE_WEBUI_SEARXNG_URL</code> on the backend to enable</span>
         {/if}
+      </span>
+    </label>
+    <label class="toggle">
+      <input type="checkbox" bind:checked={toolsEnabled} />
+      <span class="lbl" style="text-transform: none; letter-spacing: 0;">
+        tools <span class="hint">— built-in: <code>now</code>, <code>calculate</code></span>
       </span>
     </label>
     <div class="settings-actions">
@@ -661,6 +692,16 @@
           </div>
         {/if}
       </div>
+      {#if msg.tool_calls && msg.tool_calls.length}
+        <div class="tool-calls">
+          {#each msg.tool_calls as tc, ti (ti)}
+            <div class="tool-chip" title={JSON.stringify(tc.arguments)}>
+              🔧 <code>{tc.name}({Object.entries(tc.arguments).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(', ')})</code>
+              → <code class="tool-result">{tc.result}</code>
+            </div>
+          {/each}
+        </div>
+      {/if}
       <div class="content">
         {#if editingIndex === i}
           <textarea class="edit" bind:value={editText} rows="4"></textarea>
@@ -791,6 +832,33 @@
     color: var(--accent);
     border-color: color-mix(in srgb, var(--accent) 40%, transparent);
   }
+  .rag-badge.tools {
+    background: color-mix(in srgb, #f59e0b 22%, transparent);
+    color: #f59e0b;
+    border-color: color-mix(in srgb, #f59e0b 45%, transparent);
+  }
+  .tool-calls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin: 0.25rem 0 0.5rem;
+  }
+  .tool-chip {
+    font-size: 0.78rem;
+    background: color-mix(in srgb, #f59e0b 10%, transparent);
+    border: 1px solid color-mix(in srgb, #f59e0b 35%, transparent);
+    border-radius: 6px;
+    padding: 0.35rem 0.55rem;
+    color: var(--text-dim);
+  }
+  .tool-chip code {
+    font-family: ui-monospace, monospace;
+    background: var(--bg-hover);
+    padding: 0.05em 0.3em;
+    border-radius: 3px;
+    color: var(--text);
+  }
+  .tool-chip .tool-result { color: var(--accent-2); }
   .toggle {
     display: flex !important;
     flex-direction: row !important;

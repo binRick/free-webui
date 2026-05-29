@@ -85,7 +85,8 @@
   let abort: AbortController | null = null;
   let scroller: HTMLDivElement;
 
-  let currentId = $derived(page.params.id);
+  // This route is /chat/[id], so the param is always present here.
+  let currentId = $derived(page.params.id!);
 
   $effect(() => {
     const id = currentId;

@@ -128,7 +128,7 @@
       <textarea
         bind:value={newHeadersRaw}
         rows="2"
-        placeholder='optional headers — JSON {"Authorization":"Bearer …"} or one "Key: value" per line'
+        placeholder='optional headers — JSON &lbrace;"Authorization":"Bearer …"&rbrace; or one "Key: value" per line'
       ></textarea>
       <button type="submit" disabled={createBusy || !newName.trim() || !newUrl.trim()}>
         {createBusy ? 'adding…' : 'add'}

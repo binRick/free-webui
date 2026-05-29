@@ -265,6 +265,20 @@ export async function adminDeleteUser(id: number): Promise<void> {
   }
 }
 
+export interface PluginRecord {
+  name: string;
+  priority: number;
+  has_inlet: boolean;
+  has_outlet: boolean;
+  error: string | null;
+}
+
+export async function getPlugins(): Promise<PluginRecord[]> {
+  const res = await fetch('/api/plugins');
+  if (!res.ok) throw new Error(`load failed: ${res.status}`);
+  return res.json();
+}
+
 export interface InstalledModel {
   name: string;
   size: number | null;

@@ -73,6 +73,15 @@ class Settings(BaseSettings):
     code_max_output_chars: int = 20000  # cap captured stdout/stderr beyond this
     code_max_concurrency: int = 2  # max simultaneous executions across all chats
 
+    # Pipelines / plugin framework. Point at a directory of operator-installed
+    # Python plugin modules (inlet/outlet hooks) to enable it; empty = disabled.
+    # Plugins are TRUSTED in-process code — do not load from untrusted sources.
+    plugins_dir: str = ""
+    # Per-hook wall-clock cap. NOTE: it only fires at await points — a
+    # synchronously blocking hook cannot be interrupted and will stall the whole
+    # server, so plugins must do blocking I/O / heavy CPU work in a thread.
+    plugins_timeout_seconds: float = 5.0
+
     # CORS: SvelteKit dev server.
     allowed_origins: list[str] = ["http://localhost:5173"]
 

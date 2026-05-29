@@ -16,6 +16,7 @@ from .auth import current_user
 from .config import settings
 from .mcp import compose_tool_specs, run_tool as run_dispatch
 from .memories import load_memory_context
+from .plugins import PluginContext, PluginRegistry, run_inlet, run_outlet
 from .tools import ToolContext
 from .rag import retrieve_context
 from .web_search import format_context as format_web_context
@@ -221,6 +222,7 @@ async def _stream_and_persist(
     tools_enabled: bool = False,
     user_id: int | None = None,
     max_tool_loops: int = 5,
+    plugins: PluginRegistry | None = None,
 ) -> AsyncIterator[bytes]:
     """Stream a chat completion. If tools_enabled, runs a tool loop until
     the upstream finishes with a non-tool finish reason, surfacing each
@@ -239,22 +241,38 @@ async def _stream_and_persist(
     if tools_enabled and user_id is not None:
         tool_specs, dispatch = await compose_tool_specs(db, user_id)
 
+    # Assemble the request body ONCE so a plugin inlet's edits (model, params,
+    # messages) survive across tool-loop iterations. Tools/tool_choice are owned
+    # by the loop, not by plugins, so they're applied per-iteration below.
+    body: dict[str, Any] = {"model": model, "messages": msgs}
+    if temperature is not None:
+        body["temperature"] = temperature
+    if top_p is not None:
+        body["top_p"] = top_p
+    if stop:
+        body["stop"] = stop
+
+    if plugins:
+        ctx = PluginContext(
+            db=db, http=http, user_id=user_id, conversation_id=cid, model=body["model"]
+        )
+        body = await run_inlet(plugins, body, ctx)
+        body.pop("tools", None)  # the tool loop owns the spec/dispatch coupling
+        body.pop("tool_choice", None)
+        # Re-assert the required keys in case an inlet returned a partial dict:
+        # model must survive (a dropped model would 400 the upstream), and msgs
+        # is rebound from the body only when the inlet supplied a real list.
+        body.setdefault("model", model)
+        new_msgs = body.get("messages")
+        if isinstance(new_msgs, list):
+            msgs = new_msgs
+
     def _payload() -> dict[str, Any]:
-        body: dict[str, Any] = {
-            "model": model,
-            "messages": msgs,
-            "stream": True,
-        }
-        if temperature is not None:
-            body["temperature"] = temperature
-        if top_p is not None:
-            body["top_p"] = top_p
-        if stop:
-            body["stop"] = stop
+        p: dict[str, Any] = {**body, "messages": msgs, "stream": True}
         if tools_enabled and tool_specs:
-            body["tools"] = tool_specs
-            body["tool_choice"] = "auto"
-        return body
+            p["tools"] = tool_specs
+            p["tool_choice"] = "auto"
+        return p
 
     try:
         for _ in range(max_tool_loops):
@@ -362,30 +380,42 @@ async def _stream_and_persist(
     finally:
         yield b"data: [DONE]\n\n"
         text = "".join(final_content)
+        # Only run the outlet / persist when the turn actually produced output.
+        # An upstream error or empty completion must not let an outlet fabricate
+        # a phantom assistant message out of empty text (e.g. a footer/banner
+        # outlet turning "" into non-empty), and the outlet should observe only
+        # real model output.
         if text or generated_images:
-            if generated_images:
-                # Persist as a multimodal message so the generated image(s)
-                # survive a reload, rendered by the same image-part path as
-                # user-uploaded images.
-                parts: list[dict] = []
-                if text:
-                    parts.append({"type": "text", "text": text})
-                parts += [
-                    {"type": "image_url", "image_url": {"url": url}}
-                    for url in generated_images
-                ]
-                stored = _encode_content(parts)
-            else:
-                stored = text
-            ts = int(time.time())
-            await db.execute(
-                "INSERT INTO messages (conversation_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-                (cid, "assistant", stored, ts),
-            )
-            await db.execute(
-                "UPDATE conversations SET updated_at = ? WHERE id = ?", (ts, cid)
-            )
-            await db.commit()
+            if plugins:
+                octx = PluginContext(
+                    db=db, http=http, user_id=user_id, conversation_id=cid,
+                    model=body.get("model", model),
+                )
+                text = await run_outlet(plugins, text, octx)
+            if text or generated_images:
+                if generated_images:
+                    # Persist as a multimodal message so the generated image(s)
+                    # survive a reload, rendered by the same image-part path as
+                    # user-uploaded images.
+                    parts: list[dict] = []
+                    if text:
+                        parts.append({"type": "text", "text": text})
+                    parts += [
+                        {"type": "image_url", "image_url": {"url": url}}
+                        for url in generated_images
+                    ]
+                    stored = _encode_content(parts)
+                else:
+                    stored = text
+                ts = int(time.time())
+                await db.execute(
+                    "INSERT INTO messages (conversation_id, role, content, created_at) VALUES (?, ?, ?, ?)",
+                    (cid, "assistant", stored, ts),
+                )
+                await db.execute(
+                    "UPDATE conversations SET updated_at = ? WHERE id = ?", (ts, cid)
+                )
+                await db.commit()
 
 
 @router.get("", response_model=list[ConversationSummary])
@@ -612,6 +642,7 @@ async def send_message(
         _stream_and_persist(
             db, http, cid, upstream, chosen_model,
             conv["temperature"], conv["top_p"], conv["stop"], tools_enabled=conv["tools_enabled"], user_id=user["id"],
+            plugins=getattr(request.app.state, "plugins", None),
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -658,6 +689,7 @@ async def regenerate(
         _stream_and_persist(
             db, http, cid, upstream, chosen_model,
             conv["temperature"], conv["top_p"], conv["stop"], tools_enabled=conv["tools_enabled"], user_id=user["id"],
+            plugins=getattr(request.app.state, "plugins", None),
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -710,6 +742,7 @@ async def edit_message(
         _stream_and_persist(
             db, http, cid, upstream, chosen_model,
             conv["temperature"], conv["top_p"], conv["stop"], tools_enabled=conv["tools_enabled"], user_id=user["id"],
+            plugins=getattr(request.app.state, "plugins", None),
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

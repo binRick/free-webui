@@ -224,6 +224,8 @@ All backend config is environment-driven (prefix `FREE_WEBUI_`):
 | `FREE_WEBUI_CODE_INTERPRETER`     | _(empty — disabled)_             | `docker` \| `subprocess` \| `auto` — enables `run_python` |
 | `FREE_WEBUI_CODE_DOCKER_IMAGE`    | `python:3-alpine`                | Image used by the `docker` code-interpreter backend |
 | `FREE_WEBUI_CODE_TIMEOUT_SECONDS` | `15`                             | Wall-clock limit per code execution              |
+| `FREE_WEBUI_PLUGINS_DIR`          | _(empty — disabled)_             | Directory of operator-installed `*.py` plugin modules (inlet/outlet hooks) — enables the plugin framework |
+| `FREE_WEBUI_PLUGINS_TIMEOUT_SECONDS` | `5.0`                         | Per-hook wall-clock cap before a plugin is skipped |
 
 ### Talking to OpenAI directly
 
@@ -276,6 +278,47 @@ export FREE_WEBUI_CODE_TIMEOUT_SECONDS=15
 
 The `subprocess` backend runs code as a same-host child with timeouts, POSIX rlimits, and a stripped environment, but **is not a security boundary** (the code can read the host filesystem) — use it only for trusted, single-user deployments. Saved image files (e.g. `plt.savefig('plot.png')`) are surfaced to the chat just like generated images.
 
+### Plugins / pipelines
+
+Point the backend at a directory of operator-installed Python modules to hook the chat flow:
+
+```sh
+export FREE_WEBUI_PLUGINS_DIR=backend/example_plugins   # empty = feature disabled
+export FREE_WEBUI_PLUGINS_TIMEOUT_SECONDS=5             # per-hook wall-clock cap (default 5)
+```
+
+Each `*.py` file in that directory may expose one or both **async** hooks plus an optional module-level `PRIORITY`:
+
+```python
+PRIORITY = 10  # lower runs first on inlet; outlet runs in reverse
+
+async def inlet(body: dict, ctx) -> dict | None:
+    """Rewrite the outbound OpenAI request before it hits the upstream
+    (model, temperature, top_p, stop, messages). Return the dict, or
+    mutate it in place and return None."""
+    if body.get("temperature", 0) > 1.2:
+        body["temperature"] = 1.2
+    return body
+
+async def outlet(text: str, ctx) -> str | None:
+    """Rewrite the final assistant text before it is persisted.
+    Return the new string, or None to observe only."""
+    return text.replace("secret", "[redacted]")
+```
+
+`ctx` carries `db`, `http`, `user_id`, `conversation_id`, and `model`. A working example ships at [`backend/example_plugins/clamp_and_redact.py`](backend/example_plugins/clamp_and_redact.py) (clamps temperature on the way in, redacts emails on the way out).
+
+How it behaves:
+
+- **Trust model** — plugins are operator-installed, **trusted, in-process** code with full backend access. This is the deliberate *inverse* of the sandboxed code interpreter; only load files you wrote or audited.
+- **Ordering** — inlets run ascending by `(PRIORITY, name)`; outlets run in reverse so wrappers nest symmetrically.
+- **Isolation** — every hook runs on a deep copy under a timeout in a try/except. A plugin that raises, times out, or returns the wrong type is logged and skipped — the turn proceeds exactly as if it weren't installed. To *block* a turn, a plugin must **rewrite** the body/text (e.g. to a refusal); raising never aborts.
+- **Tool loop** — an inlet's edits are applied once and persist across every tool-loop iteration. Tools/`tool_choice` are owned by the loop, so inlet edits to those keys are ignored.
+- **Outlet vs. stream** — the outlet rewrites only the *persisted* text; the live stream already went out verbatim, so the rewrite shows up on reload.
+- **Async only** — hooks must be `async`; `asyncio.wait_for` cannot interrupt a *synchronous* blocking call, so do blocking work via `asyncio.to_thread`.
+
+Loaded plugins (and any per-file load errors) are visible to admins at `GET /api/plugins`.
+
 ---
 
 ## API surface
@@ -300,6 +343,7 @@ The `subprocess` backend runs code as a same-host child with timeouts, POSIX rli
 | GET    | `/api/conversations/{id}/documents` | — | `[Document]` |
 | POST   | `/api/conversations/{id}/documents` | `multipart file=` | `Document` (parses, chunks, embeds, stores) |
 | DELETE | `/api/conversations/{id}/documents/{doc_id}` | — | 204 |
+| GET    | `/api/plugins` | — | `[PluginRecord]` (admin-only: name, priority, has_inlet, has_outlet, error) |
 
 The SSE payload is the upstream's OpenAI delta format, re-emitted verbatim, so the frontend parser stays trivial and the backend can be swapped for a different proxy without changing the client.
 
@@ -342,8 +386,9 @@ We're aiming at the 95% workflow people actually want from open-webui — not st
 - ✅ **MCP server support** — per-user JSON-RPC MCP servers configured at `/account/mcp`; `tools/list` is auto-merged into the tool catalogue and `tools/call` is dispatched through the same tool loop.
 - ✅ **Image generation** — built-in `imagine(prompt, size?, negative_prompt?)` tool that proxies OpenAI Images / AUTOMATIC1111 / ComfyUI (selected by `FREE_WEBUI_IMAGE_BACKEND`). It rides the existing tool loop: the model calls it, the backend generates the image, returns it as a `data:` URL surfaced over an `event: image` SSE frame, and persists it inside a multimodal assistant message so it survives reload — rendered by the same image-part path as uploaded images. Gated on config: the tool only appears when a backend is set. Disabled → no tool offered.
 - ✅ **Code interpreter** — built-in `run_python(code)` tool (selected by `FREE_WEBUI_CODE_INTERPRETER`). The `docker` backend is a real sandbox (no network, read-only rootfs, non-root, dropped caps, mem/cpu/pid limits); a `subprocess` fallback adds timeouts + rlimits + a stripped env for trusted single-user use (not a security boundary). Code runs in a throwaway per-call workdir; raster images it writes (e.g. matplotlib plots) are surfaced + persisted via the same path as image generation. Gated on config.
+- ✅ **Pipelines / plugin framework** — operator-installed `*.py` plugins in `FREE_WEBUI_PLUGINS_DIR`, each with async `inlet(body, ctx)` / `outlet(text, ctx)` hooks ordered by module-level `PRIORITY`. Trusted, in-process middleware (the deliberate inverse of the sandboxed code interpreter) that rewrites the outbound request and/or the persisted reply. Every hook runs on a deep copy under a timeout with passthrough-on-failure, so a broken plugin never breaks a turn; inlet edits survive the whole tool loop. Read-only admin listing at `GET /api/plugins`. Gated on config. (v2+ deferred: per-chunk `stream` hook, plugin-as-model `pipe`, typed admin/user valves, hot-reload.)
 
-Skippable / not planned: Pipelines / plugin framework, evaluation / leaderboard, channels / spaces, LDAP / SAML, full i18n.
+Skippable / not planned: evaluation / leaderboard, channels / spaces, LDAP / SAML, full i18n.
 
 ### Constraint
 

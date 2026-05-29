@@ -17,6 +17,8 @@ from .images import router as images_router
 from .mcp import router as mcp_router
 from .memories import router as memories_router
 from .openai_compat import router as openai_compat_router
+from .plugins import load as load_plugins
+from .plugins import router as plugins_router
 from .presets import router as presets_router
 from .prompts import router as prompts_router
 from .schemas import ModelInfo, ModelList
@@ -31,6 +33,7 @@ async def lifespan(app: FastAPI):
         timeout=httpx.Timeout(connect=10.0, read=None, write=30.0, pool=10.0),
     )
     app.state.db = await open_db(settings.db_path)
+    app.state.plugins = load_plugins(settings.plugins_dir)
     try:
         yield
     finally:
@@ -61,6 +64,7 @@ app.include_router(openai_compat_router)
 app.include_router(mcp_router)
 app.include_router(images_router)
 app.include_router(code_router)
+app.include_router(plugins_router)
 
 
 @app.get("/api/health")

@@ -1,0 +1,82 @@
+name: free-webui-integration
+
+# Live integration stack: a real open-source model (Ollama) behind the actual
+# free-webui backend, exercised by an HTTP test suite. Everything talks over the
+# compose network; nothing needs to be published to the host.
+#
+#   ../integration/run.sh                 # one-shot: build, pull, test, tear down
+#   docker compose up -d backend          # bring the stack up to poke at manually
+#   docker compose run --rm tests         # run the suite against a running stack
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama-models:/root/.ollama          # cache pulled models across runs
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 10s
+    # ports: ["11434:11434"]                 # uncomment to reach Ollama from host
+
+  # One-shot: pull the chat + embedding models, then exit. `backend` waits for
+  # this to complete so the suite always has its models available.
+  ollama-init:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - "ollama pull ${MODEL:-qwen2.5:1.5b} && ollama pull ${EMBED_MODEL:-nomic-embed-text}"
+    restart: "no"
+
+  backend:
+    build:
+      context: ..
+      dockerfile: integration/Dockerfile
+    image: free-webui-integration:local
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
+    environment:
+      FREE_WEBUI_UPSTREAM_BASE_URL: http://ollama:11434/v1
+      FREE_WEBUI_UPSTREAM_API_KEY: ollama
+      FREE_WEBUI_DEFAULT_MODEL: ${MODEL:-qwen2.5:1.5b}
+      FREE_WEBUI_EMBEDDING_MODEL: ${EMBED_MODEL:-nomic-embed-text}
+      FREE_WEBUI_SECRET_KEY: integration-test-secret-not-for-prod
+      FREE_WEBUI_PLUGINS_DIR: /plugins
+      FREE_WEBUI_ALLOWED_ORIGINS: '["http://localhost:5173"]'
+    volumes:
+      - ./plugins:/plugins:ro                 # deterministic outlet plugin
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/api/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 5s
+    # ports: ["8000:8000"]                    # uncomment to run host-side pytest
+
+  # The integration suite. Reuses the backend image (which already has pytest +
+  # httpx) and drives the backend over HTTP. Not started by `up`; run explicitly.
+  tests:
+    image: free-webui-integration:local
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      BASE_URL: http://backend:8000
+      MODEL: ${MODEL:-qwen2.5:1.5b}
+    volumes:
+      - ./tests:/integration/tests:ro
+    working_dir: /integration/tests
+    command: ["pytest", "-v", "-ra"]
+
+volumes:
+  ollama-models:

@@ -1,0 +1,11 @@
+# Keep the Docker build context small (the backend image only needs backend/).
+.git
+.github
+**/node_modules
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.svelte-kit
+/frontend
+/data
+*.db

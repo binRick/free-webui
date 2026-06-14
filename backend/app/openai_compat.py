@@ -5,7 +5,7 @@ as if it were OpenAI itself. The request body is forwarded to our upstream
 verbatim — no RAG, no web search, no per-chat params — keeping the surface
 predictable for SDK clients."""
 import json
-from typing import Any, AsyncIterator
+from typing import AsyncIterator
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request

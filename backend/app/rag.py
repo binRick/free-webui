@@ -4,7 +4,6 @@ from __future__ import annotations
 import io
 import math
 import struct
-from typing import Iterable
 
 import aiosqlite
 import httpx

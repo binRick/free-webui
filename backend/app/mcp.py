@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from .auth import current_user
+from .netguard import BlockedURLError, check_url
 from .tools import ToolContext, builtin_tool_specs
 from .tools import run_tool_async as run_builtin_async
 
@@ -165,6 +166,10 @@ async def delete_server(
 # ---- MCP JSON-RPC client ----
 
 async def _rpc(url: str, headers: dict[str, str] | None, method: str, params: dict) -> dict:
+    # SSRF guard: a user controls this URL, so refuse internal/metadata targets
+    # before any outbound request. BlockedURLError subclasses RuntimeError, so
+    # callers' `except RuntimeError` paths already treat it as a server failure.
+    await check_url(url)
     payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
     merged = {"content-type": "application/json", "accept": "application/json"}
     if headers:
@@ -200,6 +205,8 @@ async def probe_server(
     url, headers_raw = row
     try:
         result = await _rpc(url, json.loads(headers_raw) if headers_raw else None, "tools/list", {})
+    except BlockedURLError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except (httpx.HTTPError, RuntimeError) as e:
         raise HTTPException(status_code=502, detail=str(e))
     return result

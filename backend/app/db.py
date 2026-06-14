@@ -103,7 +103,12 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
+"""
 
+# Indexes are created AFTER _ensure_columns so an index on a migrated column
+# (e.g. conversations.user_id, added to a legacy pre-auth table) does not fail
+# with "no such column" when an old DB is opened by a newer build.
+INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, id);
 CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_documents_conv ON documents(conversation_id);
@@ -140,7 +145,14 @@ async def open_db(path: str) -> aiosqlite.Connection:
     conn = await aiosqlite.connect(path)
     await conn.execute("PRAGMA foreign_keys = ON")
     await conn.execute("PRAGMA journal_mode = WAL")
+    # Wait up to 5s for a competing writer instead of failing instantly with
+    # "database is locked" (single shared connection + WAL under concurrency).
+    await conn.execute("PRAGMA busy_timeout = 5000")
     await conn.executescript(SCHEMA)
     await conn.commit()
+    # Add any columns missing from a legacy DB BEFORE creating indexes that
+    # reference them.
     await _ensure_columns(conn)
+    await conn.executescript(INDEXES)
+    await conn.commit()
     return conn

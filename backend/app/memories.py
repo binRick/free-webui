@@ -4,7 +4,7 @@ across every conversation. Manually curated for v1 (no auto-extraction).
 import time
 
 import aiosqlite
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
 from .auth import current_user

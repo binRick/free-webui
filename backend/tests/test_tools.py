@@ -13,6 +13,19 @@ def test_calculator_safe_eval():
     assert run_tool("calculate", {"expression": "1/0"}).startswith("error:")
 
 
+def test_calculate_rejects_exponent_dos():
+    """A huge exponent must be refused promptly, not hang the worker on a
+    multi-gigabyte big-int (e.g. 10**100000000)."""
+    from app.tools import run_tool
+
+    assert run_tool("calculate", {"expression": "10**100000000"}).startswith("error:")
+    # Nested powers can't be used to sneak past the exponent cap either.
+    assert run_tool("calculate", {"expression": "(10**1000)**1000"}).startswith("error:")
+    # Ordinary powers still evaluate.
+    assert run_tool("calculate", {"expression": "2**10"}) == "1024"
+    assert run_tool("calculate", {"expression": "2**8"}) == "256"
+
+
 def test_now_returns_iso_string():
     from app.tools import run_tool
     s = run_tool("now", {})

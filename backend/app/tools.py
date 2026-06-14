@@ -66,6 +66,8 @@ def _now(_args: dict[str, Any]) -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
 
 
+_MAX_POW_EXPONENT = 1000  # cap `a ** b` exponent to bound big-int blowup
+
 _SAFE_OPS = {
     ast.Add: operator.add,
     ast.Sub: operator.sub,
@@ -88,7 +90,18 @@ def _safe_eval(node: ast.AST) -> float | int:
         op = _SAFE_OPS.get(type(node.op))
         if op is None:
             raise ValueError(f"unsupported operator: {type(node.op).__name__}")
-        return op(_safe_eval(node.left), _safe_eval(node.right))
+        left = _safe_eval(node.left)
+        right = _safe_eval(node.right)
+        if isinstance(node.op, ast.Pow):
+            # Guard against integer-exponentiation DoS, e.g. 10**100000000 (a
+            # multi-GB big-int that hangs the worker). Cap the exponent, and
+            # forbid raising an already-huge base to a further power (which would
+            # let nesting like (10**1000)**1000 blow up).
+            if isinstance(right, int) and abs(right) > _MAX_POW_EXPONENT:
+                raise ValueError("exponent too large")
+            if isinstance(left, int) and left.bit_length() > 64 and abs(right) > 1:
+                raise ValueError("base too large for exponentiation")
+        return op(left, right)
     if isinstance(node, ast.UnaryOp):
         op = _SAFE_OPS.get(type(node.op))
         if op is None:

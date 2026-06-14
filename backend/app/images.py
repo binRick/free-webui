@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 from .auth import current_user
 from .config import settings
+from .netguard import BlockedURLError, check_url
 
 router = APIRouter(prefix="/api/images", tags=["images"])
 
@@ -118,6 +119,12 @@ async def _openai(prompt: str, negative_prompt: str | None, size_str: str) -> st
     if item.get("b64_json"):
         return _b64_to_data_url(item["b64_json"])
     if item.get("url"):
+        # The result URL comes back from the image backend; guard it before we
+        # fetch server-side so it can't be used to reach internal/metadata hosts.
+        try:
+            await check_url(item["url"])
+        except BlockedURLError as e:
+            raise ImageError(str(e))
         async with _client() as c:
             img = await c.get(item["url"])
         if img.status_code >= 400:

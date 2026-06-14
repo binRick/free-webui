@@ -24,6 +24,39 @@ class Settings(BaseSettings):
     # Session cookie max age (seconds). Default: 30 days.
     session_max_age: int = 60 * 60 * 24 * 30
 
+    # Set the session cookie's Secure flag (only sent over HTTPS). Leave False
+    # for plain-HTTP localhost; set True when served over HTTPS in production.
+    cookie_secure: bool = False
+
+    # Login throttling: max attempts per (client IP, username) within the
+    # rolling window before /login returns 429. Set login_rate_limit=0 to disable.
+    login_rate_limit: int = 10
+    login_rate_window_seconds: float = 60.0
+
+    # Outbound SSRF guard for user-/operator-supplied URLs (MCP server URLs,
+    # image-backend result URLs). When on, refuses link-local / multicast /
+    # reserved / unspecified ranges always, and loopback + private (RFC1918/ULA)
+    # ranges when ssrf_block_private is set. Add trusted hosts or CIDRs to
+    # ssrf_allow_hosts (e.g. ["127.0.0.1", "localhost", "10.0.0.0/8"]) to permit
+    # a local/LAN MCP server. Unresolvable hosts are allowed (they can't be
+    # connected to, so are not an SSRF target).
+    ssrf_protection: bool = True
+    ssrf_block_private: bool = True
+    ssrf_allow_hosts: list[str] = []
+
+    # Reject request bodies larger than this many bytes (coarse DoS backstop;
+    # sits above rag_max_upload_bytes so document uploads still work). 0 disables.
+    max_request_body_bytes: int = 32 * 1024 * 1024
+
+    # Finite read timeout (seconds) for the upstream LLM connection — the max
+    # gap between streamed tokens. Prevents a stalled upstream from hanging a
+    # stream forever (was previously unbounded).
+    upstream_read_timeout_seconds: float = 300.0
+
+    # Emit Strict-Transport-Security. Only meaningful behind HTTPS; off by
+    # default so a plain-HTTP localhost can't poison a browser's HSTS cache.
+    security_hsts: bool = False
+
     # RAG: embedding model + chunking params (set embedding_model to
     # something your upstream actually serves, e.g. nomic-embed-text).
     embedding_model: str = "nomic-embed-text"

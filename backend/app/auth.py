@@ -6,7 +6,7 @@ from typing import Any
 import aiosqlite
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel, Field
 
@@ -124,9 +124,33 @@ def _set_cookie(response: Response, token: str) -> None:
         max_age=settings.session_max_age,
         httponly=True,
         samesite="lax",
-        secure=False,  # set True behind HTTPS in production
+        secure=settings.cookie_secure,  # set FREE_WEBUI_COOKIE_SECURE=true behind HTTPS
         path="/",
     )
+
+
+# In-process login throttle: maps (client IP, username) -> recent attempt
+# timestamps. Best-effort and per-worker (a shared store is a follow-up), but
+# enough to blunt credential stuffing on a single instance.
+_login_attempts: dict[str, list[float]] = {}
+
+
+def _check_login_rate(request: Request, username: str) -> None:
+    limit = settings.login_rate_limit
+    if limit <= 0:
+        return
+    window = settings.login_rate_window_seconds
+    now = time.time()
+    ip = request.client.host if request.client else "?"
+    key = f"{ip}\x00{username}"
+    recent = [t for t in _login_attempts.get(key, []) if now - t < window]
+    if len(recent) >= limit:
+        _login_attempts[key] = recent
+        raise HTTPException(
+            status_code=429, detail="too many login attempts; please wait and retry"
+        )
+    recent.append(now)
+    _login_attempts[key] = recent
 
 
 @router.get("/status", response_model=AuthStatus)
@@ -171,6 +195,7 @@ async def setup_endpoint(body: SetupBody, request: Request, response: Response) 
 
 @router.post("/login", response_model=UserOut)
 async def login_endpoint(body: LoginBody, request: Request, response: Response) -> UserOut:
+    _check_login_rate(request, body.username)
     db = _db(request)
     cur = await db.execute(
         "SELECT id, password_hash, role FROM users WHERE username = ?", (body.username,)

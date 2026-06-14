@@ -1,0 +1,129 @@
+# free-webui — development roadmap & Open WebUI parity
+
+> Working plan for continuing development toward (selective) Open WebUI parity.
+> Constraints are unchanged: **clean-room, MIT, no upstream code, small readable
+> diffs, short dependency list.** We target the ~95% workflow people actually
+> want, not strict feature parity.
+
+Status legend — effort `S`/`M`/`L`/`XL`; priority `P0` (table-stakes / risk) →
+`P3` (niche). Items already shipped are not relisted (see the README roadmap).
+
+---
+
+## Where we are
+
+All three README tiers are essentially shipped: streaming chat with a real
+multi-iteration tool loop, persistence, markdown/KaTeX/mermaid, auth, per-chat
+RAG, SearXNG web search, multimodal input, voice (Web Speech), Ollama model
+management, presets, tools + MCP, memories, prompt library, export, an
+OpenAI-compatible `/v1` surface, PWA, image generation, a hardened Docker code
+interpreter, and inlet/outlet plugins.
+
+The gaps are **depth, hardening, and process** — not missing tiers.
+
+---
+
+## Phase 1 — Harden the core (do first)
+
+Security baseline + cheap correctness/DoS fixes, before widening the surface.
+Most are `S`/`M` and high risk-reduction. **Partially landed on
+`harden/phase1-security-ci` — see CHANGELOG below.**
+
+| Item | Effort | Status |
+| --- | --- | --- |
+| SSRF guard for user/operator URLs (`netguard.py`) wired into `mcp._rpc` + `images` result-fetch | M | ✅ landed |
+| Authenticate `GET /api/models` (anon catalogue leak) | S | ✅ landed |
+| `cookie_secure` config flag (was hardcoded `secure=False`) | S | ✅ landed |
+| Bound `ast.Pow` in `tools._safe_eval` (`10**1e9` big-int DoS) | S | ✅ landed |
+| Security-headers middleware + tighten CORS off `*` + `allow_credentials` | S | ✅ landed |
+| Finite upstream read timeout (was `read=None` → stalls hang forever) | S | ✅ landed |
+| Request body-size cap + global JSON exception envelope (no stack leak) | S | ✅ landed |
+| Login rate-limiting (per IP+username) | S | ✅ landed |
+| `PRAGMA busy_timeout` in `db.open_db` | S | ✅ landed |
+| Client-disconnect abort in the streaming tool loop | M | ⬜ deferred |
+| Transaction-wrap regenerate/edit delete+insert | M | ⬜ deferred |
+| Context/token budgeting (stop sending full history + all memories every turn) | M | ⬜ deferred |
+
+## Phase 2 — Table-stakes chat UX (P0/P1, high-visibility)
+
+| Item | Effort | Notes |
+| --- | --- | --- |
+| Sidebar conversation **search + date grouping + rename** | M | Unusable past a few dozen chats today. Also fix the invalid nested button-in-anchor delete control. |
+| **Copy-whole-message** button + per-message action row | S | Core missing affordance; expose regenerate/delete per message, not just last. |
+| Uniform API error handling + toast store + 401-redirect | M | Kills silent `[]`-swallowing in `api.ts`. |
+| **Message branching** schema + variant navigation | L | `parent_id`/variant column; make regenerate/edit non-destructive. Highest-leverage differentiator. |
+| Feedback/rating table + thumbs up/down | M | Foundation for an admin feedback log. |
+| **LLM-based titling** + follow-up suggestions | M | Titles are the raw first 60 chars today. |
+
+## Phase 3 — Differentiators (P1 depth)
+
+| Item | Effort | Notes |
+| --- | --- | --- |
+| Scalable RAG index + hybrid retrieval | M | Replace pure-Python full-scan cosine (`rag.py`) with `sqlite-vec` / numpy-vectorized + optional BM25. |
+| **Knowledge bases / collections** reusable across chats | L | RAG is per-conversation only; same doc re-embedded per chat. |
+| **Multiple upstream connections** | L | Single baked-in `upstream_base_url`; add a connections table + merged `/api/models` + per-model routing. |
+| User **groups** + granular permissions + per-model access control | L | Binary admin/user today; enforce model access on chat **and** `/v1`. |
+| Server-side session store / revocation | M | Stateless 30-day cookies can't be revoked on password/role change. |
+| **OAuth / OIDC SSO** | L | authlib flow + account linking + open-signup toggle. |
+| Decompose the 1194-LOC chat route + Vitest harness | L | Split into MessageList/MessageItem/Composer/SettingsDrawer; cache status endpoints. |
+| In-composer `#`/`@`/`/` commands + searchable model picker + missing gen params | M | `max_tokens`, penalties, seed, `num_ctx`, `keep_alive`. |
+
+## Phase 4 — Larger bets (infra + enterprise/collab)
+
+Real migration framework (versioned, not ADD-COLUMN-only) → object/media store
+for images (base64-in-SQLite today) → observability + audit log → Anthropic
+`/v1/messages` proxy + harden `/v1` → analytics + feedback log → notes →
+server-side voice (STT/TTS).
+
+## Phase 5 — Big architectural bets (XL, optional)
+
+Postgres + horizontal scaling (the single-process single-SQLite-connection
+design is the blocker) → Helm chart → real-time channels → full i18n + RTL.
+Pursue only if the product targets teams/enterprise.
+
+---
+
+## Quick wins (S, high value)
+
+- Authenticate `/api/models` ✅ · bound `ast.Pow` ✅ · `cookie_secure` flag ✅
+  · `PRAGMA busy_timeout` ✅ · security headers ✅ · upstream read timeout ✅
+  · login throttle ✅ (all landed in Phase 1).
+- Copy-whole-message button (reuse the code-block copy pattern).
+- In-app modal to replace `window.prompt/confirm/alert` (mobile + testability).
+- Cache capability/status endpoints so `runStream`'s post-send `load()` stops
+  refetching 6–7 endpoints every message.
+
+## Big bets
+
+- Postgres + horizontal scaling (root blocker for every scaling/enterprise feature).
+- Message branching as a first-class data model.
+- Full enterprise auth stack (OIDC + LDAP/SCIM + groups/RBAC + server-side sessions).
+- Real-time channels (only if pivoting toward team collaboration).
+
+---
+
+## Program-level workstreams (orthogonal, interleave with the above)
+
+The engineering roadmap above is incomplete without these — mostly P0/P1, cheap:
+
+- **Clean-room / license governance (P0):** `CONTRIBUTING.md` with a per-PR
+  "no upstream code/strings/assets" attestation, `SECURITY.md` disclosure path,
+  a CI license-compat gate (vet every new dep: authlib, sqlite-vec, STT/TTS
+  SDKs, mermaid), a `THIRD-PARTY-NOTICES` file. Protects the project's premise.
+- **Prompt-injection threat model (P0):** RAG/web-search inject untrusted
+  content into a model that can call `run_python`/`imagine`/MCP — an indirect
+  injection → tool-abuse chain. Label injected content as untrusted; add a test
+  that a poisoned doc can't escalate to a tool call.
+- **Docs (P1):** `docs/` is images only. Admin/deploy guide, security-hardening
+  checklist, plugin/tool authoring guide, `/v1` + `/api` reference, ADRs.
+- **Data lifecycle (P1):** SQLite backup/restore, full-instance export/import,
+  per-user GDPR export + erasure, retention policy.
+- **Accessibility (P1):** `aria-live` for streaming tokens, accessible names on
+  icon-only buttons, focus trapping, contrast, `prefers-reduced-motion`.
+- **Release engineering (P1):** semver + CHANGELOG, signed artifacts/SBOM, an
+  N-1-DB-opens-on-N migration test. (README still says "v0.0.1 — core chat".)
+- **Quotas / cost caps (P1):** per-user/group rate limits + token/spend budgets
+  on both chat and `/v1` for paid upstreams.
+
+See `docs/TESTPLAN.md` and `docs/INTEGRATION.md` for the test backlog and the
+integration-validation + CI plan.

@@ -23,6 +23,7 @@
     parseContent,
     regenerate,
     sendMessage,
+    setFeedback,
     updateConversation,
     uploadDocument,
     type ContentPart,
@@ -44,6 +45,7 @@
     content: string;
     tool_calls?: ToolCallEvent[];
     images?: string[];
+    rating?: number | null;
   }
 
   let models = $state<string[]>([]);
@@ -103,7 +105,12 @@
       title = conv.title;
       if (conv.model) model = conv.model;
       else if (models.length && !model) model = models[0];
-      messages = conv.messages.map((m) => ({ id: m.id, role: m.role, content: m.content }));
+      messages = conv.messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        rating: m.rating ?? null
+      }));
       systemPrompt = conv.system_prompt ?? '';
       temperature = conv.temperature != null ? String(conv.temperature) : '';
       topP = conv.top_p != null ? String(conv.top_p) : '';
@@ -284,6 +291,29 @@
       .filter((p) => p.type === 'text')
       .map((p) => (p as { text: string }).text)
       .join(' ');
+  }
+
+  let copiedIdx = $state<number | null>(null);
+  async function copyMessage(idx: number, content: string) {
+    try {
+      await navigator.clipboard.writeText(messagePlainText(content));
+      copiedIdx = idx;
+      setTimeout(() => { if (copiedIdx === idx) copiedIdx = null; }, 1200);
+    } catch {
+      // clipboard unavailable (insecure context / denied) — no-op
+    }
+  }
+
+  async function rateMessage(idx: number, rating: number) {
+    const msg = messages[idx];
+    if (msg.id == null) return;
+    const next = msg.rating === rating ? 0 : rating; // click the active thumb to clear
+    try {
+      const res = await setFeedback(currentId, msg.id, next);
+      messages[idx] = { ...msg, rating: res.rating };
+    } catch {
+      // ignore feedback failure
+    }
   }
 
   function parseNumber(s: string): number | null {
@@ -702,8 +732,29 @@
             {#if msg.role === 'user' && msg.id != null}
               <button class="action" onclick={() => startEdit(i)}>edit</button>
             {/if}
+            {#if messagePlainText(msg.content)}
+              <button class="action" title="copy message" onclick={() => copyMessage(i, msg.content)}>
+                {copiedIdx === i ? '✓ copied' : 'copy'}
+              </button>
+            {/if}
             {#if msg.role === 'assistant' && i === messages.length - 1 && msg.content}
               <button class="action" onclick={regen}>regenerate</button>
+            {/if}
+            {#if msg.role === 'assistant' && msg.id != null && msg.content}
+              <button
+                class="action thumb"
+                class:on={msg.rating === 1}
+                aria-label="good response"
+                title="good response"
+                onclick={() => rateMessage(i, 1)}
+              >👍</button>
+              <button
+                class="action thumb"
+                class:on={msg.rating === -1}
+                aria-label="bad response"
+                title="bad response"
+                onclick={() => rateMessage(i, -1)}
+              >👎</button>
             {/if}
             {#if msg.role === 'assistant' && messagePlainText(msg.content)}
               <button class="action" onclick={() => speakMessage(i, messagePlainText(msg.content))}>
@@ -1099,6 +1150,8 @@
   .action:hover { color: var(--text); background: var(--bg-hover); }
   .action.primary { background: var(--bg-hover); color: var(--text); }
   .action.primary:hover { background: var(--border); }
+  .action.thumb { padding: 0.15rem 0.35rem; }
+  .action.thumb.on { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
   .content { line-height: 1.5; word-wrap: break-word; }
   .edit {
     width: 100%;

@@ -17,6 +17,7 @@ export interface StoredMessage {
   role: Role;
   content: string;
   created_at: number;
+  rating?: number | null; // current user's feedback: 1, -1, or null
 }
 
 export interface Conversation {
@@ -78,9 +79,32 @@ export async function getCodeStatus(): Promise<CodeStatus> {
   return res.json();
 }
 
-export async function listConversations(): Promise<ConversationSummary[]> {
-  const res = await fetch('/api/conversations');
+export async function listConversations(q?: string): Promise<ConversationSummary[]> {
+  const term = q?.trim();
+  const url = term ? `/api/conversations?q=${encodeURIComponent(term)}` : '/api/conversations';
+  const res = await fetch(url);
   if (!res.ok) return [];
+  return res.json();
+}
+
+export async function renameConversation(id: string, title: string): Promise<void> {
+  await updateConversation(id, { title });
+}
+
+export async function setFeedback(
+  conversationId: string,
+  messageId: number,
+  rating: number
+): Promise<{ rating: number | null }> {
+  const res = await fetch(
+    `/api/conversations/${conversationId}/messages/${messageId}/feedback`,
+    {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rating })
+    }
+  );
+  if (!res.ok) throw new Error(`feedback failed: ${res.status}`);
   return res.json();
 }
 

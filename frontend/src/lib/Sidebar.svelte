@@ -4,20 +4,76 @@
   import { page } from '$app/state';
   import { auth } from './auth.svelte';
   import { convs } from './conversations.svelte';
-  import { deleteConversation } from './api';
+  import { deleteConversation, renameConversation, type ConversationSummary } from './api';
   import { sidebar } from './sidebarState.svelte';
   import { theme, type ThemeMode } from './theme.svelte';
 
   onMount(() => convs.refresh());
+
+  let query = $state('');
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  function onSearch() {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => convs.refresh(query), 200);
+  }
 
   async function del(id: string, e: Event) {
     e.preventDefault();
     e.stopPropagation();
     if (!confirm('delete this chat?')) return;
     await deleteConversation(id);
-    await convs.refresh();
+    await convs.refresh(query);
     if (page.params.id === id) goto('/');
   }
+
+  let renamingId = $state<string | null>(null);
+  let renameText = $state('');
+  function startRename(c: ConversationSummary, e: Event) {
+    e.preventDefault();
+    e.stopPropagation();
+    renamingId = c.id;
+    renameText = c.title;
+  }
+  function cancelRename() {
+    renamingId = null;
+  }
+  async function commitRename(id: string) {
+    if (renamingId !== id) return; // already committed/cancelled (e.g. blur after Enter)
+    const t = renameText.trim();
+    renamingId = null;
+    if (t) {
+      await renameConversation(id, t);
+      await convs.refresh(query);
+    }
+  }
+  function focusOnMount(node: HTMLInputElement) {
+    node.focus();
+    node.select();
+  }
+
+  // Group conversations (already sorted newest-first) into date buckets.
+  const ORDER = ['Today', 'Yesterday', 'Previous 7 days', 'Previous 30 days', 'Older'];
+  function bucketOf(ts: number): string {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const today = start.getTime() / 1000;
+    const day = 86400;
+    if (ts >= today) return 'Today';
+    if (ts >= today - day) return 'Yesterday';
+    if (ts >= today - 7 * day) return 'Previous 7 days';
+    if (ts >= today - 30 * day) return 'Previous 30 days';
+    return 'Older';
+  }
+  const grouped = $derived.by(() => {
+    const map = new Map<string, ConversationSummary[]>();
+    for (const c of convs.list) {
+      const b = bucketOf(c.updated_at);
+      const arr = map.get(b);
+      if (arr) arr.push(c);
+      else map.set(b, [c]);
+    }
+    return ORDER.filter((b) => map.has(b)).map((b) => ({ label: b, items: map.get(b)! }));
+  });
 
   function openChat() {
     sidebar.close();
@@ -41,19 +97,41 @@
     >{THEME_LABEL[theme.mode]}</button>
   </header>
   <a href="/" class="new" data-sveltekit-reload onclick={openChat}>+ new chat</a>
+  <div class="search">
+    <input
+      type="search"
+      placeholder="search chats…"
+      bind:value={query}
+      oninput={onSearch}
+      aria-label="search conversations"
+    />
+  </div>
   <nav>
-    {#each convs.list as c (c.id)}
-      <a
-        class="row"
-        class:active={page.params.id === c.id}
-        href="/chat/{c.id}"
-        onclick={openChat}
-      >
-        <span class="title">{c.title}</span>
-        <button class="del" aria-label="delete" onclick={(e) => del(c.id, e)}>×</button>
-      </a>
+    {#each grouped as group (group.label)}
+      <div class="group-label">{group.label}</div>
+      {#each group.items as c (c.id)}
+        <div class="row" class:active={page.params.id === c.id}>
+          {#if renamingId === c.id}
+            <input
+              class="rename"
+              bind:value={renameText}
+              use:focusOnMount
+              onkeydown={(e) => {
+                if (e.key === 'Enter') commitRename(c.id);
+                else if (e.key === 'Escape') cancelRename();
+              }}
+              onblur={() => commitRename(c.id)}
+              aria-label="rename conversation"
+            />
+          {:else}
+            <a class="link" href="/chat/{c.id}" onclick={openChat} title={c.title}>{c.title}</a>
+            <button class="act" aria-label="rename chat" title="rename" onclick={(e) => startRename(c, e)}>✎</button>
+            <button class="act del" aria-label="delete chat" title="delete" onclick={(e) => del(c.id, e)}>×</button>
+          {/if}
+        </div>
+      {/each}
     {:else}
-      <div class="empty">no chats yet</div>
+      <div class="empty">{query.trim() ? 'no matches' : 'no chats yet'}</div>
     {/each}
   </nav>
   {#if auth.user}
@@ -110,7 +188,7 @@
   .theme-toggle:hover { color: var(--text); background: var(--bg-hover); }
   .new {
     display: block;
-    margin: 0.75rem;
+    margin: 0.75rem 0.75rem 0.5rem;
     padding: 0.5rem 0.75rem;
     background: var(--bg-elev);
     color: var(--text);
@@ -121,10 +199,33 @@
     font-size: 0.9rem;
   }
   .new:hover { background: var(--bg-hover); }
+  .search {
+    padding: 0 0.75rem 0.5rem;
+  }
+  .search input {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--bg-elev);
+    color: var(--text);
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    padding: 0.4rem 0.6rem;
+    font: inherit;
+    font-size: 0.85rem;
+  }
+  .search input::placeholder { color: var(--text-muted); }
+  .search input:focus { outline: none; border-color: var(--accent); }
   nav {
     flex: 1;
     overflow-y: auto;
     padding: 0 0.5rem 0.75rem;
+  }
+  .group-label {
+    color: var(--text-muted);
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.6rem 0.5rem 0.25rem;
   }
   .row {
     display: flex;
@@ -133,31 +234,47 @@
     padding: 0.45rem 0.5rem;
     border-radius: 6px;
     color: var(--text-dim);
-    text-decoration: none;
     font-size: 0.9rem;
   }
   .row:hover { background: var(--bg-elev); color: var(--text); }
   .row.active { background: var(--bg-hover); color: var(--text); }
-  .title {
+  .link {
     flex: 1;
+    min-width: 0;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+    color: inherit;
+    text-decoration: none;
   }
-  .del {
+  .rename {
+    flex: 1;
+    min-width: 0;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    padding: 0.15rem 0.35rem;
+    font: inherit;
+    font-size: 0.85rem;
+  }
+  .rename:focus { outline: none; }
+  .act {
     background: transparent;
     border: 0;
     color: var(--text-muted);
     cursor: pointer;
-    font-size: 1rem;
+    font-size: 0.85rem;
     line-height: 1;
-    padding: 0 0.35rem;
+    padding: 0 0.3rem;
     opacity: 0;
     border-radius: 4px;
   }
-  .row:hover .del,
-  .row.active .del { opacity: 1; }
-  .del:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+  .act.del { font-size: 1rem; }
+  .row:hover .act,
+  .row.active .act { opacity: 1; }
+  .act:hover { color: var(--text); background: var(--bg-hover); }
+  .act.del:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
   .empty {
     color: var(--text-muted);
     padding: 1rem;

@@ -10,7 +10,7 @@ import aiosqlite
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .auth import current_user
 from .config import settings
@@ -41,6 +41,7 @@ class StoredMessage(BaseModel):
     role: str
     content: str
     created_at: int
+    rating: int | None = None  # current user's feedback: 1 (up), -1 (down), or None
 
 
 class Conversation(BaseModel):
@@ -159,7 +160,8 @@ def _history_content_for_upstream(role: str, content: str | list[dict]):
 
 async def _load_history(db: aiosqlite.Connection, cid: str) -> list[dict]:
     cur = await db.execute(
-        "SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY id", (cid,)
+        "SELECT role, content FROM messages WHERE conversation_id = ? AND active = 1 ORDER BY id",
+        (cid,),
     )
     rows = await cur.fetchall()
     return [
@@ -223,6 +225,7 @@ async def _stream_and_persist(
     user_id: int | None = None,
     max_tool_loops: int = 5,
     plugins: PluginRegistry | None = None,
+    parent_message_id: int | None = None,
 ) -> AsyncIterator[bytes]:
     """Stream a chat completion. If tools_enabled, runs a tool loop until
     the upstream finishes with a non-tool finish reason, surfacing each
@@ -409,8 +412,9 @@ async def _stream_and_persist(
                     stored = text
                 ts = int(time.time())
                 await db.execute(
-                    "INSERT INTO messages (conversation_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-                    (cid, "assistant", stored, ts),
+                    "INSERT INTO messages (conversation_id, role, content, parent_id, created_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (cid, "assistant", stored, parent_message_id, ts),
                 )
                 await db.execute(
                     "UPDATE conversations SET updated_at = ? WHERE id = ?", (ts, cid)
@@ -420,18 +424,38 @@ async def _stream_and_persist(
 
 @router.get("", response_model=list[ConversationSummary])
 async def list_conversations(
-    request: Request, user: dict = Depends(current_user)
+    request: Request,
+    user: dict = Depends(current_user),
+    q: str | None = Query(default=None, max_length=200),
 ):
     db = _db(request)
-    cur = await db.execute(
+    params: list[Any] = [user["id"]]
+    search_sql = ""
+    term = (q or "").strip()
+    if term:
+        # Match the title OR any message body (active or not) in the conversation.
+        like = f"%{term}%"
+        search_sql = """
+          AND (
+            conversations.title LIKE ? COLLATE NOCASE
+            OR EXISTS (
+              SELECT 1 FROM messages m2
+              WHERE m2.conversation_id = conversations.id
+                AND m2.content LIKE ? COLLATE NOCASE
+            )
+          )
         """
+        params += [like, like]
+    cur = await db.execute(
+        f"""
         SELECT id, title, model, updated_at
         FROM conversations
         WHERE user_id = ?
           AND EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = conversations.id)
+          {search_sql}
         ORDER BY updated_at DESC
         """,
-        (user["id"],),
+        params,
     )
     rows = await cur.fetchall()
     return [
@@ -473,8 +497,15 @@ async def get_conversation(
     if not row:
         raise HTTPException(status_code=404, detail="conversation not found")
     cur = await db.execute(
-        "SELECT id, role, content, created_at FROM messages WHERE conversation_id = ? ORDER BY id",
-        (cid,),
+        """
+        SELECT m.id, m.role, m.content, m.created_at, fb.rating
+        FROM messages m
+        LEFT JOIN message_feedback fb
+               ON fb.message_id = m.id AND fb.user_id = ?
+        WHERE m.conversation_id = ? AND m.active = 1
+        ORDER BY m.id
+        """,
+        (user["id"], cid),
     )
     msg_rows = await cur.fetchall()
     return Conversation(
@@ -490,7 +521,8 @@ async def get_conversation(
         created_at=row[9],
         updated_at=row[10],
         messages=[
-            StoredMessage(id=m[0], role=m[1], content=m[2], created_at=m[3]) for m in msg_rows
+            StoredMessage(id=m[0], role=m[1], content=m[2], created_at=m[3], rating=m[4])
+            for m in msg_rows
         ],
     )
 
@@ -660,7 +692,8 @@ async def regenerate(
     conv = await _conv_settings(db, cid)
 
     cur = await db.execute(
-        "SELECT id, role FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 1",
+        "SELECT id, role FROM messages WHERE conversation_id = ? AND active = 1 "
+        "ORDER BY id DESC LIMIT 1",
         (cid,),
     )
     last = await cur.fetchone()
@@ -668,7 +701,11 @@ async def regenerate(
         raise HTTPException(
             status_code=400, detail="nothing to regenerate (no trailing assistant message)"
         )
-    await db.execute("DELETE FROM messages WHERE id = ?", (last[0],))
+    # Non-destructive: archive the superseded assistant variant (active=0) rather
+    # than deleting it, so the prior reply is preserved. The new variant chains
+    # back to it via parent_id; reads return only the active (latest) variant.
+    archived_id = last[0]
+    await db.execute("UPDATE messages SET active = 0 WHERE id = ?", (archived_id,))
     chosen_model = await _maybe_update_model(db, cid, body.model, conv["model"])
     await db.commit()
 
@@ -690,6 +727,7 @@ async def regenerate(
             db, http, cid, upstream, chosen_model,
             conv["temperature"], conv["top_p"], conv["stop"], tools_enabled=conv["tools_enabled"], user_id=user["id"],
             plugins=getattr(request.app.state, "plugins", None),
+            parent_message_id=archived_id,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -747,3 +785,49 @@ async def edit_message(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+class FeedbackBody(BaseModel):
+    rating: int = Field(ge=-1, le=1)  # 1 = thumbs up, -1 = thumbs down, 0 = clear
+    comment: str | None = Field(default=None, max_length=2000)
+
+
+@router.put("/{cid}/messages/{msg_id}/feedback")
+async def set_feedback(
+    cid: str,
+    msg_id: int,
+    body: FeedbackBody,
+    request: Request,
+    user: dict = Depends(current_user),
+) -> dict:
+    """Record (or clear, when rating=0) the current user's thumbs up/down on a
+    message. Upsert: re-rating updates rather than duplicates."""
+    db = _db(request)
+    await _owned(db, cid, user["id"])
+    cur = await db.execute(
+        "SELECT 1 FROM messages WHERE id = ? AND conversation_id = ?", (msg_id, cid)
+    )
+    if not await cur.fetchone():
+        raise HTTPException(status_code=404, detail="message not found")
+    now = int(time.time())
+    if body.rating == 0:
+        await db.execute(
+            "DELETE FROM message_feedback WHERE message_id = ? AND user_id = ?",
+            (msg_id, user["id"]),
+        )
+        await db.commit()
+        return {"rating": None}
+    await db.execute(
+        """
+        INSERT INTO message_feedback
+            (message_id, user_id, rating, comment, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(message_id, user_id) DO UPDATE SET
+            rating = excluded.rating,
+            comment = excluded.comment,
+            updated_at = excluded.updated_at
+        """,
+        (msg_id, user["id"], body.rating, body.comment, now, now),
+    )
+    await db.commit()
+    return {"rating": body.rating}

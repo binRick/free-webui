@@ -31,7 +31,23 @@ CREATE TABLE IF NOT EXISTS messages (
     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
     role            TEXT NOT NULL,
     content         TEXT NOT NULL,
+    -- Branching: parent_id links a regenerated assistant variant to the
+    -- variant it replaced; active=0 marks a superseded variant (kept, not
+    -- deleted, so regenerate is non-destructive). Reads filter active=1.
+    parent_id       INTEGER,
+    active          INTEGER NOT NULL DEFAULT 1,
     created_at      INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS message_feedback (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    rating     INTEGER NOT NULL,
+    comment    TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    UNIQUE (message_id, user_id)
 );
 
 CREATE TABLE IF NOT EXISTS documents (
@@ -118,6 +134,8 @@ CREATE INDEX IF NOT EXISTS idx_presets_user ON presets(user_id, updated_at DESC)
 CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id);
 CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_mcp_servers_user ON mcp_servers(user_id, enabled);
+CREATE INDEX IF NOT EXISTS idx_messages_active ON messages(conversation_id, active, id);
+CREATE INDEX IF NOT EXISTS idx_feedback_message ON message_feedback(message_id);
 """
 
 _MIGRATIONS: tuple[tuple[str, str, str], ...] = (
@@ -128,6 +146,8 @@ _MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("conversations", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"),
     ("conversations", "web_search", "INTEGER NOT NULL DEFAULT 0"),
     ("conversations", "tools_enabled", "INTEGER NOT NULL DEFAULT 0"),
+    ("messages", "parent_id", "INTEGER"),
+    ("messages", "active", "INTEGER NOT NULL DEFAULT 1"),
 )
 
 

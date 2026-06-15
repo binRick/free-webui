@@ -8,12 +8,20 @@
   let busy = $state(false);
   let error = $state<string | null>(null);
 
+  // Where to land after sign-in: the `next` param (set by the 401 interceptor),
+  // validated to a local path so it can't be used as an open redirect.
+  function nextTarget(): string {
+    const raw = new URLSearchParams(window.location.search).get('next');
+    if (raw && raw.startsWith('/') && !raw.startsWith('//')) return raw;
+    return '/';
+  }
+
   onMount(async () => {
     const ssoError = new URLSearchParams(window.location.search).get('sso_error');
     if (ssoError) error = `SSO sign-in failed: ${ssoError}`;
     const s = await auth.refresh();
     if (s.setup_required) goto('/setup', { replaceState: true });
-    else if (s.user) goto('/', { replaceState: true });
+    else if (s.user) goto(nextTarget(), { replaceState: true });
   });
 
   async function submit(e: SubmitEvent) {
@@ -23,7 +31,7 @@
     error = null;
     try {
       await auth.login(username, password);
-      await goto('/', { replaceState: true });
+      await goto(nextTarget(), { replaceState: true });
     } catch (err) {
       error = (err as Error).message;
     } finally {

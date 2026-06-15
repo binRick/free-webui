@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import Sidebar from '$lib/Sidebar.svelte';
+  import Toasts from '$lib/Toasts.svelte';
   import { auth } from '$lib/auth.svelte';
   import { sidebar } from '$lib/sidebarState.svelte';
   import { theme } from '$lib/theme.svelte';
@@ -44,6 +45,7 @@
     {@render children()}
   </section>
 </div>
+<Toasts />
 
 <style>
   :global(:root),

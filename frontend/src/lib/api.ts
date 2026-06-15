@@ -1,3 +1,24 @@
+import { toasts } from './toastStore.svelte';
+
+let redirectingTo401 = false;
+
+// Single choke point for every API request. A 401 mid-session means the cookie
+// expired or was revoked (password reset / logout-everywhere); surface it once
+// and bounce to the login page instead of letting the UI silently break.
+async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const res = await fetch(input, init);
+  if (res.status === 401 && typeof window !== 'undefined') {
+    const p = window.location.pathname;
+    if (!redirectingTo401 && !p.startsWith('/login') && !p.startsWith('/setup')) {
+      redirectingTo401 = true;
+      toasts.error('your session expired — please sign in again');
+      const next = encodeURIComponent(p + window.location.search);
+      window.location.href = `/login?next=${next}`;
+    }
+  }
+  return res;
+}
+
 export type Role = 'system' | 'user' | 'assistant';
 
 export interface Message {
@@ -72,7 +93,7 @@ export interface WebSearchStatus {
 }
 
 export async function getWebSearchStatus(): Promise<WebSearchStatus> {
-  const res = await fetch('/api/web_search/status');
+  const res = await apiFetch('/api/web_search/status');
   if (!res.ok) return { available: false, url: null };
   return res.json();
 }
@@ -83,7 +104,7 @@ export interface ImageStatus {
 }
 
 export async function getImageStatus(): Promise<ImageStatus> {
-  const res = await fetch('/api/images/status');
+  const res = await apiFetch('/api/images/status');
   if (!res.ok) return { available: false, backend: null };
   return res.json();
 }
@@ -94,7 +115,7 @@ export interface CodeStatus {
 }
 
 export async function getCodeStatus(): Promise<CodeStatus> {
-  const res = await fetch('/api/code/status');
+  const res = await apiFetch('/api/code/status');
   if (!res.ok) return { available: false, backend: null };
   return res.json();
 }
@@ -109,19 +130,19 @@ export async function listConversations(
   if (archived) params.set('archived', 'true');
   if (tag) params.set('tag', tag);
   const qs = params.toString();
-  const res = await fetch(`/api/conversations${qs ? '?' + qs : ''}`);
+  const res = await apiFetch(`/api/conversations${qs ? '?' + qs : ''}`);
   if (!res.ok) return [];
   return res.json();
 }
 
 export async function getConversationTags(id: string): Promise<string[]> {
-  const res = await fetch(`/api/conversations/${id}/tags`);
+  const res = await apiFetch(`/api/conversations/${id}/tags`);
   if (!res.ok) return [];
   return (await res.json()).tags ?? [];
 }
 
 export async function setConversationTags(id: string, tags: string[]): Promise<string[]> {
-  const res = await fetch(`/api/conversations/${id}/tags`, {
+  const res = await apiFetch(`/api/conversations/${id}/tags`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ tags })
@@ -143,13 +164,13 @@ export async function setArchived(id: string, archived: boolean): Promise<void> 
 }
 
 export async function getShareToken(conversationId: string): Promise<string | null> {
-  const res = await fetch(`/api/conversations/${conversationId}/share`);
+  const res = await apiFetch(`/api/conversations/${conversationId}/share`);
   if (!res.ok) return null;
   return (await res.json()).token ?? null;
 }
 
 export async function createShare(conversationId: string): Promise<string> {
-  const res = await fetch(`/api/conversations/${conversationId}/share`, { method: 'POST' });
+  const res = await apiFetch(`/api/conversations/${conversationId}/share`, { method: 'POST' });
   if (!res.ok) {
     const b = await res.json().catch(() => ({}));
     throw new Error(b.detail ?? `share failed: ${res.status}`);
@@ -158,7 +179,7 @@ export async function createShare(conversationId: string): Promise<string> {
 }
 
 export async function deleteShare(conversationId: string): Promise<void> {
-  await fetch(`/api/conversations/${conversationId}/share`, { method: 'DELETE' });
+  await apiFetch(`/api/conversations/${conversationId}/share`, { method: 'DELETE' });
 }
 
 export interface SharedConversation {
@@ -167,19 +188,19 @@ export interface SharedConversation {
 }
 
 export async function getSharedConversation(token: string): Promise<SharedConversation | null> {
-  const res = await fetch(`/api/shared/${token}`);
+  const res = await apiFetch(`/api/shared/${token}`);
   if (!res.ok) return null;
   return res.json();
 }
 
 export async function autotitle(id: string): Promise<string | null> {
-  const res = await fetch(`/api/conversations/${id}/autotitle`, { method: 'POST' });
+  const res = await apiFetch(`/api/conversations/${id}/autotitle`, { method: 'POST' });
   if (!res.ok) return null;
   return (await res.json()).title ?? null;
 }
 
 export async function getFollowups(id: string): Promise<string[]> {
-  const res = await fetch(`/api/conversations/${id}/followups`, { method: 'POST' });
+  const res = await apiFetch(`/api/conversations/${id}/followups`, { method: 'POST' });
   if (!res.ok) return [];
   return (await res.json()).suggestions ?? [];
 }
@@ -194,13 +215,13 @@ export async function listVariants(
   conversationId: string,
   messageId: number
 ): Promise<MessageVariant[]> {
-  const res = await fetch(`/api/conversations/${conversationId}/messages/${messageId}/variants`);
+  const res = await apiFetch(`/api/conversations/${conversationId}/messages/${messageId}/variants`);
   if (!res.ok) return [];
   return (await res.json()).variants ?? [];
 }
 
 export async function activateVariant(conversationId: string, messageId: number): Promise<void> {
-  await fetch(`/api/conversations/${conversationId}/messages/${messageId}/activate`, {
+  await apiFetch(`/api/conversations/${conversationId}/messages/${messageId}/activate`, {
     method: 'POST'
   });
 }
@@ -210,7 +231,7 @@ export async function setFeedback(
   messageId: number,
   rating: number
 ): Promise<{ rating: number | null }> {
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/conversations/${conversationId}/messages/${messageId}/feedback`,
     {
       method: 'PUT',
@@ -223,7 +244,7 @@ export async function setFeedback(
 }
 
 export async function createConversation(model: string | null = null): Promise<ConversationSummary> {
-  const res = await fetch('/api/conversations', {
+  const res = await apiFetch('/api/conversations', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ model })
@@ -233,17 +254,17 @@ export async function createConversation(model: string | null = null): Promise<C
 }
 
 export async function getConversation(id: string): Promise<Conversation> {
-  const res = await fetch(`/api/conversations/${id}`);
+  const res = await apiFetch(`/api/conversations/${id}`);
   if (!res.ok) throw new Error(`load failed: ${res.status}`);
   return res.json();
 }
 
 export async function deleteConversation(id: string): Promise<void> {
-  await fetch(`/api/conversations/${id}`, { method: 'DELETE' });
+  await apiFetch(`/api/conversations/${id}`, { method: 'DELETE' });
 }
 
 export async function cloneConversation(id: string): Promise<ConversationSummary> {
-  const res = await fetch(`/api/conversations/${id}/clone`, { method: 'POST' });
+  const res = await apiFetch(`/api/conversations/${id}/clone`, { method: 'POST' });
   if (!res.ok) throw new Error(`clone failed: ${res.status}`);
   return res.json();
 }
@@ -259,7 +280,7 @@ export interface Document {
 }
 
 export async function listDocuments(conversationId: string): Promise<Document[]> {
-  const res = await fetch(`/api/conversations/${conversationId}/documents`);
+  const res = await apiFetch(`/api/conversations/${conversationId}/documents`);
   if (!res.ok) return [];
   return res.json();
 }
@@ -270,7 +291,7 @@ export async function uploadDocument(
 ): Promise<Document> {
   const fd = new FormData();
   fd.append('file', file);
-  const res = await fetch(`/api/conversations/${conversationId}/documents`, {
+  const res = await apiFetch(`/api/conversations/${conversationId}/documents`, {
     method: 'POST',
     body: fd
   });
@@ -285,7 +306,7 @@ export async function deleteDocument(
   conversationId: string,
   documentId: number
 ): Promise<void> {
-  await fetch(
+  await apiFetch(
     `/api/conversations/${conversationId}/documents/${documentId}`,
     { method: 'DELETE' }
   );
@@ -300,13 +321,13 @@ export interface Collection {
 }
 
 export async function listCollections(): Promise<Collection[]> {
-  const res = await fetch('/api/collections');
+  const res = await apiFetch('/api/collections');
   if (!res.ok) return [];
   return res.json();
 }
 
 export async function createCollection(name: string): Promise<Collection> {
-  const res = await fetch('/api/collections', {
+  const res = await apiFetch('/api/collections', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ name })
@@ -319,12 +340,12 @@ export async function createCollection(name: string): Promise<Collection> {
 }
 
 export async function deleteCollection(id: number): Promise<void> {
-  const res = await fetch(`/api/collections/${id}`, { method: 'DELETE' });
+  const res = await apiFetch(`/api/collections/${id}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(`delete failed: ${res.status}`);
 }
 
 export async function listCollectionDocuments(id: number): Promise<Document[]> {
-  const res = await fetch(`/api/collections/${id}/documents`);
+  const res = await apiFetch(`/api/collections/${id}/documents`);
   if (!res.ok) return [];
   return res.json();
 }
@@ -332,7 +353,7 @@ export async function listCollectionDocuments(id: number): Promise<Document[]> {
 export async function uploadCollectionDocument(id: number, file: File): Promise<Document> {
   const fd = new FormData();
   fd.append('file', file);
-  const res = await fetch(`/api/collections/${id}/documents`, { method: 'POST', body: fd });
+  const res = await apiFetch(`/api/collections/${id}/documents`, { method: 'POST', body: fd });
   if (!res.ok) {
     const b = await res.json().catch(() => ({}));
     throw new Error(b.detail ?? `upload failed: ${res.status}`);
@@ -341,11 +362,11 @@ export async function uploadCollectionDocument(id: number, file: File): Promise<
 }
 
 export async function deleteCollectionDocument(collectionId: number, documentId: number): Promise<void> {
-  await fetch(`/api/collections/${collectionId}/documents/${documentId}`, { method: 'DELETE' });
+  await apiFetch(`/api/collections/${collectionId}/documents/${documentId}`, { method: 'DELETE' });
 }
 
 export async function getConversationCollections(conversationId: string): Promise<number[]> {
-  const res = await fetch(`/api/conversations/${conversationId}/collections`);
+  const res = await apiFetch(`/api/conversations/${conversationId}/collections`);
   if (!res.ok) return [];
   return (await res.json()).collection_ids ?? [];
 }
@@ -354,7 +375,7 @@ export async function setConversationCollections(
   conversationId: string,
   collectionIds: number[]
 ): Promise<number[]> {
-  const res = await fetch(`/api/conversations/${conversationId}/collections`, {
+  const res = await apiFetch(`/api/conversations/${conversationId}/collections`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ collection_ids: collectionIds })
@@ -374,7 +395,7 @@ export interface McpServer {
 }
 
 export async function listMcpServers(): Promise<McpServer[]> {
-  const res = await fetch('/api/mcp_servers');
+  const res = await apiFetch('/api/mcp_servers');
   if (!res.ok) return [];
   return res.json();
 }
@@ -384,7 +405,7 @@ export async function createMcpServer(body: {
   url: string;
   headers?: Record<string, string> | null;
 }): Promise<McpServer> {
-  const res = await fetch('/api/mcp_servers', {
+  const res = await apiFetch('/api/mcp_servers', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body)
@@ -400,7 +421,7 @@ export async function patchMcpServer(
   id: number,
   patch: Partial<{ name: string; url: string; headers: Record<string, string> | null; enabled: boolean }>
 ): Promise<McpServer> {
-  const res = await fetch(`/api/mcp_servers/${id}`, {
+  const res = await apiFetch(`/api/mcp_servers/${id}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(patch)
@@ -413,13 +434,13 @@ export async function patchMcpServer(
 }
 
 export async function deleteMcpServer(id: number): Promise<void> {
-  await fetch(`/api/mcp_servers/${id}`, { method: 'DELETE' });
+  await apiFetch(`/api/mcp_servers/${id}`, { method: 'DELETE' });
 }
 
 export async function probeMcpServer(
   id: number
 ): Promise<{ tools: { name: string; description?: string }[] }> {
-  const res = await fetch(`/api/mcp_servers/${id}/probe`, { method: 'POST' });
+  const res = await apiFetch(`/api/mcp_servers/${id}/probe`, { method: 'POST' });
   if (!res.ok) {
     const b = await res.json().catch(() => ({}));
     throw new Error(b.detail ?? `probe failed: ${res.status}`);
@@ -435,7 +456,7 @@ export interface AdminUser {
 }
 
 export async function adminListUsers(): Promise<AdminUser[]> {
-  const res = await fetch('/api/admin/users');
+  const res = await apiFetch('/api/admin/users');
   if (!res.ok) throw new Error(`load failed: ${res.status}`);
   return res.json();
 }
@@ -445,7 +466,7 @@ export async function adminCreateUser(
   password: string,
   role: 'admin' | 'user'
 ): Promise<AdminUser> {
-  const res = await fetch('/api/admin/users', {
+  const res = await apiFetch('/api/admin/users', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ username, password, role })
@@ -461,7 +482,7 @@ export async function adminPatchUser(
   id: number,
   patch: { role?: 'admin' | 'user'; password?: string }
 ): Promise<AdminUser> {
-  const res = await fetch(`/api/admin/users/${id}`, {
+  const res = await apiFetch(`/api/admin/users/${id}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(patch)
@@ -474,7 +495,7 @@ export async function adminPatchUser(
 }
 
 export async function adminDeleteUser(id: number): Promise<void> {
-  const res = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
+  const res = await apiFetch(`/api/admin/users/${id}`, { method: 'DELETE' });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail ?? `delete failed: ${res.status}`);
@@ -501,13 +522,13 @@ export interface ConnectionInput {
 }
 
 export async function listConnections(): Promise<Connection[]> {
-  const res = await fetch('/api/admin/connections');
+  const res = await apiFetch('/api/admin/connections');
   if (!res.ok) return [];
   return res.json();
 }
 
 export async function createConnection(body: ConnectionInput): Promise<Connection> {
-  const res = await fetch('/api/admin/connections', {
+  const res = await apiFetch('/api/admin/connections', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body)
@@ -523,7 +544,7 @@ export async function patchConnection(
   id: number,
   patch: Partial<ConnectionInput>
 ): Promise<Connection> {
-  const res = await fetch(`/api/admin/connections/${id}`, {
+  const res = await apiFetch(`/api/admin/connections/${id}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(patch)
@@ -533,14 +554,14 @@ export async function patchConnection(
 }
 
 export async function deleteConnection(id: number): Promise<void> {
-  const res = await fetch(`/api/admin/connections/${id}`, { method: 'DELETE' });
+  const res = await apiFetch(`/api/admin/connections/${id}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(`delete failed: ${res.status}`);
 }
 
 export async function testConnection(
   body: ConnectionInput
 ): Promise<{ ok: boolean; error: string | null; models: string[] }> {
-  const res = await fetch('/api/admin/connections/test', {
+  const res = await apiFetch('/api/admin/connections/test', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body)
@@ -557,13 +578,13 @@ export interface Group {
 }
 
 export async function listGroups(): Promise<Group[]> {
-  const res = await fetch('/api/admin/groups');
+  const res = await apiFetch('/api/admin/groups');
   if (!res.ok) return [];
   return res.json();
 }
 
 export async function createGroup(name: string): Promise<Group> {
-  const res = await fetch('/api/admin/groups', {
+  const res = await apiFetch('/api/admin/groups', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ name })
@@ -576,18 +597,18 @@ export async function createGroup(name: string): Promise<Group> {
 }
 
 export async function deleteGroup(id: number): Promise<void> {
-  const res = await fetch(`/api/admin/groups/${id}`, { method: 'DELETE' });
+  const res = await apiFetch(`/api/admin/groups/${id}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(`delete failed: ${res.status}`);
 }
 
 export async function getGroupMembers(id: number): Promise<number[]> {
-  const res = await fetch(`/api/admin/groups/${id}/members`);
+  const res = await apiFetch(`/api/admin/groups/${id}/members`);
   if (!res.ok) return [];
   return (await res.json()).user_ids ?? [];
 }
 
 export async function setGroupMembers(id: number, userIds: number[]): Promise<number[]> {
-  const res = await fetch(`/api/admin/groups/${id}/members`, {
+  const res = await apiFetch(`/api/admin/groups/${id}/members`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ user_ids: userIds })
@@ -602,7 +623,7 @@ export interface ModelAccessEntry {
 }
 
 export async function listModelAccess(): Promise<Record<string, ModelAccessEntry>> {
-  const res = await fetch('/api/admin/model_access');
+  const res = await apiFetch('/api/admin/model_access');
   if (!res.ok) return {};
   return res.json();
 }
@@ -612,7 +633,7 @@ export async function setModelAccess(
   groupIds: number[],
   userIds: number[]
 ): Promise<void> {
-  const res = await fetch('/api/admin/model_access', {
+  const res = await apiFetch('/api/admin/model_access', {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ model_id: modelId, group_ids: groupIds, user_ids: userIds })
@@ -629,7 +650,7 @@ export interface AuditEntry {
 }
 
 export async function listAudit(limit = 100): Promise<AuditEntry[]> {
-  const res = await fetch(`/api/admin/audit?limit=${limit}`);
+  const res = await apiFetch(`/api/admin/audit?limit=${limit}`);
   if (!res.ok) return [];
   return res.json();
 }
@@ -647,7 +668,7 @@ export interface FeedbackRow {
 
 export async function listFeedback(rating?: number): Promise<FeedbackRow[]> {
   const q = rating === 1 || rating === -1 ? `?rating=${rating}` : '';
-  const res = await fetch(`/api/admin/feedback${q}`);
+  const res = await apiFetch(`/api/admin/feedback${q}`);
   if (!res.ok) return [];
   return res.json();
 }
@@ -661,7 +682,7 @@ export interface PluginRecord {
 }
 
 export async function getPlugins(): Promise<PluginRecord[]> {
-  const res = await fetch('/api/plugins');
+  const res = await apiFetch('/api/plugins');
   if (!res.ok) throw new Error(`load failed: ${res.status}`);
   return res.json();
 }
@@ -674,13 +695,13 @@ export interface InstalledModel {
 }
 
 export async function listInstalledModels(): Promise<InstalledModel[]> {
-  const res = await fetch('/api/admin/models');
+  const res = await apiFetch('/api/admin/models');
   if (!res.ok) throw new Error(`load failed: ${res.status}`);
   return res.json();
 }
 
 export async function deleteInstalledModel(name: string): Promise<void> {
-  const res = await fetch(`/api/admin/models?name=${encodeURIComponent(name)}`, {
+  const res = await apiFetch(`/api/admin/models?name=${encodeURIComponent(name)}`, {
     method: 'DELETE'
   });
   if (!res.ok) throw new Error(`delete failed: ${res.status}`);
@@ -692,7 +713,7 @@ export interface PullOpts {
 }
 
 export async function pullModel(name: string, opts: PullOpts): Promise<void> {
-  const res = await fetch('/api/admin/models/pull', {
+  const res = await apiFetch('/api/admin/models/pull', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ name }),
@@ -728,13 +749,13 @@ export interface Memory {
 }
 
 export async function listMemories(): Promise<Memory[]> {
-  const res = await fetch('/api/memories');
+  const res = await apiFetch('/api/memories');
   if (!res.ok) return [];
   return res.json();
 }
 
 export async function createMemory(content: string): Promise<Memory> {
-  const res = await fetch('/api/memories', {
+  const res = await apiFetch('/api/memories', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ content })
@@ -744,7 +765,7 @@ export async function createMemory(content: string): Promise<Memory> {
 }
 
 export async function deleteMemory(id: number): Promise<void> {
-  await fetch(`/api/memories/${id}`, { method: 'DELETE' });
+  await apiFetch(`/api/memories/${id}`, { method: 'DELETE' });
 }
 
 export interface ApiKey {
@@ -757,13 +778,13 @@ export interface ApiKey {
 }
 
 export async function listApiKeys(): Promise<ApiKey[]> {
-  const res = await fetch('/api/api_keys');
+  const res = await apiFetch('/api/api_keys');
   if (!res.ok) return [];
   return res.json();
 }
 
 export async function mintApiKey(name: string): Promise<ApiKey> {
-  const res = await fetch('/api/api_keys', {
+  const res = await apiFetch('/api/api_keys', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ name })
@@ -773,7 +794,7 @@ export async function mintApiKey(name: string): Promise<ApiKey> {
 }
 
 export async function revokeApiKey(id: number): Promise<void> {
-  await fetch(`/api/api_keys/${id}`, { method: 'DELETE' });
+  await apiFetch(`/api/api_keys/${id}`, { method: 'DELETE' });
 }
 
 export interface Preset {
@@ -798,13 +819,13 @@ export interface PresetIn {
 }
 
 export async function listPresets(): Promise<Preset[]> {
-  const res = await fetch('/api/presets');
+  const res = await apiFetch('/api/presets');
   if (!res.ok) return [];
   return res.json();
 }
 
 export async function createPreset(body: PresetIn): Promise<Preset> {
-  const res = await fetch('/api/presets', {
+  const res = await apiFetch('/api/presets', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body)
@@ -814,7 +835,7 @@ export async function createPreset(body: PresetIn): Promise<Preset> {
 }
 
 export async function deletePreset(id: number): Promise<void> {
-  await fetch(`/api/presets/${id}`, { method: 'DELETE' });
+  await apiFetch(`/api/presets/${id}`, { method: 'DELETE' });
 }
 
 export interface Prompt {
@@ -826,13 +847,13 @@ export interface Prompt {
 }
 
 export async function listPrompts(): Promise<Prompt[]> {
-  const res = await fetch('/api/prompts');
+  const res = await apiFetch('/api/prompts');
   if (!res.ok) return [];
   return res.json();
 }
 
 export async function createPrompt(title: string, content: string): Promise<Prompt> {
-  const res = await fetch('/api/prompts', {
+  const res = await apiFetch('/api/prompts', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ title, content })
@@ -842,7 +863,7 @@ export async function createPrompt(title: string, content: string): Promise<Prom
 }
 
 export async function deletePrompt(id: number): Promise<void> {
-  await fetch(`/api/prompts/${id}`, { method: 'DELETE' });
+  await apiFetch(`/api/prompts/${id}`, { method: 'DELETE' });
 }
 
 export function exportConversationUrl(
@@ -856,7 +877,7 @@ export async function updateConversation(
   id: string,
   patch: UpdateConversation
 ): Promise<Conversation> {
-  const res = await fetch(`/api/conversations/${id}`, {
+  const res = await apiFetch(`/api/conversations/${id}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(patch)
@@ -866,7 +887,7 @@ export async function updateConversation(
 }
 
 export async function listModels(): Promise<string[]> {
-  const res = await fetch('/api/models');
+  const res = await apiFetch('/api/models');
   if (!res.ok) return [];
   const json = await res.json();
   return (json.data ?? []).map((m: { id: string }) => m.id);
@@ -950,7 +971,7 @@ export async function sendMessage(
   model: string | null,
   opts: StreamOpts
 ): Promise<void> {
-  const res = await fetch(`/api/conversations/${conversationId}/messages`, {
+  const res = await apiFetch(`/api/conversations/${conversationId}/messages`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ content, model }),
@@ -964,7 +985,7 @@ export async function regenerate(
   model: string | null,
   opts: StreamOpts
 ): Promise<void> {
-  const res = await fetch(`/api/conversations/${conversationId}/regenerate`, {
+  const res = await apiFetch(`/api/conversations/${conversationId}/regenerate`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ model }),
@@ -980,7 +1001,7 @@ export async function editMessage(
   model: string | null,
   opts: StreamOpts
 ): Promise<void> {
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/conversations/${conversationId}/messages/${messageId}`,
     {
       method: 'PATCH',
@@ -998,7 +1019,7 @@ export async function regenerateMessage(
   model: string | null,
   opts: StreamOpts
 ): Promise<void> {
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/conversations/${conversationId}/messages/${messageId}/regenerate`,
     {
       method: 'POST',
@@ -1011,5 +1032,5 @@ export async function regenerateMessage(
 }
 
 export async function deleteMessage(conversationId: string, messageId: number): Promise<void> {
-  await fetch(`/api/conversations/${conversationId}/messages/${messageId}`, { method: 'DELETE' });
+  await apiFetch(`/api/conversations/${conversationId}/messages/${messageId}`, { method: 'DELETE' });
 }

@@ -38,6 +38,9 @@ authoritative status):
   hardened OpenAI `/v1` surface (+`/v1/embeddings`); **Anthropic `/v1/messages`
   proxy**.
 - **Sharing**: public read-only conversation **share links**.
+- **Resilience**: a central `apiFetch` wrapper redirects to `/login?next=…`
+  (with a toast) when a session expires mid-use instead of silently breaking the
+  UI; reusable toast store + container; **clone conversation**.
 
 ### Engineering
 - Programmable upstream test fixture; **235+ backend tests**; ruff lint;

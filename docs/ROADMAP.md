@@ -53,7 +53,7 @@ Most are `S`/`M` and high risk-reduction. **Partially landed on
 | **Message branching** schema + non-destructive regenerate + variant nav | L | ✅ landed (messages `active`/`parent_id`; regenerate archives the prior variant; `GET …/variants` + `POST …/activate`; chat shows ◀ n/m ▶ on the trailing assistant to switch replies) |
 | Feedback/rating table + thumbs up/down | M | ✅ landed (`message_feedback` upsert + per-message rating in GET) |
 | Per-message regenerate/delete (any assistant turn) | S | ✅ landed (`POST …/messages/{id}/regenerate` branches at any assistant turn — discards later turns, archives the prior reply as a variant; `DELETE …/messages/{id}` truncates the thread from there. Per-message ♻/🗑 buttons in the chat UI.) |
-| Uniform API error handling + toast store + 401-redirect | M | ⬜ deferred (touches every `api.ts` call) |
+| Uniform API error handling + toast store + 401-redirect | M | ✅ mostly landed (central `apiFetch` wrapper routes every API call; a mid-session 401 shows a toast and redirects to `/login?next=…`; reusable `toasts` store + `<Toasts/>` container). Per-call-site error toasting can still be adopted incrementally. |
 | **LLM-based titling** + follow-up suggestions | M | ✅ landed (`…/autotitle` + `…/followups`; titling fires after the first exchange; follow-up chips appear after each turn). |
 | Citations / sources, public share links, pin/archive | — | ✅ all landed (see below / git history) |
 

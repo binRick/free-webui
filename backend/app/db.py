@@ -136,6 +136,9 @@ CREATE TABLE IF NOT EXISTS presets (
     temperature    REAL,
     top_p          REAL,
     stop           TEXT,
+    description    TEXT,
+    tools_enabled  INTEGER NOT NULL DEFAULT 0,
+    web_search     INTEGER NOT NULL DEFAULT 0,
     created_at     INTEGER NOT NULL,
     updated_at     INTEGER NOT NULL
 );
@@ -320,6 +323,9 @@ _MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("messages", "sources", "TEXT"),
     ("users", "token_version", "INTEGER NOT NULL DEFAULT 0"),
     ("users", "oidc_sub", "TEXT"),
+    ("presets", "description", "TEXT"),
+    ("presets", "tools_enabled", "INTEGER NOT NULL DEFAULT 0"),
+    ("presets", "web_search", "INTEGER NOT NULL DEFAULT 0"),
 )
 
 

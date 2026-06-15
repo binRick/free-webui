@@ -28,6 +28,35 @@ async def test_preset_round_trip(client):
     assert (await client.get("/api/presets")).json() == []
 
 
+async def test_preset_captures_mode_fields(client):
+    """A preset is a chat 'mode': it also bundles tools/web-search + a blurb."""
+    await _signup(client)
+    body = {
+        "name": "researcher",
+        "model": "qwen2.5:14b",
+        "description": "web + tools on",
+        "tools_enabled": True,
+        "web_search": True,
+    }
+    created = (await client.post("/api/presets", json=body)).json()
+    assert created["tools_enabled"] is True
+    assert created["web_search"] is True
+    assert created["description"] == "web + tools on"
+
+    row = (await client.get("/api/presets")).json()[0]
+    assert row["tools_enabled"] is True
+    assert row["web_search"] is True
+    assert row["description"] == "web + tools on"
+
+
+async def test_preset_mode_fields_default_off(client):
+    await _signup(client)
+    created = (await client.post("/api/presets", json={"name": "plain"})).json()
+    assert created["tools_enabled"] is False
+    assert created["web_search"] is False
+    assert created["description"] is None
+
+
 async def test_presets_are_per_user(client):
     import time as _t
     from app.auth import hash_password

@@ -266,7 +266,9 @@
       system_prompt: systemPrompt.trim() || null,
       temperature: parseNumber(temperature),
       top_p: parseNumber(topP),
-      stop: parseStop(stopText)
+      stop: parseStop(stopText),
+      tools_enabled: toolsEnabled,
+      web_search: webSearch
     });
     presets = await listPresets();
   }
@@ -277,12 +279,16 @@
     temperature = p.temperature != null ? String(p.temperature) : '';
     topP = p.top_p != null ? String(p.top_p) : '';
     stopText = (p.stop ?? []).join(', ');
+    toolsEnabled = p.tools_enabled;
+    webSearch = p.web_search && webSearchAvailable;
     await updateConversation(currentId, {
       model: p.model ?? model,
       system_prompt: p.system_prompt ?? null,
       temperature: p.temperature,
       top_p: p.top_p,
-      stop: p.stop
+      stop: p.stop,
+      tools_enabled: toolsEnabled,
+      web_search: webSearch
     });
   }
 

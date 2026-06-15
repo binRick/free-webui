@@ -21,6 +21,9 @@ class PresetIn(BaseModel):
     temperature: float | None = None
     top_p: float | None = None
     stop: list[str] | None = None
+    description: str | None = Field(default=None, max_length=500)
+    tools_enabled: bool = False
+    web_search: bool = False
 
 
 class PresetOut(BaseModel):
@@ -31,6 +34,9 @@ class PresetOut(BaseModel):
     temperature: float | None
     top_p: float | None
     stop: list[str] | None
+    description: str | None = None
+    tools_enabled: bool = False
+    web_search: bool = False
     created_at: int
     updated_at: int
 
@@ -50,6 +56,9 @@ def _row_to_out(r) -> PresetOut:
         stop=json.loads(r[6]) if r[6] else None,
         created_at=r[7],
         updated_at=r[8],
+        description=r[9],
+        tools_enabled=bool(r[10]),
+        web_search=bool(r[11]),
     )
 
 
@@ -59,7 +68,7 @@ async def list_presets(request: Request, user: dict = Depends(current_user)):
     cur = await db.execute(
         """
         SELECT id, name, model, system_prompt, temperature, top_p, stop,
-               created_at, updated_at
+               created_at, updated_at, description, tools_enabled, web_search
         FROM presets WHERE user_id = ? ORDER BY updated_at DESC
         """,
         (user["id"],),
@@ -77,12 +86,14 @@ async def create_preset(
     cur = await db.execute(
         """
         INSERT INTO presets
-        (user_id, name, model, system_prompt, temperature, top_p, stop, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (user_id, name, model, system_prompt, temperature, top_p, stop,
+         description, tools_enabled, web_search, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             user["id"], body.name, body.model, body.system_prompt,
-            body.temperature, body.top_p, stop_str, now, now,
+            body.temperature, body.top_p, stop_str, body.description,
+            int(body.tools_enabled), int(body.web_search), now, now,
         ),
     )
     await db.commit()
@@ -94,6 +105,9 @@ async def create_preset(
         temperature=body.temperature,
         top_p=body.top_p,
         stop=body.stop,
+        description=body.description,
+        tools_enabled=body.tools_enabled,
+        web_search=body.web_search,
         created_at=now,
         updated_at=now,
     )

@@ -888,6 +888,9 @@ export interface Preset {
   temperature: number | null;
   top_p: number | null;
   stop: string[] | null;
+  description: string | null;
+  tools_enabled: boolean;
+  web_search: boolean;
   created_at: number;
   updated_at: number;
 }
@@ -899,6 +902,9 @@ export interface PresetIn {
   temperature?: number | null;
   top_p?: number | null;
   stop?: string[] | null;
+  description?: string | null;
+  tools_enabled?: boolean;
+  web_search?: boolean;
 }
 
 export async function listPresets(): Promise<Preset[]> {

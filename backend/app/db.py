@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS users (
     role          TEXT NOT NULL DEFAULT 'user',
     -- Bumped to revoke a user's live sessions (password reset, logout-everywhere).
     token_version INTEGER NOT NULL DEFAULT 0,
+    -- OIDC subject id, when the account is linked to an SSO identity.
+    oidc_sub      TEXT,
     created_at    INTEGER NOT NULL
 );
 
@@ -177,6 +179,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_active ON messages(conversation_id, acti
 CREATE INDEX IF NOT EXISTS idx_feedback_message ON message_feedback(message_id);
 CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_model_access_model ON model_access(model_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_oidc_sub ON users(oidc_sub) WHERE oidc_sub IS NOT NULL;
 """
 
 _MIGRATIONS: tuple[tuple[str, str, str], ...] = (
@@ -190,6 +193,7 @@ _MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("messages", "parent_id", "INTEGER"),
     ("messages", "active", "INTEGER NOT NULL DEFAULT 1"),
     ("users", "token_version", "INTEGER NOT NULL DEFAULT 0"),
+    ("users", "oidc_sub", "TEXT"),
 )
 
 

@@ -9,6 +9,8 @@
   let error = $state<string | null>(null);
 
   onMount(async () => {
+    const ssoError = new URLSearchParams(window.location.search).get('sso_error');
+    if (ssoError) error = `SSO sign-in failed: ${ssoError}`;
     const s = await auth.refresh();
     if (s.setup_required) goto('/setup', { replaceState: true });
     else if (s.user) goto('/', { replaceState: true });
@@ -46,6 +48,10 @@
     <button type="submit" disabled={busy || !username || !password}>
       {busy ? 'signing in…' : 'sign in'}
     </button>
+    {#if auth.oidcEnabled}
+      <div class="divider"><span>or</span></div>
+      <a class="sso" href="/api/auth/oidc/login">sign in with {auth.oidcName}</a>
+    {/if}
   </form>
 </div>
 
@@ -113,4 +119,31 @@
     border-radius: 6px;
     font-size: 0.85rem;
   }
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    margin: 0.25rem 0;
+  }
+  .divider::before,
+  .divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border-soft);
+  }
+  .sso {
+    display: block;
+    text-align: center;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    padding: 0.6rem;
+    text-decoration: none;
+    font-size: 0.9rem;
+  }
+  .sso:hover { background: var(--bg-hover); }
 </style>

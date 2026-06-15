@@ -120,8 +120,31 @@ class Settings(BaseSettings):
     # server, so plugins must do blocking I/O / heavy CPU work in a thread.
     plugins_timeout_seconds: float = 5.0
 
+    # OIDC / OAuth2 single sign-on. Set issuer + client_id + client_secret to
+    # expose a "Sign in with <provider>" button. Uses the authorization-code
+    # flow with server-side token exchange + the userinfo endpoint (no JWT
+    # crypto / extra deps). redirect_uri must point at this backend's
+    # /api/auth/oidc/callback (works cleanly in a same-origin production deploy).
+    oidc_issuer: str = ""  # e.g. https://accounts.google.com
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""
+    oidc_redirect_uri: str = ""  # e.g. https://chat.example.com/api/auth/oidc/callback
+    oidc_scopes: str = "openid email profile"
+    oidc_provider_name: str = "SSO"  # button label
+    oidc_allow_signup: bool = True  # auto-provision users who sign in for the first time
+    oidc_admin_emails: list[str] = []  # emails granted the admin role on provision
+    oidc_post_login_redirect: str = "/"  # where to send the browser after login
+    # Allow http(s)-insecure OIDC endpoints. Default off: the issuer + all
+    # discovered endpoints must be https so the client_secret / tokens can't
+    # travel in cleartext. Enable only for local testing.
+    oidc_insecure_transport: bool = False
+
     # CORS: SvelteKit dev server.
     allowed_origins: list[str] = ["http://localhost:5173"]
 
 
 settings = Settings()
+
+
+def oidc_enabled() -> bool:
+    return bool(settings.oidc_issuer and settings.oidc_client_id and settings.oidc_client_secret)

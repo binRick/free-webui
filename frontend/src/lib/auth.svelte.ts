@@ -9,12 +9,16 @@ export interface User {
 export interface AuthStatus {
   user: User | null;
   setup_required: boolean;
+  oidc_enabled?: boolean;
+  oidc_name?: string;
 }
 
 class AuthStore {
   user = $state<User | null>(null);
   setupRequired = $state<boolean>(false);
   loaded = $state<boolean>(false);
+  oidcEnabled = $state<boolean>(false);
+  oidcName = $state<string>('SSO');
 
   async refresh(): Promise<AuthStatus> {
     const res = await fetch('/api/auth/status');
@@ -23,6 +27,8 @@ class AuthStore {
       : { user: null, setup_required: false };
     this.user = status.user;
     this.setupRequired = status.setup_required;
+    this.oidcEnabled = status.oidc_enabled ?? false;
+    this.oidcName = status.oidc_name ?? 'SSO';
     this.loaded = true;
     return status;
   }

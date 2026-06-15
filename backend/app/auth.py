@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel, Field
 
-from .config import settings
+from .config import oidc_enabled, settings
 
 SESSION_COOKIE = "fw_session"
 
@@ -85,6 +85,8 @@ class UserOut(BaseModel):
 class AuthStatus(BaseModel):
     user: UserOut | None = None
     setup_required: bool
+    oidc_enabled: bool = False
+    oidc_name: str = "SSO"
 
 
 def _db(request: Request) -> aiosqlite.Connection:
@@ -175,7 +177,12 @@ async def status_endpoint(request: Request) -> AuthStatus:
             row = await cur.fetchone()
             if row and int(payload.get("tv", 0)) == int(row[3]):
                 user = UserOut(id=row[0], username=row[1], role=row[2])
-    return AuthStatus(user=user, setup_required=setup_required)
+    return AuthStatus(
+        user=user,
+        setup_required=setup_required,
+        oidc_enabled=oidc_enabled(),
+        oidc_name=settings.oidc_provider_name,
+    )
 
 
 @router.post("/setup", response_model=UserOut)

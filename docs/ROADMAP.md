@@ -65,7 +65,7 @@ Most are `S`/`M` and high risk-reduction. **Partially landed on
 | **Multiple upstream connections** | L | ✅ landed (`connections` table; env upstream = implicit conn 0; admin CRUD + `/test` probe at `/admin/connections`; merged `/api/models` + `/v1/models`; per-model routing with a cached, concurrent `/models` resolver; keyless connections don't inherit the env key). |
 | User **groups** + per-model access control | L | ✅ landed (`groups`/`group_members`/`model_access`; public-unless-restricted; enforced on `/api/models`, `/v1/models`, chat send/regen/edit, `/v1/chat/completions`, autotitle, and conversation create/patch; admin UI at `/admin/access`). Granular per-feature RBAC still ⬜. |
 | Server-side session store / revocation | M | ✅ landed (`users.token_version`; password reset + "log out everywhere" bump it; `current_user` rejects stale cookies). Role changes already apply live (role is read from the DB each request). |
-| **OAuth / OIDC SSO** | L | authlib flow + account linking + open-signup toggle. |
+| **OAuth / OIDC SSO** | L | ✅ landed (auth-code flow + userinfo, **no extra dep**; https-enforced; signed-state CSRF; verified-email account linking + auto-provision; first-user/admin-email role mapping; `/admin`-less login-page SSO button). |
 | Decompose the 1194-LOC chat route + Vitest harness | L | Split into MessageList/MessageItem/Composer/SettingsDrawer; cache status endpoints. |
 | In-composer `#`/`@`/`/` commands + searchable model picker + missing gen params | M | `max_tokens`, penalties, seed, `num_ctx`, `keep_alive`. |
 

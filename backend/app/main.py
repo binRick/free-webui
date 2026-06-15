@@ -23,6 +23,7 @@ from .documents import router as documents_router
 from .images import router as images_router
 from .mcp import router as mcp_router
 from .memories import router as memories_router
+from .oidc import router as oidc_router
 from .openai_compat import router as openai_compat_router
 from .plugins import load as load_plugins
 from .plugins import router as plugins_router
@@ -147,6 +148,7 @@ async def _unhandled_exception(request: Request, exc: Exception) -> JSONResponse
     return JSONResponse(status_code=500, content={"detail": "internal server error"})
 
 app.include_router(auth_router)
+app.include_router(oidc_router)
 app.include_router(conversations_router)
 app.include_router(documents_router)
 app.include_router(prompts_router)

@@ -1,7 +1,9 @@
 async def test_setup_required_on_fresh_db(client):
     r = await client.get("/api/auth/status")
     assert r.status_code == 200
-    assert r.json() == {"user": None, "setup_required": True}
+    body = r.json()
+    assert body["user"] is None and body["setup_required"] is True
+    assert body["oidc_enabled"] is False  # OIDC off unless configured
 
 
 async def test_setup_creates_admin_and_logs_in(client):

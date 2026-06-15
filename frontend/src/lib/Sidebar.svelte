@@ -5,6 +5,7 @@
   import { auth } from './auth.svelte';
   import { convs } from './conversations.svelte';
   import {
+    cloneConversation,
     deleteConversation,
     renameConversation,
     setArchived,
@@ -61,6 +62,14 @@
     await deleteConversation(id);
     refreshList();
     if (page.params.id === id) goto('/');
+  }
+
+  async function clone(c: ConversationSummary, e: Event) {
+    e.preventDefault();
+    e.stopPropagation();
+    const created = await cloneConversation(c.id);
+    refreshList();
+    goto(`/chat/${created.id}`);
   }
 
   let renamingId = $state<string | null>(null);
@@ -179,6 +188,7 @@
             <a class="link" href="/chat/{c.id}" onclick={openChat} title={c.title}>{c.title}</a>
             <button class="act" class:on={c.pinned} aria-label="pin chat" title={c.pinned ? 'unpin' : 'pin'} onclick={(e) => pin(c, e)}>📌</button>
             <button class="act" aria-label="rename chat" title="rename" onclick={(e) => startRename(c, e)}>✎</button>
+            <button class="act" aria-label="clone chat" title="clone" onclick={(e) => clone(c, e)}>⎘</button>
             <button class="act" aria-label={c.archived ? 'unarchive' : 'archive'} title={c.archived ? 'unarchive' : 'archive'} onclick={(e) => archive(c, e)}>🗄</button>
             <button class="act del" aria-label="delete chat" title="delete" onclick={(e) => del(c.id, e)}>×</button>
           {/if}

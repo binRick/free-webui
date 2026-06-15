@@ -577,6 +577,72 @@ async def create_conversation(
     return ConversationSummary(id=cid, title="new chat", model=body.model, updated_at=now)
 
 
+@router.post("/{cid}/clone", response_model=ConversationSummary)
+async def clone_conversation(
+    cid: str, request: Request, user: dict = Depends(current_user)
+):
+    """Duplicate a conversation into a fresh one owned by the same user: copies
+    settings, the active (visible) messages, tags and attached collections.
+    Archived message variants are not carried over."""
+    db = _db(request)
+    await _owned(db, cid, user["id"])
+    cur = await db.execute(
+        """
+        SELECT title, model, system_prompt, temperature, top_p, stop, web_search,
+               tools_enabled, max_tokens, presence_penalty, frequency_penalty, seed
+        FROM conversations WHERE id = ?
+        """,
+        (cid,),
+    )
+    src = await cur.fetchone()
+    if not src:
+        raise HTTPException(status_code=404, detail="conversation not found")
+
+    new_id = uuid.uuid4().hex
+    now = int(time.time())
+    new_title = f"{src[0]} (copy)"[:200]
+    await db.execute(
+        """
+        INSERT INTO conversations
+            (id, user_id, title, model, system_prompt, temperature, top_p, stop,
+             web_search, tools_enabled, max_tokens, presence_penalty,
+             frequency_penalty, seed, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (new_id, user["id"], new_title, *src[1:], now, now),
+    )
+    # Copy the visible thread (active messages only), preserving order + timestamps.
+    cur = await db.execute(
+        "SELECT role, content, sources, created_at FROM messages "
+        "WHERE conversation_id = ? AND active = 1 ORDER BY id",
+        (cid,),
+    )
+    for role, content, sources, created in await cur.fetchall():
+        await db.execute(
+            "INSERT INTO messages (conversation_id, role, content, sources, active, created_at) "
+            "VALUES (?, ?, ?, ?, 1, ?)",
+            (new_id, role, content, sources, created),
+        )
+    # Carry over organization: tags and attached knowledge collections.
+    await db.execute(
+        "INSERT INTO conversation_tags (conversation_id, tag) "
+        "SELECT ?, tag FROM conversation_tags WHERE conversation_id = ?",
+        (new_id, cid),
+    )
+    await db.execute(
+        "INSERT INTO conversation_collections (conversation_id, collection_id) "
+        "SELECT ?, collection_id FROM conversation_collections WHERE conversation_id = ?",
+        (new_id, cid),
+    )
+    await db.commit()
+    return ConversationSummary(
+        id=new_id, title=new_title, model=src[1], updated_at=now,
+        tags=sorted(r[0] for r in await (await db.execute(
+            "SELECT tag FROM conversation_tags WHERE conversation_id = ?", (new_id,)
+        )).fetchall()),
+    )
+
+
 @router.get("/{cid}", response_model=Conversation)
 async def get_conversation(
     cid: str, request: Request, user: dict = Depends(current_user)

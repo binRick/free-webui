@@ -242,6 +242,12 @@ export async function deleteConversation(id: string): Promise<void> {
   await fetch(`/api/conversations/${id}`, { method: 'DELETE' });
 }
 
+export async function cloneConversation(id: string): Promise<ConversationSummary> {
+  const res = await fetch(`/api/conversations/${id}/clone`, { method: 'POST' });
+  if (!res.ok) throw new Error(`clone failed: ${res.status}`);
+  return res.json();
+}
+
 export interface Document {
   id: number;
   filename: string;

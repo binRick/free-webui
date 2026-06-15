@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from .access import can_access_model
 from .auth import current_user
 from .config import settings
+from .connections import Connection, conn_headers, conn_url, config_connection, resolve_connection
 from .mcp import compose_tool_specs, run_tool as run_dispatch
 from .memories import load_memory_context
 from .plugins import PluginContext, PluginRegistry, run_inlet, run_outlet
@@ -227,6 +228,7 @@ async def _stream_and_persist(
     max_tool_loops: int = 5,
     plugins: PluginRegistry | None = None,
     parent_message_id: int | None = None,
+    conn: Connection | None = None,
 ) -> AsyncIterator[bytes]:
     """Stream a chat completion. If tools_enabled, runs a tool loop until
     the upstream finishes with a non-tool finish reason, surfacing each
@@ -237,6 +239,7 @@ async def _stream_and_persist(
     tools_executed: list[dict] = []
     generated_images: list[str] = []
     tool_ctx = ToolContext()
+    conn = conn or config_connection()
 
     # Compose the tool catalogue once at the start of the turn (built-in
     # + every enabled MCP server's tools/list); reused across tool loops.
@@ -284,7 +287,10 @@ async def _stream_and_persist(
             tool_buf: dict[int, dict] = {}
             saw_done = False
 
-            async with http.stream("POST", "/chat/completions", json=_payload()) as r:
+            async with http.stream(
+                "POST", conn_url(conn, "chat/completions"),
+                json=_payload(), headers=conn_headers(conn),
+            ) as r:
                 if r.status_code >= 400:
                     err = (await r.aread()).decode(errors="replace")
                     # OpenAI-shaped error object (matches the /v1 proxy); the
@@ -708,11 +714,13 @@ async def send_message(
         history,
         [{"role": "user", "content": body.content}],
     )
+    conn = await resolve_connection(request, db, chosen_model)
     return StreamingResponse(
         _stream_and_persist(
             db, http, cid, upstream, chosen_model,
             conv["temperature"], conv["top_p"], conv["stop"], tools_enabled=conv["tools_enabled"], user_id=user["id"],
             plugins=getattr(request.app.state, "plugins", None),
+            conn=conn,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -761,12 +769,14 @@ async def regenerate(
     mem_ctx = await load_memory_context(db, user["id"])
     context = "\n\n".join(c for c in (mem_ctx, web_ctx, rag_ctx) if c) or None
     upstream = _build_upstream_messages(conv["system_prompt"], context, history)
+    conn = await resolve_connection(request, db, chosen_model)
     return StreamingResponse(
         _stream_and_persist(
             db, http, cid, upstream, chosen_model,
             conv["temperature"], conv["top_p"], conv["stop"], tools_enabled=conv["tools_enabled"], user_id=user["id"],
             plugins=getattr(request.app.state, "plugins", None),
             parent_message_id=archived_id,
+            conn=conn,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -816,11 +826,13 @@ async def edit_message(
     mem_ctx = await load_memory_context(db, user["id"])
     context = "\n\n".join(c for c in (mem_ctx, web_ctx, rag_ctx) if c) or None
     upstream = _build_upstream_messages(conv["system_prompt"], context, history)
+    conn = await resolve_connection(request, db, chosen_model)
     return StreamingResponse(
         _stream_and_persist(
             db, http, cid, upstream, chosen_model,
             conv["temperature"], conv["top_p"], conv["stop"], tools_enabled=conv["tools_enabled"], user_id=user["id"],
             plugins=getattr(request.app.state, "plugins", None),
+            conn=conn,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -866,9 +878,12 @@ async def autotitle(
         "stream": True,
         "temperature": 0.2,
     }
+    conn = await resolve_connection(request, db, conv["model"])
     text = ""
     try:
-        async with http.stream("POST", "/chat/completions", json=body) as r:
+        async with http.stream(
+            "POST", conn_url(conn, "chat/completions"), json=body, headers=conn_headers(conn)
+        ) as r:
             if r.status_code >= 400:
                 return {"title": conv["title"]}
             async for line in r.aiter_lines():

@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from .access import can_access_model, filter_models
 from .api_keys import user_from_bearer
+from .connections import config_connection, conn_headers, conn_url, merged_model_ids, resolve_connection
 
 router = APIRouter(prefix="/v1", tags=["openai_compat"])
 
@@ -47,25 +48,10 @@ def _passthrough_upstream(r: httpx.Response) -> JSONResponse:
 
 @router.get("/models")
 async def list_models(request: Request, user: dict = Depends(user_from_bearer)):
-    http = _http(request)
-    try:
-        r = await http.get("/models")
-    except httpx.HTTPError as e:
-        return _error(502, f"upstream unreachable: {e}", "upstream_error")
-    if r.status_code >= 400:
-        return _passthrough_upstream(r)
-    try:
-        payload = r.json()
-    except json.JSONDecodeError:
-        return _error(502, "upstream returned non-JSON for models", "upstream_error")
-    # Apply the same per-model access control as /api/models so a key can't even
-    # see the names of models it isn't allowed to use.
-    data = payload.get("data")
-    if isinstance(data, list):
-        ids = [m.get("id") for m in data if isinstance(m, dict) and m.get("id")]
-        allowed = set(await filter_models(request.app.state.db, user, ids))
-        payload["data"] = [m for m in data if isinstance(m, dict) and m.get("id") in allowed]
-    return payload
+    db = request.app.state.db
+    ids = await merged_model_ids(request, db)
+    allowed = await filter_models(db, user, ids)
+    return {"object": "list", "data": [{"id": i, "object": "model"} for i in allowed]}
 
 
 def _validate_chat_body(body: object) -> str | None:
@@ -90,13 +76,18 @@ async def chat_completions(request: Request, user: dict = Depends(user_from_bear
     invalid = _validate_chat_body(body)
     if invalid:
         return _error(400, invalid)
-    if not await can_access_model(request.app.state.db, user, body["model"]):
+    db = request.app.state.db
+    if not await can_access_model(db, user, body["model"]):
         return _error(403, f"model '{body['model']}' is not available to this key", "access_denied")
+    conn = await resolve_connection(request, db, body["model"])
 
     if bool(body.get("stream")):
         async def proxy() -> AsyncIterator[bytes]:
             try:
-                async with http.stream("POST", "/chat/completions", json=body) as r:
+                async with http.stream(
+                    "POST", conn_url(conn, "chat/completions"),
+                    json=body, headers=conn_headers(conn),
+                ) as r:
                     if r.status_code >= 400:
                         text = (await r.aread()).decode(errors="replace")
                         yield _error_frame(f"upstream error {r.status_code}: {text[:300]}")
@@ -109,7 +100,10 @@ async def chat_completions(request: Request, user: dict = Depends(user_from_bear
         return StreamingResponse(proxy(), media_type="text/event-stream")
 
     try:
-        r = await http.post("/chat/completions", json=body, timeout=300.0)
+        r = await http.post(
+            conn_url(conn, "chat/completions"), json=body,
+            headers=conn_headers(conn), timeout=300.0,
+        )
     except httpx.HTTPError as e:
         return _error(502, f"upstream unreachable: {e}", "upstream_error")
     if r.status_code >= 400:
@@ -135,8 +129,11 @@ async def embeddings(request: Request, _user: dict = Depends(user_from_bearer)):
         return _error(400, "missing or invalid 'input' (expected string or array)")
     if not isinstance(body.get("model"), str) or not body.get("model"):
         return _error(400, "missing or invalid 'model'")
+    conn = config_connection()
     try:
-        r = await http.post("/embeddings", json=body, timeout=120.0)
+        r = await http.post(
+            conn_url(conn, "embeddings"), json=body, headers=conn_headers(conn), timeout=120.0
+        )
     except httpx.HTTPError as e:
         return _error(502, f"upstream unreachable: {e}", "upstream_error")
     if r.status_code >= 400:

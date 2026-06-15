@@ -122,6 +122,19 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
     updated_at INTEGER NOT NULL
 );
 
+-- Additional OpenAI-compatible upstreams. The env-configured upstream is always
+-- present as implicit connection id 0; these are extra connections an admin adds.
+CREATE TABLE IF NOT EXISTS connections (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    base_url   TEXT NOT NULL,
+    api_key    TEXT,
+    headers    TEXT,
+    enabled    INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS groups (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     name       TEXT UNIQUE NOT NULL,

@@ -316,6 +316,74 @@ export async function adminDeleteUser(id: number): Promise<void> {
   }
 }
 
+export interface Connection {
+  id: number;
+  name: string;
+  base_url: string;
+  has_api_key: boolean;
+  headers: Record<string, string> | null;
+  enabled: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ConnectionInput {
+  name: string;
+  base_url: string;
+  api_key?: string | null;
+  headers?: Record<string, string> | null;
+  enabled?: boolean;
+}
+
+export async function listConnections(): Promise<Connection[]> {
+  const res = await fetch('/api/admin/connections');
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function createConnection(body: ConnectionInput): Promise<Connection> {
+  const res = await fetch('/api/admin/connections', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}));
+    throw new Error(b.detail ?? `create failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function patchConnection(
+  id: number,
+  patch: Partial<ConnectionInput>
+): Promise<Connection> {
+  const res = await fetch(`/api/admin/connections/${id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(patch)
+  });
+  if (!res.ok) throw new Error(`update failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteConnection(id: number): Promise<void> {
+  const res = await fetch(`/api/admin/connections/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`delete failed: ${res.status}`);
+}
+
+export async function testConnection(
+  body: ConnectionInput
+): Promise<{ ok: boolean; error: string | null; models: string[] }> {
+  const res = await fetch('/api/admin/connections/test', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) return { ok: false, error: `request failed: ${res.status}`, models: [] };
+  return res.json();
+}
+
 export interface Group {
   id: number;
   name: string;

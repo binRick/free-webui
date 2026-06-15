@@ -10,6 +10,7 @@ import httpx
 from fastapi import HTTPException
 
 from .config import settings
+from .connections import config_connection, conn_headers, conn_url
 
 
 # ---------- text extraction ----------
@@ -105,8 +106,15 @@ async def embed_texts(
     if not texts:
         return []
     model = model or settings.embedding_model
+    # Embeddings always use the env-configured (default) connection. Pass its
+    # auth explicitly — the shared client carries no default Authorization.
+    conn = config_connection()
     try:
-        r = await http.post("/embeddings", json={"model": model, "input": texts})
+        r = await http.post(
+            conn_url(conn, "embeddings"),
+            json={"model": model, "input": texts},
+            headers=conn_headers(conn),
+        )
     except httpx.HTTPError as e:
         raise HTTPException(
             status_code=502, detail=f"upstream embeddings unreachable: {e}"

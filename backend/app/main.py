@@ -2,14 +2,16 @@ import logging
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .admin_models import router as admin_models_router
 from .access import filter_models
 from .admin_access import router as admin_access_router
+from .admin_connections import router as admin_connections_router
 from .admin_users import router as admin_users_router
+from .connections import merged_model_ids
 from .api_keys import router as api_keys_router
 from .auth import current_user
 from .auth import router as auth_router
@@ -90,9 +92,11 @@ class BodySizeLimitMiddleware:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # No default Authorization header: every request now carries its own
+    # connection's auth (connections.conn_headers), so a keyless extra
+    # connection can't inherit the default upstream's key.
     app.state.http = httpx.AsyncClient(
         base_url=settings.upstream_base_url,
-        headers={"Authorization": f"Bearer {settings.upstream_api_key}"},
         timeout=httpx.Timeout(
             connect=10.0,
             read=settings.upstream_read_timeout_seconds,
@@ -150,6 +154,7 @@ app.include_router(presets_router)
 app.include_router(admin_models_router)
 app.include_router(admin_users_router)
 app.include_router(admin_access_router)
+app.include_router(admin_connections_router)
 app.include_router(web_search_router)
 app.include_router(api_keys_router)
 app.include_router(memories_router)
@@ -167,13 +172,7 @@ async def health() -> dict[str, str]:
 
 @app.get("/api/models", response_model=ModelList)
 async def list_models(request: Request, user: dict = Depends(current_user)) -> ModelList:
-    client: httpx.AsyncClient = app.state.http
-    try:
-        r = await client.get("/models")
-        r.raise_for_status()
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"upstream models error: {e}")
-    payload = r.json()
-    ids = [m["id"] for m in payload.get("data", [])]
-    allowed = await filter_models(request.app.state.db, user, ids)
+    db = request.app.state.db
+    ids = await merged_model_ids(request, db)
+    allowed = await filter_models(db, user, ids)
     return ModelList(data=[ModelInfo(id=i) for i in allowed])

@@ -62,6 +62,12 @@ class AuthStore {
     this.user = null;
     await goto('/login', { replaceState: true });
   }
+
+  async logoutEverywhere(): Promise<void> {
+    await fetch('/api/auth/logout_all', { method: 'POST' });
+    this.user = null;
+    await goto('/login', { replaceState: true });
+  }
 }
 
 export const auth = new AuthStore();

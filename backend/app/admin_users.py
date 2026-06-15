@@ -92,8 +92,10 @@ async def update_user(
             )
 
     if body.password is not None:
+        # Bump token_version so a forced password reset also revokes the user's
+        # existing sessions.
         await db.execute(
-            "UPDATE users SET password_hash = ? WHERE id = ?",
+            "UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?",
             (hash_password(body.password), uid),
         )
     if body.role is not None and body.role != row[1]:

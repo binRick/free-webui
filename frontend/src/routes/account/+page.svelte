@@ -111,6 +111,12 @@
   </section>
 
   <section class="card">
+    <h2>sessions</h2>
+    <p class="muted">Sign out of every device. Other sessions are revoked on their next request.</p>
+    <button class="danger" onclick={() => auth.logoutEverywhere()}>log out everywhere</button>
+  </section>
+
+  <section class="card">
     <h2>example usage</h2>
     <pre>curl http://localhost:8000/v1/chat/completions \
   -H "Authorization: Bearer YOUR_KEY" \
@@ -210,6 +216,18 @@
   .del { padding: 0.25rem 0.6rem; font-size: 0.78rem; }
   .del:hover { color: var(--danger); border-color: var(--danger); }
   .empty { color: var(--text-muted); font-size: 0.9rem; padding: 0.5rem 0; }
+  .muted { color: var(--text-dim); font-size: 0.85rem; margin: 0 0 0.6rem; }
+  .danger {
+    background: color-mix(in srgb, var(--danger) 14%, transparent);
+    color: var(--danger);
+    border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+    border-radius: 6px;
+    padding: 0.45rem 0.8rem;
+    font: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .danger:hover { background: color-mix(in srgb, var(--danger) 22%, transparent); }
   pre {
     background: var(--bg);
     padding: 0.75rem 1rem;

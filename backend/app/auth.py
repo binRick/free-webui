@@ -37,8 +37,10 @@ _secret = _resolve_secret()
 _serializer = URLSafeTimedSerializer(_secret, salt="free-webui-session")
 
 
-def issue_session(user_id: int, username: str, role: str) -> str:
-    return _serializer.dumps({"uid": user_id, "u": username, "r": role})
+def issue_session(user_id: int, username: str, role: str, token_version: int = 0) -> str:
+    return _serializer.dumps(
+        {"uid": user_id, "u": username, "r": role, "tv": token_version}
+    )
 
 
 def read_session(token: str | None) -> dict[str, Any] | None:
@@ -103,11 +105,14 @@ async def current_user(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=401, detail="not authenticated")
     db = _db(request)
     cur = await db.execute(
-        "SELECT id, username, role FROM users WHERE id = ?", (payload["uid"],)
+        "SELECT id, username, role, token_version FROM users WHERE id = ?", (payload["uid"],)
     )
     row = await cur.fetchone()
     if not row:
         raise HTTPException(status_code=401, detail="user not found")
+    if int(payload.get("tv", 0)) != int(row[3]):
+        # The session was revoked (password reset / logout-everywhere).
+        raise HTTPException(status_code=401, detail="session expired")
     return {"id": row[0], "username": row[1], "role": row[2]}
 
 
@@ -164,10 +169,11 @@ async def status_endpoint(request: Request) -> AuthStatus:
         payload = read_session(raw)
         if payload:
             cur = await db.execute(
-                "SELECT id, username, role FROM users WHERE id = ?", (payload["uid"],)
+                "SELECT id, username, role, token_version FROM users WHERE id = ?",
+                (payload["uid"],),
             )
             row = await cur.fetchone()
-            if row:
+            if row and int(payload.get("tv", 0)) == int(row[3]):
                 user = UserOut(id=row[0], username=row[1], role=row[2])
     return AuthStatus(user=user, setup_required=setup_required)
 
@@ -188,7 +194,7 @@ async def setup_endpoint(body: SetupBody, request: Request, response: Response) 
         "UPDATE conversations SET user_id = ? WHERE user_id IS NULL", (uid,)
     )
     await db.commit()
-    token = issue_session(uid, body.username, "admin")
+    token = issue_session(uid, body.username, "admin", 0)
     _set_cookie(response, token)
     return UserOut(id=uid, username=body.username, role="admin")
 
@@ -198,19 +204,34 @@ async def login_endpoint(body: LoginBody, request: Request, response: Response) 
     _check_login_rate(request, body.username)
     db = _db(request)
     cur = await db.execute(
-        "SELECT id, password_hash, role FROM users WHERE username = ?", (body.username,)
+        "SELECT id, password_hash, role, token_version FROM users WHERE username = ?",
+        (body.username,),
     )
     row = await cur.fetchone()
     if not row or not verify_password(row[1], body.password):
         raise HTTPException(status_code=401, detail="invalid credentials")
-    uid, _, role = row
-    token = issue_session(uid, body.username, role)
+    uid, _, role, tv = row
+    token = issue_session(uid, body.username, role, tv)
     _set_cookie(response, token)
     return UserOut(id=uid, username=body.username, role=role)
 
 
 @router.post("/logout", status_code=204)
 async def logout_endpoint(response: Response) -> None:
+    response.delete_cookie(SESSION_COOKIE, path="/")
+
+
+@router.post("/logout_all", status_code=204)
+async def logout_all_endpoint(
+    request: Request, response: Response, user: dict = Depends(current_user)
+) -> None:
+    """Revoke every session for the current user (bump token_version), so all
+    other devices/cookies are signed out on their next request."""
+    db = _db(request)
+    await db.execute(
+        "UPDATE users SET token_version = token_version + 1 WHERE id = ?", (user["id"],)
+    )
+    await db.commit()
     response.delete_cookie(SESSION_COOKIE, path="/")
 
 

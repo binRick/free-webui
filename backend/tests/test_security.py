@@ -48,6 +48,30 @@ async def test_body_size_limit_returns_413(client, monkeypatch):
     assert r.status_code == 413
 
 
+async def test_password_reset_revokes_existing_session(client):
+    await _signup(client)  # alice (admin), logged in
+    assert (await client.get("/api/auth/me")).status_code == 200
+    me = (await client.get("/api/auth/me")).json()
+
+    # Admin resets the password -> token_version bumps -> the live cookie is stale.
+    r = await client.patch(f"/api/admin/users/{me['id']}", json={"password": "newpassword123"})
+    assert r.status_code == 200
+    assert (await client.get("/api/auth/me")).status_code == 401
+
+    # Logging in with the new password issues a fresh, valid session.
+    await client.post("/api/auth/logout")
+    lr = await client.post("/api/auth/login", json={"username": "alice", "password": "newpassword123"})
+    assert lr.status_code == 200
+    assert (await client.get("/api/auth/me")).status_code == 200
+
+
+async def test_logout_all_revokes_session(client):
+    await _signup(client)
+    assert (await client.get("/api/auth/me")).status_code == 200
+    assert (await client.post("/api/auth/logout_all")).status_code == 204
+    assert (await client.get("/api/auth/me")).status_code == 401
+
+
 async def test_login_rate_limit(client, monkeypatch):
     from app import auth
 

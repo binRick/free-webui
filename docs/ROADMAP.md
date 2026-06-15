@@ -64,7 +64,7 @@ Most are `S`/`M` and high risk-reduction. **Partially landed on
 | **Knowledge bases / collections** reusable across chats | L | RAG is per-conversation only; same doc re-embedded per chat. |
 | **Multiple upstream connections** | L | Single baked-in `upstream_base_url`; add a connections table + merged `/api/models` + per-model routing. |
 | User **groups** + granular permissions + per-model access control | L | Binary admin/user today; enforce model access on chat **and** `/v1`. |
-| Server-side session store / revocation | M | Stateless 30-day cookies can't be revoked on password/role change. |
+| Server-side session store / revocation | M | ✅ landed (`users.token_version`; password reset + "log out everywhere" bump it; `current_user` rejects stale cookies). Role changes already apply live (role is read from the DB each request). |
 | **OAuth / OIDC SSO** | L | authlib flow + account linking + open-signup toggle. |
 | Decompose the 1194-LOC chat route + Vitest harness | L | Split into MessageList/MessageItem/Composer/SettingsDrawer; cache status endpoints. |
 | In-composer `#`/`@`/`/` commands + searchable model picker + missing gen params | M | `max_tokens`, penalties, seed, `num_ctx`, `keep_alive`. |

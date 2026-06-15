@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS users (
     username      TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     role          TEXT NOT NULL DEFAULT 'user',
+    -- Bumped to revoke a user's live sessions (password reset, logout-everywhere).
+    token_version INTEGER NOT NULL DEFAULT 0,
     created_at    INTEGER NOT NULL
 );
 
@@ -148,6 +150,7 @@ _MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("conversations", "tools_enabled", "INTEGER NOT NULL DEFAULT 0"),
     ("messages", "parent_id", "INTEGER"),
     ("messages", "active", "INTEGER NOT NULL DEFAULT 1"),
+    ("users", "token_version", "INTEGER NOT NULL DEFAULT 0"),
 )
 
 

@@ -67,14 +67,34 @@ If `open-webui` is the kitchen-sink reference, `free-webui` aims to be the lean,
 
 ## Status
 
-**v0.0.1 — core chat only.** What works today:
+**v0.1 — a full self-host chat platform.** Built on a SvelteKit SPA + FastAPI
+backend + SQLite, with a 220+-test backend suite and CI. What works today:
 
-- Streaming chat against any OpenAI-compatible endpoint (Ollama, vLLM, LM Studio, llama.cpp server, OpenAI itself)
-- Model picker populated from the upstream's `/v1/models`
-- In-memory conversation, "new chat" reset, mid-stream cancel
-- Single-page SvelteKit frontend, FastAPI backend, Vite dev proxy
+- **Chat** — streaming against any OpenAI-compatible upstream (Ollama, vLLM, LM
+  Studio, llama.cpp, OpenAI); persistence; sidebar with search, date grouping,
+  rename, **pin/archive**; markdown (shiki/KaTeX/mermaid); edit + **non-destructive
+  regenerate with variant navigation** (`◀ n/m ▶`); per-chat params incl.
+  `max_tokens`/penalties/seed; **LLM auto-titling**; copy + 👍/👎 per message.
+- **Knowledge** — per-chat RAG uploads **and reusable knowledge-base collections**
+  attachable to any conversation; SearXNG web search; multimodal image input.
+- **Tools** — function-calling loop with built-ins, MCP servers, image generation
+  (OpenAI/A1111/ComfyUI), a sandboxed `run_python` code interpreter, and plugins.
+- **Multi-user** — argon2 auth, **OIDC/SSO**, server-side session revocation,
+  user **groups + per-model access control**, admin user management + **audit log**
+  + **feedback log**.
+- **Connectivity** — **multiple upstream connections** (per-model routing); an
+  own OpenAI-compatible `/v1` surface (chat/models/embeddings) **and an Anthropic
+  `/v1/messages` proxy** (Claude Code / the Anthropic SDK can target free-webui);
+  per-user API keys.
+- **Sharing** — conversation export (JSON/Markdown) and **public read-only share
+  links**; memories; prompt/preset libraries; voice (Web Speech); PWA.
 
-Explicitly **not** in this release: persistence, auth, multi-user, RAG, tools/function calling, attachments, web search, plugins, voice. Those land later, behind a stable core.
+Security-sensitive features (auth/access/connections/OIDC) were each shipped with
+adversarial multi-agent review. See [`docs/ROADMAP.md`](./docs/ROADMAP.md) for
+what's done vs. planned.
+
+Still deferred / non-goals: in-composer `#`/`@`/`/` commands, inline citations,
+real-time channels, evaluation/leaderboard, LDAP/SCIM, full i18n.
 
 ---
 

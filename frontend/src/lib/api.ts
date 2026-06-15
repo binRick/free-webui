@@ -159,6 +159,12 @@ export async function autotitle(id: string): Promise<string | null> {
   return (await res.json()).title ?? null;
 }
 
+export async function getFollowups(id: string): Promise<string[]> {
+  const res = await fetch(`/api/conversations/${id}/followups`, { method: 'POST' });
+  if (!res.ok) return [];
+  return (await res.json()).suggestions ?? [];
+}
+
 export interface MessageVariant {
   id: number;
   active: boolean;

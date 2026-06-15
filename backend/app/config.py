@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     # heuristic on any failure. Set false to keep the heuristic title.
     auto_title: bool = True
 
+    # After a reply, offer a few suggested follow-up questions (a lightweight
+    # upstream call, like auto_title). Set false to disable.
+    suggest_followups: bool = True
+
     # RAG: embedding model + chunking params (set embedding_model to
     # something your upstream actually serves, e.g. nomic-embed-text).
     embedding_model: str = "nomic-embed-text"

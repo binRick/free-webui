@@ -20,6 +20,7 @@
     createShare,
     deleteShare,
     getConversationCollections,
+    getFollowups,
     getShareToken,
     listCollections,
     listDocuments,
@@ -88,6 +89,7 @@
   let attachedCollections = $state<Set<number>>(new Set());
   let shareToken = $state<string | null>(null);
   let shareCopied = $state(false);
+  let followups = $state<string[]>([]);
   let docError = $state<string | null>(null);
   let docInput: HTMLInputElement;
   let prompts = $state<Prompt[]>([]);
@@ -476,6 +478,7 @@
     }) => Promise<void>
   ) {
     streaming = true;
+    followups = [];
     abort = new AbortController();
     try {
       await operation({
@@ -486,6 +489,7 @@
         onSources: setSources
       });
       await load(currentId);
+      followups = await getFollowups(currentId).catch(() => []);
     } catch (err) {
       const last = messages[messages.length - 1];
       if (last) {
@@ -1009,6 +1013,14 @@
   {/each}
 </div>
 
+{#if followups.length && !streaming}
+  <div class="followups">
+    {#each followups as f, fi (fi)}
+      <button type="button" class="followup" onclick={() => { input = f; }}>{f}</button>
+    {/each}
+  </div>
+{/if}
+
 <form
   class="composer"
   ondragover={(e) => e.preventDefault()}
@@ -1398,6 +1410,28 @@
     gap: 0.35rem;
     margin-top: 0.5rem;
   }
+  .followups {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    max-width: 760px;
+    margin: 0 auto;
+    width: 100%;
+    padding: 0 1rem 0.5rem;
+    box-sizing: border-box;
+  }
+  .followup {
+    background: var(--bg-elev);
+    color: var(--text-dim);
+    border: 1px solid var(--border-soft);
+    border-radius: 999px;
+    padding: 0.3rem 0.7rem;
+    font: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+    text-align: left;
+  }
+  .followup:hover { color: var(--text); border-color: var(--accent); background: var(--bg-hover); }
   .composer {
     display: flex;
     flex-direction: column;

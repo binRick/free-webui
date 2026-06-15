@@ -175,6 +175,28 @@ async def test_autotitle_generates_from_exchange(client, upstream):
     assert summary["title"] == "Penguin Facts"
 
 
+async def test_followups_generates_suggestions(client, upstream):
+    await _signup(client)
+    cid = await _new(client)
+    await _consume(client, "POST", f"/api/conversations/{cid}/messages", {"content": "tell me about penguins"})
+
+    upstream.queue_chat(
+        sse(content_chunk("How do penguins stay warm?\nWhat do they eat?\n- Where do they live?"), finish())
+    )
+    r = await client.post(f"/api/conversations/{cid}/followups")
+    assert r.status_code == 200
+    s = r.json()["suggestions"]
+    assert s == ["How do penguins stay warm?", "What do they eat?", "Where do they live?"]
+
+
+async def test_followups_empty_without_exchange(client, upstream):
+    await _signup(client)
+    cid = await _new(client)
+    r = await client.post(f"/api/conversations/{cid}/followups")
+    assert r.json()["suggestions"] == []
+    assert upstream.chat_calls == []  # no upstream call when there's nothing to suggest from
+
+
 async def test_autotitle_noop_without_exchange(client, upstream):
     await _signup(client)
     cid = await _new(client)

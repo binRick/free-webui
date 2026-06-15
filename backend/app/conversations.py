@@ -967,6 +967,70 @@ async def autotitle(
     return {"title": new_title}
 
 
+@router.post("/{cid}/followups")
+async def followups(cid: str, request: Request, user: dict = Depends(current_user)) -> dict:
+    """Suggest a few follow-up questions from the recent exchange via a
+    lightweight upstream call. No-op (empty) when disabled, with no exchange yet,
+    or on any failure."""
+    db = _db(request)
+    await _owned(db, cid, user["id"])
+    http = _http(request)
+    conv = await _conv_settings(db, cid)
+    if not settings.suggest_followups:
+        return {"suggestions": []}
+    history = await _load_history(db, cid)
+    convo = [m for m in history if m["role"] in ("user", "assistant")]
+    if len(convo) < 2:
+        return {"suggestions": []}
+    await _guard_model(db, user, None, conv["model"])
+
+    snippet = [{"role": m["role"], "content": _content_text(m["content"])} for m in convo[-4:]]
+    instruction = {
+        "role": "user",
+        "content": (
+            "Suggest exactly 3 short follow-up questions the user might ask next, "
+            "each under 12 words. Reply with one question per line and nothing "
+            "else — no numbering, no preamble."
+        ),
+    }
+    conn = await resolve_connection(request, db, conv["model"])
+    body = {
+        "model": conv["model"] or settings.default_model,
+        "messages": [*snippet, instruction],
+        "stream": True,
+        "temperature": 0.7,
+        "max_tokens": 200,
+    }
+    text = ""
+    try:
+        async with http.stream(
+            "POST", conn_url(conn, "chat/completions"), json=body, headers=conn_headers(conn)
+        ) as r:
+            if r.status_code >= 400:
+                return {"suggestions": []}
+            async for line in r.aiter_lines():
+                if line.endswith("[DONE]"):
+                    break
+                if not line.startswith("data: "):
+                    continue
+                try:
+                    chunk = json.loads(line[6:])
+                except json.JSONDecodeError:
+                    continue
+                delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content")
+                if isinstance(delta, str):
+                    text += delta
+    except httpx.HTTPError:
+        return {"suggestions": []}
+
+    suggestions: list[str] = []
+    for raw in text.splitlines():
+        s = raw.strip().lstrip("-•*0123456789.) \t").strip()
+        if s:
+            suggestions.append(s)
+    return {"suggestions": suggestions[:3]}
+
+
 class FeedbackBody(BaseModel):
     rating: int = Field(ge=-1, le=1)  # 1 = thumbs up, -1 = thumbs down, 0 = clear
     comment: str | None = Field(default=None, max_length=2000)

@@ -187,7 +187,7 @@ async def _load_history(db: aiosqlite.Connection, cid: str) -> list[dict]:
         # User vision attachments persist as /api/files/{id} refs; inline the
         # real bytes so the upstream model actually sees the image on replay.
         if isinstance(content, list):
-            content = await expand_file_refs(db, content)
+            content = await expand_file_refs(db, content, cid)
         history.append({"role": r[0], "content": content})
     return history
 

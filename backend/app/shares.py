@@ -88,6 +88,6 @@ async def get_shared(token: str, request: Request) -> dict:
     # inline any externalized image bytes back into the payload.
     messages = []
     for r in await cur.fetchall():
-        content = await expand_file_refs(db, _decode_content(r[1]))
+        content = await expand_file_refs(db, _decode_content(r[1]), cid)
         messages.append({"role": r[0], "content": content})
     return {"title": conv[0], "messages": messages}

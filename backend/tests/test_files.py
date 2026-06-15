@@ -140,6 +140,38 @@ async def test_admin_can_read_any_file(client):
 
 # ---- public share inlines image bytes ----
 
+async def test_forged_cross_conversation_ref_not_inlined(client, monkeypatch):
+    """A user must not be able to embed a forged /api/files ref pointing at a
+    file from another conversation and exfiltrate its bytes through the public
+    share path (expand_file_refs is scoped to the conversation)."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "allow_public_sharing", True)
+    await _admin(client)
+
+    # Conversation A holds a real externalized image -> learn its file id.
+    cid_a = (await client.post("/api/conversations", json={"model": None})).json()["id"]
+    await _send_image(client, cid_a)
+    victim_ref = await _image_ref(client, cid_a)  # /api/files/<id> owned by conv A
+
+    # Conversation B embeds that ref by hand (no data URL -> stored verbatim).
+    cid_b = (await client.post("/api/conversations", json={"model": None})).json()["id"]
+    await _consume(
+        client,
+        "POST",
+        f"/api/conversations/{cid_b}/messages",
+        {"content": [{"type": "image_url", "image_url": {"url": victim_ref}}]},
+    )
+    token = (await client.post(f"/api/conversations/{cid_b}/share")).json()["token"]
+
+    await client.post("/api/auth/logout")
+    shared = (await client.get(f"/api/shared/{token}")).json()
+    img = next(p for p in shared["messages"][0]["content"] if p["type"] == "image_url")
+    # The ref stays a bare ref (404 for the public viewer) — bytes are NOT inlined.
+    assert img["image_url"]["url"] == victim_ref
+    assert "base64" not in json.dumps(shared["messages"])
+
+
 async def test_public_share_inlines_image(client, monkeypatch):
     from app.config import settings
 

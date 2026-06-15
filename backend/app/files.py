@@ -84,9 +84,17 @@ async def externalize_parts(
     return out
 
 
-async def expand_file_refs(db: aiosqlite.Connection, content: Any) -> Any:
+async def expand_file_refs(
+    db: aiosqlite.Connection, content: Any, conversation_id: str | None
+) -> Any:
     """Inverse of :func:`externalize_parts`: turn ``/api/files/{id}`` image
-    refs back into inline base64 ``data:`` URLs by loading the stored bytes."""
+    refs back into inline base64 ``data:`` URLs by loading the stored bytes.
+
+    Scoped to ``conversation_id``: a ref is only inlined when the file belongs
+    to this conversation. Without that scope a user could embed a forged
+    ``/api/files/{someone-elses-id}`` ref in their own message and exfiltrate
+    another user's blob through the upstream replay or the public share path.
+    """
     if not isinstance(content, list):
         return content
     out = []
@@ -97,7 +105,8 @@ async def expand_file_refs(db: aiosqlite.Connection, content: Any) -> Any:
             m = _REF_RE.match(url) if isinstance(url, str) else None
             if m:
                 cur = await db.execute(
-                    "SELECT mime, data FROM files WHERE id = ?", (m.group(1),)
+                    "SELECT mime, data FROM files WHERE id = ? AND conversation_id = ?",
+                    (m.group(1), conversation_id),
                 )
                 row = await cur.fetchone()
                 if row is not None:

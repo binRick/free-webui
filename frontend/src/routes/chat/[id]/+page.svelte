@@ -247,8 +247,19 @@
     prompts = await listPrompts();
   }
 
+  // Saved prompts may embed {{date}} / {{time}} / {{datetime}} placeholders,
+  // resolved to the user's locale at the moment the prompt is inserted.
+  function substituteVars(text: string): string {
+    const now = new Date();
+    return text
+      .replace(/\{\{\s*date\s*\}\}/gi, now.toLocaleDateString())
+      .replace(/\{\{\s*time\s*\}\}/gi, now.toLocaleTimeString())
+      .replace(/\{\{\s*datetime\s*\}\}/gi, now.toLocaleString());
+  }
+
   function insertPrompt(p: Prompt) {
-    input = input ? `${input}\n${p.content}` : p.content;
+    const text = substituteVars(p.content);
+    input = input ? `${input}\n${text}` : text;
   }
 
   async function removePrompt(id: number) {
@@ -732,8 +743,9 @@
     const after = input.slice(cmd.end);
     let caretPos = before.length;
     if (cmd.kind === 'prompt' && typeof item !== 'string' && 'content' in item) {
-      input = before + item.content + after;
-      caretPos = (before + item.content).length;
+      const text = substituteVars(item.content);
+      input = before + text + after;
+      caretPos = (before + text).length;
     } else if (cmd.kind === 'model' && typeof item === 'string') {
       model = item;
       input = before + after;

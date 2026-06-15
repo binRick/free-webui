@@ -26,6 +26,10 @@ CREATE TABLE IF NOT EXISTS conversations (
     stop          TEXT,
     web_search    INTEGER NOT NULL DEFAULT 0,
     tools_enabled INTEGER NOT NULL DEFAULT 0,
+    max_tokens    INTEGER,
+    presence_penalty  REAL,
+    frequency_penalty REAL,
+    seed          INTEGER,
     created_at    INTEGER NOT NULL,
     updated_at    INTEGER NOT NULL
 );
@@ -232,6 +236,10 @@ _MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("conversations", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"),
     ("conversations", "web_search", "INTEGER NOT NULL DEFAULT 0"),
     ("conversations", "tools_enabled", "INTEGER NOT NULL DEFAULT 0"),
+    ("conversations", "max_tokens", "INTEGER"),
+    ("conversations", "presence_penalty", "REAL"),
+    ("conversations", "frequency_penalty", "REAL"),
+    ("conversations", "seed", "INTEGER"),
     ("messages", "parent_id", "INTEGER"),
     ("messages", "active", "INTEGER NOT NULL DEFAULT 1"),
     ("users", "token_version", "INTEGER NOT NULL DEFAULT 0"),

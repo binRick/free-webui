@@ -30,6 +30,10 @@ export interface Conversation {
   stop: string[] | null;
   web_search: boolean;
   tools_enabled: boolean;
+  max_tokens: number | null;
+  presence_penalty: number | null;
+  frequency_penalty: number | null;
+  seed: number | null;
   created_at: number;
   updated_at: number;
   messages: StoredMessage[];
@@ -44,6 +48,10 @@ export interface UpdateConversation {
   stop?: string[] | null;
   web_search?: boolean | null;
   tools_enabled?: boolean | null;
+  max_tokens?: number | null;
+  presence_penalty?: number | null;
+  frequency_penalty?: number | null;
+  seed?: number | null;
 }
 
 export interface WebSearchStatus {

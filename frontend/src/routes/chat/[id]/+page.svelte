@@ -72,6 +72,10 @@
   let temperature = $state<string>('');
   let topP = $state<string>('');
   let stopText = $state('');
+  let maxTokens = $state<string>('');
+  let presencePenalty = $state<string>('');
+  let frequencyPenalty = $state<string>('');
+  let seed = $state<string>('');
   let savingSettings = $state(false);
   let docs = $state<Document[]>([]);
   let docUploading = $state(false);
@@ -126,6 +130,10 @@
       temperature = conv.temperature != null ? String(conv.temperature) : '';
       topP = conv.top_p != null ? String(conv.top_p) : '';
       stopText = (conv.stop ?? []).join(', ');
+      maxTokens = conv.max_tokens != null ? String(conv.max_tokens) : '';
+      presencePenalty = conv.presence_penalty != null ? String(conv.presence_penalty) : '';
+      frequencyPenalty = conv.frequency_penalty != null ? String(conv.frequency_penalty) : '';
+      seed = conv.seed != null ? String(conv.seed) : '';
       editingIndex = null;
       docs = await listDocuments(id);
       collections = await listCollections();
@@ -386,6 +394,10 @@
         temperature: parseNumber(temperature),
         top_p: parseNumber(topP),
         stop: parseStop(stopText),
+        max_tokens: parseNumber(maxTokens),
+        presence_penalty: parseNumber(presencePenalty),
+        frequency_penalty: parseNumber(frequencyPenalty),
+        seed: parseNumber(seed),
         web_search: webSearch,
         tools_enabled: toolsEnabled
       });
@@ -636,6 +648,26 @@
       <label class="num">
         <span class="lbl">top-p</span>
         <input type="number" min="0" max="1" step="0.05" bind:value={topP} placeholder="default" />
+      </label>
+    </div>
+    <div class="row">
+      <label class="num">
+        <span class="lbl">max tokens</span>
+        <input type="number" min="1" step="1" bind:value={maxTokens} placeholder="default" />
+      </label>
+      <label class="num">
+        <span class="lbl">seed</span>
+        <input type="number" step="1" bind:value={seed} placeholder="random" />
+      </label>
+    </div>
+    <div class="row">
+      <label class="num">
+        <span class="lbl">presence penalty</span>
+        <input type="number" min="-2" max="2" step="0.1" bind:value={presencePenalty} placeholder="default" />
+      </label>
+      <label class="num">
+        <span class="lbl">frequency penalty</span>
+        <input type="number" min="-2" max="2" step="0.1" bind:value={frequencyPenalty} placeholder="default" />
       </label>
     </div>
     <label>

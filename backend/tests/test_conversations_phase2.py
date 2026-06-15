@@ -197,6 +197,25 @@ async def test_autotitle_disabled_is_noop(client, upstream, monkeypatch):
     assert len(upstream.chat_calls) == before  # disabled -> no upstream call
 
 
+async def test_generation_params_persist_and_forward(client, upstream):
+    await _signup(client)
+    cid = await _new(client)
+    await client.patch(
+        f"/api/conversations/{cid}",
+        json={"max_tokens": 128, "presence_penalty": 0.5, "frequency_penalty": -0.2, "seed": 42},
+    )
+    conv = (await client.get(f"/api/conversations/{cid}")).json()
+    assert conv["max_tokens"] == 128 and conv["seed"] == 42
+    assert conv["presence_penalty"] == 0.5 and conv["frequency_penalty"] == -0.2
+
+    await _consume(client, "POST", f"/api/conversations/{cid}/messages", {"content": "hi"})
+    body = upstream.chat_calls[-1]
+    assert body["max_tokens"] == 128
+    assert body["presence_penalty"] == 0.5
+    assert body["frequency_penalty"] == -0.2
+    assert body["seed"] == 42
+
+
 async def test_conversation_search(client):
     await _signup(client)
     c1 = await _new(client)

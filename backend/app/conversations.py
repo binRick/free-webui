@@ -56,6 +56,10 @@ class Conversation(BaseModel):
     stop: list[str] | None = None
     web_search: bool = False
     tools_enabled: bool = False
+    max_tokens: int | None = None
+    presence_penalty: float | None = None
+    frequency_penalty: float | None = None
+    seed: int | None = None
     created_at: int
     updated_at: int
     messages: list[StoredMessage]
@@ -90,6 +94,10 @@ class UpdateBody(BaseModel):
     stop: list[str] | None = None
     web_search: bool | None = None
     tools_enabled: bool | None = None
+    max_tokens: int | None = None
+    presence_penalty: float | None = None
+    frequency_penalty: float | None = None
+    seed: int | None = None
 
 
 def _db(request: Request) -> aiosqlite.Connection:
@@ -176,7 +184,8 @@ async def _conv_settings(db: aiosqlite.Connection, cid: str) -> dict[str, Any]:
     cur = await db.execute(
         """
         SELECT title, model, system_prompt, temperature, top_p, stop,
-               web_search, tools_enabled
+               web_search, tools_enabled, max_tokens, presence_penalty,
+               frequency_penalty, seed
         FROM conversations WHERE id = ?
         """,
         (cid,),
@@ -194,6 +203,10 @@ async def _conv_settings(db: aiosqlite.Connection, cid: str) -> dict[str, Any]:
         "stop": json.loads(stop_raw) if stop_raw else None,
         "web_search": bool(row[6]),
         "tools_enabled": bool(row[7]),
+        "max_tokens": row[8],
+        "presence_penalty": row[9],
+        "frequency_penalty": row[10],
+        "seed": row[11],
     }
 
 
@@ -229,6 +242,7 @@ async def _stream_and_persist(
     plugins: PluginRegistry | None = None,
     parent_message_id: int | None = None,
     conn: Connection | None = None,
+    gen: dict[str, Any] | None = None,
 ) -> AsyncIterator[bytes]:
     """Stream a chat completion. If tools_enabled, runs a tool loop until
     the upstream finishes with a non-tool finish reason, surfacing each
@@ -258,6 +272,11 @@ async def _stream_and_persist(
         body["top_p"] = top_p
     if stop:
         body["stop"] = stop
+    # Optional OpenAI-standard generation params, forwarded only when set.
+    for key in ("max_tokens", "presence_penalty", "frequency_penalty", "seed"):
+        val = (gen or {}).get(key)
+        if val is not None:
+            body[key] = val
 
     if plugins:
         ctx = PluginContext(
@@ -507,7 +526,8 @@ async def get_conversation(
     cur = await db.execute(
         """
         SELECT id, title, model, system_prompt, temperature, top_p, stop,
-               web_search, tools_enabled, created_at, updated_at
+               web_search, tools_enabled, created_at, updated_at,
+               max_tokens, presence_penalty, frequency_penalty, seed
         FROM conversations WHERE id = ?
         """,
         (cid,),
@@ -539,6 +559,10 @@ async def get_conversation(
         tools_enabled=bool(row[8]),
         created_at=row[9],
         updated_at=row[10],
+        max_tokens=row[11],
+        presence_penalty=row[12],
+        frequency_penalty=row[13],
+        seed=row[14],
         messages=[
             StoredMessage(id=m[0], role=m[1], content=m[2], created_at=m[3], rating=m[4])
             for m in msg_rows
@@ -721,6 +745,7 @@ async def send_message(
             conv["temperature"], conv["top_p"], conv["stop"], tools_enabled=conv["tools_enabled"], user_id=user["id"],
             plugins=getattr(request.app.state, "plugins", None),
             conn=conn,
+            gen=conv,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -777,6 +802,7 @@ async def regenerate(
             plugins=getattr(request.app.state, "plugins", None),
             parent_message_id=archived_id,
             conn=conn,
+            gen=conv,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -833,6 +859,7 @@ async def edit_message(
             conv["temperature"], conv["top_p"], conv["stop"], tools_enabled=conv["tools_enabled"], user_id=user["id"],
             plugins=getattr(request.app.state, "plugins", None),
             conn=conn,
+            gen=conv,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

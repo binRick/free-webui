@@ -902,3 +902,85 @@ async def set_feedback(
     )
     await db.commit()
     return {"rating": body.rating}
+
+
+async def _variant_chain(db: aiosqlite.Connection, cid: str, msg_id: int) -> list[dict]:
+    """Ordered regenerate-variant chain that msg_id belongs to.
+
+    Regenerate links each new assistant variant to the one it replaced via
+    parent_id, forming a linear chain (root -> … -> active tip). Given any
+    member, walk up to the root then down through children.
+    """
+    cur = await db.execute(
+        "SELECT id, parent_id FROM messages WHERE id = ? AND conversation_id = ?",
+        (msg_id, cid),
+    )
+    row = await cur.fetchone()
+    if not row:
+        return []
+    # Walk up to the root of the chain.
+    root, pid, guard = row[0], row[1], 0
+    while pid is not None and guard < 1000:
+        guard += 1
+        cur = await db.execute(
+            "SELECT id, parent_id FROM messages WHERE id = ? AND conversation_id = ?",
+            (pid, cid),
+        )
+        parent = await cur.fetchone()
+        if not parent:
+            break
+        root, pid = parent[0], parent[1]
+    # Walk down from the root through children (linear chain).
+    chain: list[dict] = []
+    node, guard = root, 0
+    while node is not None and guard < 1000:
+        guard += 1
+        cur = await db.execute(
+            "SELECT id, active, created_at FROM messages WHERE id = ? AND conversation_id = ?",
+            (node, cid),
+        )
+        r = await cur.fetchone()
+        if not r:
+            break
+        chain.append({"id": r[0], "active": bool(r[1]), "created_at": r[2]})
+        cur = await db.execute(
+            "SELECT id FROM messages WHERE parent_id = ? AND conversation_id = ?",
+            (node, cid),
+        )
+        child = await cur.fetchone()
+        node = child[0] if child else None
+    return chain
+
+
+@router.get("/{cid}/messages/{msg_id}/variants")
+async def list_variants(
+    cid: str, msg_id: int, request: Request, user: dict = Depends(current_user)
+) -> dict:
+    """List the regenerate-variant chain a message belongs to (oldest first)."""
+    db = _db(request)
+    await _owned(db, cid, user["id"])
+    chain = await _variant_chain(db, cid, msg_id)
+    if not chain:
+        raise HTTPException(status_code=404, detail="message not found")
+    return {"variants": chain}
+
+
+@router.post("/{cid}/messages/{msg_id}/activate")
+async def activate_variant(
+    cid: str, msg_id: int, request: Request, user: dict = Depends(current_user)
+) -> dict:
+    """Make msg_id the active variant in its chain (the others go to active=0),
+    so it's the one returned by reads. Lets the UI switch between regenerated
+    replies without losing any."""
+    db = _db(request)
+    await _owned(db, cid, user["id"])
+    chain = await _variant_chain(db, cid, msg_id)
+    ids = [v["id"] for v in chain]
+    if msg_id not in ids:
+        raise HTTPException(status_code=404, detail="message not found")
+    for vid in ids:
+        await db.execute(
+            "UPDATE messages SET active = ? WHERE id = ?", (1 if vid == msg_id else 0, vid)
+        )
+    await db.commit()
+    return {"active": msg_id}

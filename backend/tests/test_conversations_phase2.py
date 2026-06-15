@@ -122,6 +122,44 @@ async def test_feedback_is_owner_scoped(client):
 
 # ---- search ----
 
+async def test_variant_list_and_activate(client, upstream):
+    await _signup(client)
+    cid = await _new(client)
+    await _consume(client, "POST", f"/api/conversations/{cid}/messages", {"content": "hi"})
+    upstream.queue_chat(sse(content_chunk("variant two"), finish()))
+    await _consume(client, "POST", f"/api/conversations/{cid}/regenerate")
+
+    conv = (await client.get(f"/api/conversations/{cid}")).json()
+    active_id = next(m["id"] for m in conv["messages"] if m["role"] == "assistant")
+    assert next(m["content"] for m in conv["messages"] if m["id"] == active_id) == "variant two"
+
+    variants = (
+        await client.get(f"/api/conversations/{cid}/messages/{active_id}/variants")
+    ).json()["variants"]
+    assert len(variants) == 2
+    assert [v["active"] for v in variants] == [False, True]  # archived old, active new
+    old_id = variants[0]["id"]
+
+    # Switch back to the original reply.
+    r = await client.post(f"/api/conversations/{cid}/messages/{old_id}/activate")
+    assert r.json()["active"] == old_id
+    conv2 = (await client.get(f"/api/conversations/{cid}")).json()
+    aid2 = next(m["id"] for m in conv2["messages"] if m["role"] == "assistant")
+    assert aid2 == old_id
+    assert next(m["content"] for m in conv2["messages"] if m["id"] == old_id).strip() == "echo: hi"
+
+    # The chain is reachable from either member, with the flag flipped.
+    v2 = (await client.get(f"/api/conversations/{cid}/messages/{old_id}/variants")).json()["variants"]
+    assert [v["active"] for v in v2] == [True, False]
+
+
+async def test_variants_404_unknown_message(client):
+    await _signup(client)
+    cid = await _new(client)
+    r = await client.get(f"/api/conversations/{cid}/messages/9999/variants")
+    assert r.status_code == 404
+
+
 async def test_autotitle_generates_from_exchange(client, upstream):
     await _signup(client)
     cid = await _new(client)

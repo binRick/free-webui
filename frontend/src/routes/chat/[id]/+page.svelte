@@ -2,6 +2,7 @@
   import { tick } from 'svelte';
   import { page } from '$app/state';
   import {
+    activateVariant,
     autotitle,
     createMemory,
     createPreset,
@@ -19,6 +20,7 @@
     listDocuments,
     listMemories,
     listModels,
+    listVariants,
     listPresets,
     listPrompts,
     parseContent,
@@ -31,6 +33,7 @@
     type Document,
     type Memory,
     type MessageContent,
+    type MessageVariant,
     type Preset,
     type Prompt,
     type Role,
@@ -112,6 +115,7 @@
         content: m.content,
         rating: m.rating ?? null
       }));
+      await refreshVariants();
       systemPrompt = conv.system_prompt ?? '';
       temperature = conv.temperature != null ? String(conv.temperature) : '';
       topP = conv.top_p != null ? String(conv.top_p) : '';
@@ -315,6 +319,35 @@
     } catch {
       // ignore feedback failure
     }
+  }
+
+  // Regenerate variants of the trailing assistant message (◀ n/m ▶ navigation).
+  let variants = $state<MessageVariant[]>([]);
+  async function refreshVariants() {
+    const last = messages[messages.length - 1];
+    if (last && last.role === 'assistant' && last.id != null) {
+      variants = await listVariants(currentId, last.id);
+    } else {
+      variants = [];
+    }
+  }
+  const variantNav = $derived.by(() => {
+    if (variants.length < 2) return null;
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== 'assistant' || last.id == null) return null;
+    const idx = variants.findIndex((v) => v.id === last.id);
+    if (idx < 0) return null;
+    return {
+      idx,
+      total: variants.length,
+      prev: idx > 0 ? variants[idx - 1].id : null,
+      next: idx < variants.length - 1 ? variants[idx + 1].id : null
+    };
+  });
+  async function switchVariant(id: number | null) {
+    if (id == null || streaming) return;
+    await activateVariant(currentId, id);
+    await load(currentId);
   }
 
   function parseNumber(s: string): number | null {
@@ -746,6 +779,23 @@
                 {copiedIdx === i ? '✓ copied' : 'copy'}
               </button>
             {/if}
+            {#if msg.role === 'assistant' && i === messages.length - 1 && variantNav}
+              <span class="variant-nav">
+                <button
+                  class="action vnav"
+                  aria-label="previous variant"
+                  disabled={variantNav.prev == null}
+                  onclick={() => switchVariant(variantNav.prev)}
+                >◀</button>
+                <span class="vcount">{variantNav.idx + 1}/{variantNav.total}</span>
+                <button
+                  class="action vnav"
+                  aria-label="next variant"
+                  disabled={variantNav.next == null}
+                  onclick={() => switchVariant(variantNav.next)}
+                >▶</button>
+              </span>
+            {/if}
             {#if msg.role === 'assistant' && i === messages.length - 1 && msg.content}
               <button class="action" onclick={regen}>regenerate</button>
             {/if}
@@ -1161,6 +1211,10 @@
   .action.primary:hover { background: var(--border); }
   .action.thumb { padding: 0.15rem 0.35rem; }
   .action.thumb.on { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .variant-nav { display: inline-flex; align-items: center; gap: 0.2rem; }
+  .action.vnav { padding: 0.15rem 0.35rem; }
+  .action.vnav:disabled { opacity: 0.4; cursor: default; }
+  .vcount { font-size: 0.7rem; color: var(--text-muted); min-width: 1.8rem; text-align: center; }
   .content { line-height: 1.5; word-wrap: break-word; }
   .edit {
     width: 100%;

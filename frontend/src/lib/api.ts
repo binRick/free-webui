@@ -97,6 +97,27 @@ export async function autotitle(id: string): Promise<string | null> {
   return (await res.json()).title ?? null;
 }
 
+export interface MessageVariant {
+  id: number;
+  active: boolean;
+  created_at: number;
+}
+
+export async function listVariants(
+  conversationId: string,
+  messageId: number
+): Promise<MessageVariant[]> {
+  const res = await fetch(`/api/conversations/${conversationId}/messages/${messageId}/variants`);
+  if (!res.ok) return [];
+  return (await res.json()).variants ?? [];
+}
+
+export async function activateVariant(conversationId: string, messageId: number): Promise<void> {
+  await fetch(`/api/conversations/${conversationId}/messages/${messageId}/activate`, {
+    method: 'POST'
+  });
+}
+
 export async function setFeedback(
   conversationId: string,
   messageId: number,

@@ -50,7 +50,7 @@ Most are `S`/`M` and high risk-reduction. **Partially landed on
 | --- | --- | --- |
 | Sidebar conversation **search + date grouping + rename** (+ fix nested button-in-anchor) | M | ✅ landed (backend `?q=` title/content filter; client date buckets; inline rename) |
 | **Copy-whole-message** button + per-message thumbs up/down | S | ✅ landed (copy on all messages; 👍/👎 wired to feedback) |
-| **Message branching** schema + non-destructive regenerate | L | ✅ foundation (messages `active`/`parent_id`; regenerate archives the prior variant; reads return the active one). Variant-navigation UI ⬜ deferred |
+| **Message branching** schema + non-destructive regenerate + variant nav | L | ✅ landed (messages `active`/`parent_id`; regenerate archives the prior variant; `GET …/variants` + `POST …/activate`; chat shows ◀ n/m ▶ on the trailing assistant to switch replies) |
 | Feedback/rating table + thumbs up/down | M | ✅ landed (`message_feedback` upsert + per-message rating in GET) |
 | Per-message regenerate/delete (any assistant turn) | S | ⬜ deferred (backend regenerate is trailing-only today) |
 | Uniform API error handling + toast store + 401-redirect | M | ⬜ deferred (touches every `api.ts` call) |

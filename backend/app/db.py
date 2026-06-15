@@ -230,6 +230,19 @@ CREATE TABLE IF NOT EXISTS audit_log (
     detail     TEXT,
     created_at INTEGER NOT NULL
 );
+
+-- Object/media store: base64 image payloads extracted out of message content
+-- and kept as blobs, served via /api/files/{id}. conversation_id is nulled if
+-- the conversation is deleted but the blob row (and ownership) survives.
+CREATE TABLE IF NOT EXISTS files (
+    id              TEXT PRIMARY KEY,
+    user_id         INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    conversation_id TEXT REFERENCES conversations(id) ON DELETE SET NULL,
+    mime            TEXT NOT NULL,
+    data            BLOB NOT NULL,
+    size            INTEGER NOT NULL,
+    created_at      INTEGER NOT NULL
+);
 """
 
 # Indexes are created AFTER _ensure_columns so an index on a migrated column
@@ -257,6 +270,8 @@ CREATE INDEX IF NOT EXISTS idx_collection_chunks_doc ON collection_chunks(docume
 CREATE INDEX IF NOT EXISTS idx_conversation_collections_conv ON conversation_collections(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_conversation_tags_conv ON conversation_tags(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_conversation_tags_tag ON conversation_tags(tag);
+CREATE INDEX IF NOT EXISTS idx_files_conv ON files(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_files_user ON files(user_id);
 """
 
 _MIGRATIONS: tuple[tuple[str, str, str], ...] = (

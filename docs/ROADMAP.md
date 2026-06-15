@@ -73,10 +73,12 @@ Most are `S`/`M` and high risk-reduction. **Partially landed on
 
 ## Phase 4 — Larger bets (infra + enterprise/collab)
 
-Real migration framework (versioned, not ADD-COLUMN-only) → object/media store
-for images (base64-in-SQLite today) → observability + audit log → Anthropic
-`/v1/messages` proxy + harden `/v1` → analytics + feedback log → notes →
-server-side voice (STT/TTS).
+Real migration framework (versioned, not ADD-COLUMN-only) → ~~object/media
+store for images (base64-in-SQLite today)~~ ✅ landed (`files` table + blob
+store; base64 image payloads externalized to `/api/files/{id}` at persist time;
+re-inlined for upstream vision replay and public-share rendering) → observability
++ audit log → ~~Anthropic `/v1/messages` proxy~~ ✅ + harden `/v1` → analytics +
+feedback log → notes → server-side voice (STT/TTS).
 
 ## Phase 5 — Big architectural bets (XL, optional)
 

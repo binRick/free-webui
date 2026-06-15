@@ -1,5 +1,6 @@
 """Image generation: provider clients, the status endpoint, tool gating,
 and the `imagine` tool wired through the streaming tool loop."""
+import base64
 import json
 
 import httpx
@@ -347,13 +348,20 @@ async def test_imagine_tool_loop(client, monkeypatch):
     assert "".join(deltas) == "Here is your image."
     assert call_count["n"] == 2
 
-    # persisted as a multimodal assistant message carrying the image part
+    # persisted as a multimodal assistant message; the image is externalized to
+    # the object store (a /api/files ref), not the inline base64 payload.
     conv = (await client.get(f"/api/conversations/{cid}")).json()
     last = conv["messages"][-1]
     assert last["role"] == "assistant"
     content = json.loads(last["content"])
-    assert {"type": "image_url", "image_url": {"url": "data:image/png;base64,QUJD"}} in content
+    assert "base64" not in last["content"]
+    img = next(p for p in content if p.get("type") == "image_url")
+    ref = img["image_url"]["url"]
+    assert ref.startswith("/api/files/")
     assert any(p.get("type") == "text" and p["text"] == "Here is your image." for p in content)
+    # the ref serves the original bytes (QUJD == base64 of "ABC")
+    fr = await client.get(ref)
+    assert fr.status_code == 200 and fr.content == b"ABC"
 
 
 # ---- additional provider error / edge-case coverage ----
@@ -626,7 +634,10 @@ async def test_imagine_image_only_persistence(client, monkeypatch):
     last = conv["messages"][-1]
     assert last["role"] == "assistant"
     content = json.loads(last["content"])
-    assert content == [{"type": "image_url", "image_url": {"url": "data:image/png;base64,QUJD"}}]
+    assert len(content) == 1 and content[0]["type"] == "image_url"
+    ref = content[0]["image_url"]["url"]
+    assert ref.startswith("/api/files/")
+    assert (await client.get(ref)).content == b"ABC"
     assert not any(p.get("type") == "text" for p in content)
 
 
@@ -684,8 +695,10 @@ async def test_imagine_multiple_images_in_one_turn(client, monkeypatch):
 
     conv = (await client.get(f"/api/conversations/{cid}")).json()
     content = json.loads(conv["messages"][-1]["content"])
-    img_parts = [p["image_url"]["url"] for p in content if p.get("type") == "image_url"]
-    assert img_parts == ["data:image/png;base64,IMG1", "data:image/png;base64,IMG2"]
+    refs = [p["image_url"]["url"] for p in content if p.get("type") == "image_url"]
+    assert len(refs) == 2 and all(r.startswith("/api/files/") for r in refs)
+    served = [(await client.get(r)).content for r in refs]
+    assert served == [base64.b64decode("IMG1"), base64.b64decode("IMG2")]
 
 
 async def test_generated_image_not_replayed_upstream(client, monkeypatch):

@@ -16,6 +16,7 @@ from .access import can_access_model
 from .auth import current_user
 from .config import settings
 from .connections import Connection, conn_headers, conn_url, config_connection, resolve_connection
+from .files import expand_file_refs, externalize_parts, store_data_url
 from .mcp import compose_tool_specs, run_tool as run_dispatch
 from .memories import load_memory_context
 from .plugins import PluginContext, PluginRegistry, run_inlet, run_outlet
@@ -180,10 +181,15 @@ async def _load_history(db: aiosqlite.Connection, cid: str) -> list[dict]:
         (cid,),
     )
     rows = await cur.fetchall()
-    return [
-        {"role": r[0], "content": _history_content_for_upstream(r[0], _decode_content(r[1]))}
-        for r in rows
-    ]
+    history = []
+    for r in rows:
+        content = _history_content_for_upstream(r[0], _decode_content(r[1]))
+        # User vision attachments persist as /api/files/{id} refs; inline the
+        # real bytes so the upstream model actually sees the image on replay.
+        if isinstance(content, list):
+            content = await expand_file_refs(db, content)
+        history.append({"role": r[0], "content": content})
+    return history
 
 
 async def _conv_settings(db: aiosqlite.Connection, cid: str) -> dict[str, Any]:
@@ -476,10 +482,9 @@ async def _stream_and_persist(
                     parts: list[dict] = []
                     if text:
                         parts.append({"type": "text", "text": text})
-                    parts += [
-                        {"type": "image_url", "image_url": {"url": url}}
-                        for url in generated_images
-                    ]
+                    for url in generated_images:
+                        ref = await store_data_url(db, user_id or 0, cid, url)
+                        parts.append({"type": "image_url", "image_url": {"url": ref}})
                     stored = _encode_content(parts)
                 else:
                     stored = text
@@ -775,9 +780,10 @@ async def send_message(
     history = await _load_history(db, cid)
 
     now = int(time.time())
+    stored_content = await externalize_parts(db, user["id"], cid, body.content)
     await db.execute(
         "INSERT INTO messages (conversation_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-        (cid, "user", _encode_content(body.content), now),
+        (cid, "user", _encode_content(stored_content), now),
     )
     await _maybe_update_title(db, cid, conv["title"], _content_preview(body.content))
     chosen_model = await _maybe_update_model(db, cid, body.model, conv["model"])
@@ -883,8 +889,9 @@ async def edit_message(
     conv = await _conv_settings(db, cid)
     await _guard_model(db, user, body.model, conv["model"])
 
+    stored_content = await externalize_parts(db, user["id"], cid, body.content)
     await db.execute(
-        "UPDATE messages SET content = ? WHERE id = ?", (_encode_content(body.content), msg_id)
+        "UPDATE messages SET content = ? WHERE id = ?", (_encode_content(stored_content), msg_id)
     )
     await db.execute(
         "DELETE FROM messages WHERE conversation_id = ? AND id > ?", (cid, msg_id)

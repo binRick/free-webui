@@ -228,7 +228,8 @@ async def messages(
     except httpx.HTTPError as e:
         return _err(502, f"upstream unreachable: {e}", "api_error")
     if r.status_code >= 400:
-        return _err(502, r.text[:400], "api_error")
+        # Don't reflect the upstream body verbatim on this external surface.
+        return _err(502, f"upstream error {r.status_code}", "api_error")
     try:
         oai = r.json()
     except json.JSONDecodeError:

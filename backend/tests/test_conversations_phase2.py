@@ -259,6 +259,16 @@ async def test_pin_and_archive(client):
     assert len((await client.get("/api/conversations")).json()) == 1
 
 
+async def test_gen_params_validation_422(client):
+    await _signup(client)
+    cid = await _new(client)
+    assert (await client.patch(f"/api/conversations/{cid}", json={"max_tokens": 0})).status_code == 422
+    assert (await client.patch(f"/api/conversations/{cid}", json={"presence_penalty": 5})).status_code == 422
+    assert (await client.patch(f"/api/conversations/{cid}", json={"seed": -1})).status_code == 422
+    # a valid value still works
+    assert (await client.patch(f"/api/conversations/{cid}", json={"max_tokens": 256})).status_code == 200
+
+
 async def test_conversation_search(client):
     await _signup(client)
     c1 = await _new(client)

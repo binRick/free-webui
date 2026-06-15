@@ -105,6 +105,15 @@ async def test_empty_completion_not_persisted(client, upstream):
     assert [m["role"] for m in msgs] == ["user"]  # no assistant row
 
 
+async def test_empty_choices_chunk_is_skipped(client, upstream):
+    await _signup(client)
+    cid = await _new_conv(client)
+    # a chunk with choices:[] (some providers send a usage-only final chunk)
+    upstream.queue_chat(sse({"choices": []}, content_chunk("recovered"), finish()))
+    text = await _raw(client, "POST", f"/api/conversations/{cid}/messages", {"content": "x"})
+    assert "recovered" in text  # didn't crash; the empty-choices chunk was skipped
+
+
 async def test_malformed_tool_args_fall_back_to_empty(client, upstream):
     await _signup(client)
     cid = await _new_conv(client, tools_enabled=True)

@@ -30,6 +30,27 @@ async def test_rag_sources_emitted_and_persisted(client):
     assert src["kind"] == "document" and src["label"] == "kb.txt"
 
 
+async def test_sources_not_emitted_on_upstream_error(client, upstream):
+    from tests.conftest import error_response
+
+    await _signup(client)
+    cid = (await client.post("/api/conversations", json={})).json()["id"]
+    await client.post(
+        f"/api/conversations/{cid}/documents",
+        files={"file": ("kb.txt", b"penguins huddle", "text/plain")},
+    )
+    upstream.queue_chat(error_response(500, "boom"))
+    raw = b""
+    async with client.stream(
+        "POST", f"/api/conversations/{cid}/messages", json={"content": "penguins"}
+    ) as r:
+        async for chunk in r.aiter_bytes():
+            raw += chunk
+    text = raw.decode()
+    assert '"error"' in text
+    assert "event: sources" not in text  # deferred until the upstream actually streams
+
+
 async def test_no_sources_without_rag(client):
     await _signup(client)
     cid = (await client.post("/api/conversations", json={})).json()["id"]

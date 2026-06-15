@@ -594,7 +594,15 @@
     if (streaming) return;
     const last = messages[messages.length - 1];
     if (!last || last.role !== 'assistant') return;
-    messages[messages.length - 1] = { ...last, content: '' };
+    // clear carry-over so the prior variant's sources/tools/images don't
+    // briefly mis-attribute to the regenerating reply
+    messages[messages.length - 1] = {
+      ...last,
+      content: '',
+      sources: undefined,
+      tool_calls: undefined,
+      images: undefined
+    };
     await tick();
     await runStream((opts) => regenerate(currentId, model, opts));
   }

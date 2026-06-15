@@ -97,10 +97,10 @@ class UpdateBody(BaseModel):
     stop: list[str] | None = None
     web_search: bool | None = None
     tools_enabled: bool | None = None
-    max_tokens: int | None = None
-    presence_penalty: float | None = None
-    frequency_penalty: float | None = None
-    seed: int | None = None
+    max_tokens: int | None = Field(default=None, ge=1, le=131072)
+    presence_penalty: float | None = Field(default=None, ge=-2, le=2)
+    frequency_penalty: float | None = Field(default=None, ge=-2, le=2)
+    seed: int | None = Field(default=None, ge=0)
     pinned: bool | None = None
     archived: bool | None = None
 
@@ -332,11 +332,8 @@ async def _stream_and_persist(
             p["tool_choice"] = "auto"
         return p
 
+    sources_sent = False
     try:
-        # Surface the grounding sources up front so the UI can render a strip
-        # immediately; they're also persisted with the assistant message below.
-        if sources:
-            yield f"event: sources\ndata: {json.dumps(sources)}\n\n".encode()
         for _ in range(max_tool_loops):
             iter_content: list[str] = []
             tool_buf: dict[int, dict] = {}
@@ -358,6 +355,11 @@ async def _stream_and_persist(
                     }
                     yield f"data: {json.dumps(frame)}\n\n".encode()
                     return
+                # Emit grounding sources only once the upstream actually started
+                # streaming, so an upstream error doesn't leave a phantom strip.
+                if sources and not sources_sent:
+                    yield f"event: sources\ndata: {json.dumps(sources)}\n\n".encode()
+                    sources_sent = True
 
                 async for line in r.aiter_lines():
                     if not line:
@@ -373,7 +375,7 @@ async def _stream_and_persist(
                     except json.JSONDecodeError:
                         continue
 
-                    delta = chunk.get("choices", [{}])[0].get("delta", {})
+                    delta = (chunk.get("choices") or [{}])[0].get("delta", {})
                     content = delta.get("content")
                     if isinstance(content, str) and content:
                         iter_content.append(content)
@@ -955,7 +957,7 @@ async def autotitle(
                     chunk = json.loads(line[6:])
                 except json.JSONDecodeError:
                     continue
-                delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content")
+                delta = (chunk.get("choices") or [{}])[0].get("delta", {}).get("content")
                 if isinstance(delta, str):
                     text += delta
     except httpx.HTTPError:
@@ -1017,7 +1019,7 @@ async def followups(cid: str, request: Request, user: dict = Depends(current_use
                     chunk = json.loads(line[6:])
                 except json.JSONDecodeError:
                     continue
-                delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content")
+                delta = (chunk.get("choices") or [{}])[0].get("delta", {}).get("content")
                 if isinstance(delta, str):
                     text += delta
     except httpx.HTTPError:

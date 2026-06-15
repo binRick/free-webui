@@ -67,7 +67,8 @@ Most are `S`/`M` and high risk-reduction. **Partially landed on
 | Server-side session store / revocation | M | ✅ landed (`users.token_version`; password reset + "log out everywhere" bump it; `current_user` rejects stale cookies). Role changes already apply live (role is read from the DB each request). |
 | **OAuth / OIDC SSO** | L | ✅ landed (auth-code flow + userinfo, **no extra dep**; https-enforced; signed-state CSRF; verified-email account linking + auto-provision; first-user/admin-email role mapping; `/admin`-less login-page SSO button). |
 | Decompose the 1194-LOC chat route + Vitest harness | L | Split into MessageList/MessageItem/Composer/SettingsDrawer; cache status endpoints. |
-| In-composer `#`/`@`/`/` commands + searchable model picker + missing gen params | M | `max_tokens`, penalties, seed, `num_ctx`, `keep_alive`. |
+| Missing generation params | M | ✅ landed (per-chat `max_tokens`, `presence_penalty`, `frequency_penalty`, `seed`; persisted + forwarded; settings-drawer inputs). In-composer `#`/`@`/`/` commands + searchable model picker still ⬜ |
+| **Anthropic `/v1/messages` proxy** | M | ✅ landed (`/anthropic/v1/messages`; translates Anthropic ↔ OpenAI incl. streaming; `x-api-key` auth; access-controlled + connection-routed — Claude Code / the Anthropic SDK can target free-webui). |
 
 ## Phase 4 — Larger bets (infra + enterprise/collab)
 

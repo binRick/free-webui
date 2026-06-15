@@ -12,6 +12,7 @@ from .admin_access import router as admin_access_router
 from .admin_connections import router as admin_connections_router
 from .admin_users import router as admin_users_router
 from .connections import merged_model_ids
+from .anthropic_compat import router as anthropic_compat_router
 from .api_keys import router as api_keys_router
 from .auth import current_user
 from .auth import router as auth_router
@@ -138,7 +139,7 @@ app.add_middleware(
     allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "x-api-key", "anthropic-version"],
 )
 
 
@@ -163,6 +164,7 @@ app.include_router(web_search_router)
 app.include_router(api_keys_router)
 app.include_router(memories_router)
 app.include_router(openai_compat_router)
+app.include_router(anthropic_compat_router)
 app.include_router(mcp_router)
 app.include_router(images_router)
 app.include_router(code_router)

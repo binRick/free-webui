@@ -50,3 +50,12 @@ authoritative status):
 - Migration ordering (indexes created after column migrations); the always-200
   test stub that hid every core error path; account-takeover via unverified
   OIDC email; fail-open model-access grants; per-request `/models` fan-out.
+- Object-store hardening (adversarial review): cross-conversation blob exfil via
+  forged `/api/files` refs; request-body cap bypass via chunked transfer-encoding
+  (now meters streamed bytes) + base64 decode-amplification guard; unbounded
+  inline amplification on replay/share (per-payload byte budget); orphaned blob
+  reclamation (GC on message truncation + FK CASCADE on conversation delete);
+  self-contained clones (copy their own blobs).
+- Variant-tree corruption: regenerating after navigating to an older variant no
+  longer forks the parent chain into two simultaneously-active replies; variant
+  switching is restricted to the latest turn.

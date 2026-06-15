@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from .auth import current_user
 from .config import settings
 from .conversations import _decode_content
-from .files import expand_file_refs
+from .files import _INLINE_BUDGET, expand_file_refs
 
 router = APIRouter(prefix="/api", tags=["shares"])
 
@@ -87,7 +87,8 @@ async def get_shared(token: str, request: Request) -> dict:
     # The public viewer is unauthenticated and cannot hit /api/files/{id}, so
     # inline any externalized image bytes back into the payload.
     messages = []
+    budget = [_INLINE_BUDGET]
     for r in await cur.fetchall():
-        content = await expand_file_refs(db, _decode_content(r[1]), cid)
+        content = await expand_file_refs(db, _decode_content(r[1]), cid, budget)
         messages.append({"role": r[0], "content": content})
     return {"title": conv[0], "messages": messages}

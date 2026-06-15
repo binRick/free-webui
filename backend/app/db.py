@@ -232,12 +232,13 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 
 -- Object/media store: base64 image payloads extracted out of message content
--- and kept as blobs, served via /api/files/{id}. conversation_id is nulled if
--- the conversation is deleted but the blob row (and ownership) survives.
+-- and kept as blobs, served via /api/files/{id}. Each blob belongs to exactly
+-- one conversation (clones copy their own blobs), so deleting the conversation
+-- reclaims its blobs; message truncation reclaims via gc_orphan_files().
 CREATE TABLE IF NOT EXISTS files (
     id              TEXT PRIMARY KEY,
     user_id         INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    conversation_id TEXT REFERENCES conversations(id) ON DELETE SET NULL,
+    conversation_id TEXT REFERENCES conversations(id) ON DELETE CASCADE,
     mime            TEXT NOT NULL,
     data            BLOB NOT NULL,
     size            INTEGER NOT NULL,

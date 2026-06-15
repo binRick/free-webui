@@ -68,34 +68,60 @@ class SecurityHeadersMiddleware:
 
 
 class BodySizeLimitMiddleware:
-    """Reject requests whose declared Content-Length exceeds the configured cap
-    (a coarse DoS backstop). Reads the limit live so tests can adjust it."""
+    """Cap the request body size (a coarse DoS backstop). Reads the limit live so
+    tests can adjust it.
+
+    A declared ``Content-Length`` over the cap is rejected up front. Requests
+    *without* a Content-Length (``Transfer-Encoding: chunked``) would otherwise
+    slip the header check and buffer unbounded, so the actual streamed bytes are
+    metered too: once the cap is crossed the body is truncated (the endpoint then
+    fails to parse it) rather than buffered in full."""
 
     def __init__(self, app):
         self.app = app
 
     async def __call__(self, scope, receive, send):
         limit = settings.max_request_body_bytes
-        if scope["type"] == "http" and limit:
-            for key, value in scope.get("headers", []):
-                if key == b"content-length":
-                    try:
-                        declared = int(value)
-                    except ValueError:
-                        declared = 0
-                    if declared > limit:
-                        body = b'{"detail":"request body too large"}'
-                        await send({
-                            "type": "http.response.start",
-                            "status": 413,
-                            "headers": [
-                                (b"content-type", b"application/json"),
-                                (b"content-length", str(len(body)).encode()),
-                            ],
-                        })
-                        await send({"type": "http.response.body", "body": body})
-                        return
-        await self.app(scope, receive, send)
+        if scope["type"] != "http" or not limit:
+            await self.app(scope, receive, send)
+            return
+        for key, value in scope.get("headers", []):
+            if key == b"content-length":
+                try:
+                    declared = int(value)
+                except ValueError:
+                    declared = 0
+                if declared > limit:
+                    body = b'{"detail":"request body too large"}'
+                    await send({
+                        "type": "http.response.start",
+                        "status": 413,
+                        "headers": [
+                            (b"content-type", b"application/json"),
+                            (b"content-length", str(len(body)).encode()),
+                        ],
+                    })
+                    await send({"type": "http.response.body", "body": body})
+                    return
+
+        received = 0
+        tripped = False
+
+        async def guarded_receive():
+            nonlocal received, tripped
+            if tripped:
+                return {"type": "http.request", "body": b"", "more_body": False}
+            message = await receive()
+            if message.get("type") == "http.request":
+                received += len(message.get("body", b""))
+                if received > limit:
+                    tripped = True
+                    # Truncate: hand the app a terminal empty chunk so the
+                    # oversized body is never fully buffered (parsing then 4xxs).
+                    return {"type": "http.request", "body": b"", "more_body": False}
+            return message
+
+        await self.app(scope, guarded_receive, send)
 
 
 class RequestIdMiddleware:

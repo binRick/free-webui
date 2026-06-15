@@ -140,6 +140,48 @@ async def test_admin_can_read_any_file(client):
 
 # ---- public share inlines image bytes ----
 
+async def test_truncate_and_conv_delete_reclaim_blobs(client):
+    await _admin(client)
+    cid = (await client.post("/api/conversations", json={"model": None})).json()["id"]
+    await _send_image(client, cid)
+    ref = await _image_ref(client, cid)
+    assert (await client.get(ref)).status_code == 200
+
+    # delete the message that referenced it -> blob reclaimed (gc_orphan_files)
+    msg_id = (await client.get(f"/api/conversations/{cid}")).json()["messages"][0]["id"]
+    await client.delete(f"/api/conversations/{cid}/messages/{msg_id}")
+    assert (await client.get(ref)).status_code == 404
+
+    # and deleting the whole conversation reclaims its blobs (FK CASCADE)
+    cid2 = (await client.post("/api/conversations", json={"model": None})).json()["id"]
+    await _send_image(client, cid2)
+    ref2 = await _image_ref(client, cid2)
+    assert (await client.get(ref2)).status_code == 200
+    await client.delete(f"/api/conversations/{cid2}")
+    assert (await client.get(ref2)).status_code == 404
+
+
+async def test_clone_copies_blobs_and_is_decoupled(client):
+    await _admin(client)
+    cid = (await client.post("/api/conversations", json={"model": None})).json()["id"]
+    await _send_image(client, cid)
+    orig_ref = await _image_ref(client, cid)
+
+    new_id = (await client.post(f"/api/conversations/{cid}/clone")).json()["id"]
+    clone_parts = json.loads(
+        (await client.get(f"/api/conversations/{new_id}")).json()["messages"][0]["content"]
+    )
+    clone_ref = next(p["image_url"]["url"] for p in clone_parts if p["type"] == "image_url")
+    # the clone got its own blob (distinct id) serving the same bytes
+    assert clone_ref != orig_ref
+    assert (await client.get(clone_ref)).content == PNG
+
+    # deleting the original must not break the clone's image
+    await client.delete(f"/api/conversations/{cid}")
+    assert (await client.get(orig_ref)).status_code == 404
+    assert (await client.get(clone_ref)).status_code == 200
+
+
 async def test_forged_cross_conversation_ref_not_inlined(client, monkeypatch):
     """A user must not be able to embed a forged /api/files ref pointing at a
     file from another conversation and exfiltrate its bytes through the public

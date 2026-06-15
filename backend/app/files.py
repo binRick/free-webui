@@ -31,7 +31,15 @@ router = APIRouter(prefix="/api/files", tags=["files"])
 # data:[<mediatype>][;base64],<payload>
 _DATA_URL_RE = re.compile(r"^data:([\w.+-]+/[\w.+-]+)?(;base64)?,(.*)$", re.DOTALL)
 _REF_RE = re.compile(r"^/api/files/([A-Za-z0-9_-]+)$")
+# Finds every /api/files/{id} ref embedded anywhere in a (JSON-encoded) message.
+_REF_FINDER = re.compile(r"/api/files/([A-Za-z0-9_-]+)")
 _MAX_DECODED = 25 * 1024 * 1024  # 25 MB per object guard
+# base64 inflates by 4/3; reject the encoded string before decoding so an
+# oversized data: URL can't force a large decode allocation.
+_MAX_ENCODED = (_MAX_DECODED // 3 + 1) * 4
+# Aggregate cap on bytes inlined back into a single replay/share payload, so a
+# conversation with many large images can't blow up per-request memory.
+_INLINE_BUDGET = 16 * 1024 * 1024
 
 
 def _new_id() -> str:
@@ -50,6 +58,8 @@ async def store_data_url(
     if not m or not m.group(2):  # only base64 data URLs are externalized
         return url
     mime = m.group(1) or "application/octet-stream"
+    if len(m.group(3)) > _MAX_ENCODED:  # too big to decode within the cap
+        return url
     try:
         raw = base64.b64decode(m.group(3), validate=True)
     except (binascii.Error, ValueError):
@@ -85,7 +95,10 @@ async def externalize_parts(
 
 
 async def expand_file_refs(
-    db: aiosqlite.Connection, content: Any, conversation_id: str | None
+    db: aiosqlite.Connection,
+    content: Any,
+    conversation_id: str | None,
+    budget: list[int] | None = None,
 ) -> Any:
     """Inverse of :func:`externalize_parts`: turn ``/api/files/{id}`` image
     refs back into inline base64 ``data:`` URLs by loading the stored bytes.
@@ -94,6 +107,11 @@ async def expand_file_refs(
     to this conversation. Without that scope a user could embed a forged
     ``/api/files/{someone-elses-id}`` ref in their own message and exfiltrate
     another user's blob through the upstream replay or the public share path.
+
+    ``budget`` is an optional single-element ``[remaining_bytes]`` cell, shared
+    across the messages of one replay/share, that bounds the total bytes inlined
+    into that payload. Once exhausted, further refs are left as bare refs rather
+    than accumulating unbounded memory.
     """
     if not isinstance(content, list):
         return content
@@ -103,13 +121,15 @@ async def expand_file_refs(
             iu = part.get("image_url")
             url = iu.get("url") if isinstance(iu, dict) else None
             m = _REF_RE.match(url) if isinstance(url, str) else None
-            if m:
+            if m and (budget is None or budget[0] > 0):
                 cur = await db.execute(
-                    "SELECT mime, data FROM files WHERE id = ? AND conversation_id = ?",
+                    "SELECT mime, data, size FROM files WHERE id = ? AND conversation_id = ?",
                     (m.group(1), conversation_id),
                 )
                 row = await cur.fetchone()
-                if row is not None:
+                if row is not None and (budget is None or row[2] <= budget[0]):
+                    if budget is not None:
+                        budget[0] -= row[2]
                     b64 = base64.b64encode(row[1]).decode("ascii")
                     part = {
                         **part,
@@ -117,6 +137,52 @@ async def expand_file_refs(
                     }
         out.append(part)
     return out
+
+
+async def gc_orphan_files(db: aiosqlite.Connection, conversation_id: str) -> None:
+    """Delete this conversation's blob rows that no remaining message references.
+
+    Called after message truncation (edit/delete/regenerate) so superseded image
+    blobs don't accumulate forever. Safe because every file row's
+    ``conversation_id`` is its sole referencer (clones copy their own blobs)."""
+    cur = await db.execute(
+        "SELECT content FROM messages WHERE conversation_id = ?", (conversation_id,)
+    )
+    referenced: set[str] = set()
+    for (content,) in await cur.fetchall():
+        if isinstance(content, str) and "/api/files/" in content:
+            referenced.update(_REF_FINDER.findall(content))
+    cur = await db.execute(
+        "SELECT id FROM files WHERE conversation_id = ?", (conversation_id,)
+    )
+    stale = [fid for (fid,) in await cur.fetchall() if fid not in referenced]
+    for fid in stale:
+        await db.execute("DELETE FROM files WHERE id = ?", (fid,))
+
+
+async def clone_file_refs(
+    db: aiosqlite.Connection, user_id: int, new_cid: str, content: str
+) -> str:
+    """Copy every blob referenced in ``content`` into fresh rows owned by
+    ``new_cid`` and rewrite the refs, so a cloned conversation is self-contained
+    (deleting the original can't break the clone's images)."""
+    if not isinstance(content, str) or "/api/files/" not in content:
+        return content
+    for old_id in dict.fromkeys(_REF_FINDER.findall(content)):
+        cur = await db.execute(
+            "SELECT mime, data, size FROM files WHERE id = ?", (old_id,)
+        )
+        row = await cur.fetchone()
+        if row is None:
+            continue
+        new_fid = _new_id()
+        await db.execute(
+            "INSERT INTO files (id, user_id, conversation_id, mime, data, size, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (new_fid, user_id, new_cid, row[0], row[1], row[2], int(time.time())),
+        )
+        content = content.replace(f"/api/files/{old_id}", f"/api/files/{new_fid}")
+    return content
 
 
 @router.get("/{file_id}")

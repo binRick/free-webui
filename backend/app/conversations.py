@@ -16,7 +16,14 @@ from .access import can_access_model
 from .auth import current_user
 from .config import settings
 from .connections import Connection, conn_headers, conn_url, config_connection, resolve_connection
-from .files import expand_file_refs, externalize_parts, store_data_url
+from .files import (
+    _INLINE_BUDGET,
+    clone_file_refs,
+    expand_file_refs,
+    externalize_parts,
+    gc_orphan_files,
+    store_data_url,
+)
 from .mcp import compose_tool_specs, run_tool as run_dispatch
 from .memories import load_memory_context
 from .plugins import PluginContext, PluginRegistry, run_inlet, run_outlet
@@ -182,12 +189,13 @@ async def _load_history(db: aiosqlite.Connection, cid: str) -> list[dict]:
     )
     rows = await cur.fetchall()
     history = []
+    budget = [_INLINE_BUDGET]  # bounds total image bytes inlined into one replay
     for r in rows:
         content = _history_content_for_upstream(r[0], _decode_content(r[1]))
         # User vision attachments persist as /api/files/{id} refs; inline the
         # real bytes so the upstream model actually sees the image on replay.
         if isinstance(content, list):
-            content = await expand_file_refs(db, content, cid)
+            content = await expand_file_refs(db, content, cid, budget)
         history.append({"role": r[0], "content": content})
     return history
 
@@ -618,6 +626,9 @@ async def clone_conversation(
         (cid,),
     )
     for role, content, sources, created in await cur.fetchall():
+        # Give the clone its own copies of any referenced blobs so it is
+        # self-contained (deleting the original can't break the clone's images).
+        content = await clone_file_refs(db, user["id"], new_id, content)
         await db.execute(
             "INSERT INTO messages (conversation_id, role, content, sources, active, created_at) "
             "VALUES (?, ?, ?, ?, 1, ?)",
@@ -924,10 +935,15 @@ async def regenerate_message(
         raise HTTPException(status_code=404, detail="message not found")
     if row[0] != "assistant":
         raise HTTPException(status_code=400, detail="only assistant messages can be regenerated")
-    # Discard everything after this turn (later turns + their variants).
+    # Discard genuinely-later turns (id beyond this turn's variant chain tip),
+    # but keep this turn's own variants (ids within the chain) so navigation
+    # still works after the regenerate.
+    chain = await _variant_chain(db, cid, msg_id)
+    tip_id = chain[-1]["id"] if chain else msg_id
     await db.execute(
-        "DELETE FROM messages WHERE conversation_id = ? AND id > ?", (cid, msg_id)
+        "DELETE FROM messages WHERE conversation_id = ? AND id > ?", (cid, tip_id)
     )
+    await gc_orphan_files(db, cid)
     return await _regenerate_assistant(request, db, http, cid, conv, user, msg_id, body.model)
 
 
@@ -936,9 +952,22 @@ async def _regenerate_assistant(
     cid: str, conv: dict, user: dict, archived_id: int, body_model: str | None,
 ) -> StreamingResponse:
     # Non-destructive: archive the superseded assistant variant (active=0) rather
-    # than deleting it, so the prior reply is preserved. The new variant chains
-    # back to it via parent_id; reads return only the active (latest) variant.
-    await db.execute("UPDATE messages SET active = 0 WHERE id = ?", (archived_id,))
+    # than deleting it, so the prior reply is preserved.
+    #
+    # Keep the variant chain strictly linear: attach the new variant to the
+    # current TIP of the chain (the highest-id member), NOT necessarily the
+    # active node — the user may have navigated back to an older variant. Always
+    # parenting at the active node would fork a node that already has a child,
+    # producing two active variants and a chain _variant_chain can't walk.
+    chain = await _variant_chain(db, cid, archived_id)
+    chain_ids = [v["id"] for v in chain] or [archived_id]
+    tip_id = chain_ids[-1]
+    placeholders = ",".join("?" * len(chain_ids))
+    await db.execute(
+        f"UPDATE messages SET active = 0 WHERE conversation_id = ? AND id IN ({placeholders})",
+        (cid, *chain_ids),
+    )
+    archived_id = tip_id
     chosen_model = await _maybe_update_model(db, cid, body_model, conv["model"])
     await db.commit()
 
@@ -997,6 +1026,7 @@ async def edit_message(
     await db.execute(
         "DELETE FROM messages WHERE conversation_id = ? AND id > ?", (cid, msg_id)
     )
+    await gc_orphan_files(db, cid)
     await _maybe_update_title(db, cid, conv["title"], _content_preview(body.content))
     chosen_model = await _maybe_update_model(db, cid, body.model, conv["model"])
     await db.commit()
@@ -1037,6 +1067,7 @@ async def delete_message(
     await db.execute(
         "DELETE FROM messages WHERE conversation_id = ? AND id >= ?", (cid, msg_id)
     )
+    await gc_orphan_files(db, cid)
     await db.execute(
         "UPDATE conversations SET updated_at = ? WHERE id = ?", (int(time.time()), cid)
     )
@@ -1334,6 +1365,16 @@ async def activate_variant(
     ids = [v["id"] for v in chain]
     if msg_id not in ids:
         raise HTTPException(status_code=404, detail="message not found")
+    # Only the latest turn's variants may be switched. Activating a mid-thread
+    # variant while later turns exist would leave the downstream replies hanging
+    # off a now-inactive upstream turn (an inconsistent active thread).
+    cur = await db.execute(
+        "SELECT 1 FROM messages WHERE conversation_id = ? AND id > ?", (cid, max(ids))
+    )
+    if await cur.fetchone():
+        raise HTTPException(
+            status_code=409, detail="can only switch variants of the latest turn"
+        )
     for vid in ids:
         await db.execute(
             "UPDATE messages SET active = ? WHERE id = ?", (1 if vid == msg_id else 0, vid)

@@ -129,6 +129,19 @@ async def test_preset_update_replaces_knowledge_and_fields(client):
     assert (await client.put(f"/api/presets/{pid}", json={"name": "hax"})).status_code == 404
 
 
+async def test_oversized_collection_ids_rejected_not_500(client):
+    """A pathologically large collection_ids list is a 422 (input cap), never a
+    500 from overflowing SQLite's bound-variable limit."""
+    await _signup(client)
+    huge = list(range(1, 5001))
+    r = await client.post("/api/presets", json={"name": "huge", "collection_ids": huge})
+    assert r.status_code == 422
+    # the conversation-attach endpoint is capped the same way
+    cid = (await client.post("/api/conversations", json={})).json()["id"]
+    r2 = await client.put(f"/api/conversations/{cid}/collections", json={"collection_ids": huge})
+    assert r2.status_code == 422
+
+
 async def test_delete_preset_clears_knowledge_links(client):
     await _signup(client)
     c1 = await _make_collection(client)

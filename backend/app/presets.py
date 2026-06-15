@@ -25,8 +25,9 @@ class PresetIn(BaseModel):
     tools_enabled: bool = False
     web_search: bool = False
     # Knowledge bundled by this preset (custom assistant) — reusable collections
-    # attached to the conversation when the preset is applied.
-    collection_ids: list[int] = Field(default_factory=list)
+    # attached to the conversation when the preset is applied. Capped so a huge
+    # list can't overflow SQLite's bound-variable limit (an unhandled 500).
+    collection_ids: list[int] = Field(default_factory=list, max_length=200)
 
 
 class PresetOut(BaseModel):

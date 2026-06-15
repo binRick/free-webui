@@ -169,7 +169,9 @@ async def delete_collection_document(
 # ---- attach collections to a conversation ----
 
 class AttachIn(BaseModel):
-    collection_ids: list[int]
+    # Capped so a huge list can't overflow SQLite's bound-variable limit in the
+    # ownership IN-clause (an unhandled 500); 200 is far beyond any real need.
+    collection_ids: list[int] = Field(default_factory=list, max_length=200)
 
 
 @router.get("/conversations/{conv_id}/collections")

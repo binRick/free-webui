@@ -248,19 +248,93 @@
     prompts = await listPrompts();
   }
 
-  // Saved prompts may embed {{date}} / {{time}} / {{datetime}} placeholders,
-  // resolved to the user's locale at the moment the prompt is inserted.
-  function substituteVars(text: string): string {
+  // ---- prompt variables ----
+  // Saved prompts may embed {{...}} placeholders. System variables ({{date}},
+  // {{time}}, {{datetime}}) resolve automatically; any other {{name}} is a
+  // custom input the user fills in via a small form before the prompt is used.
+  const SYSTEM_VARS = ['date', 'time', 'datetime'];
+  // A single {{ token }}: capture the inner spec, no nested braces.
+  const VAR_RE = /\{\{\s*([^{}]+?)\s*\}\}/g;
+
+  function resolveSystemVars(text: string): string {
     const now = new Date();
-    return text
-      .replace(/\{\{\s*date\s*\}\}/gi, now.toLocaleDateString())
-      .replace(/\{\{\s*time\s*\}\}/gi, now.toLocaleTimeString())
-      .replace(/\{\{\s*datetime\s*\}\}/gi, now.toLocaleString());
+    return text.replace(VAR_RE, (whole, inner) => {
+      switch (String(inner).trim().toLowerCase()) {
+        case 'date':
+          return now.toLocaleDateString();
+        case 'time':
+          return now.toLocaleTimeString();
+        case 'datetime':
+          return now.toLocaleString();
+        default:
+          return whole;
+      }
+    });
+  }
+
+  function extractCustomVars(text: string): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const m of text.matchAll(VAR_RE)) {
+      const name = m[1].trim();
+      if (!name || SYSTEM_VARS.includes(name.toLowerCase()) || seen.has(name)) continue;
+      seen.add(name);
+      out.push(name);
+    }
+    return out;
+  }
+
+  function fillCustomVars(text: string, values: Record<string, string>): string {
+    return text.replace(VAR_RE, (whole, inner) => {
+      const name = String(inner).trim();
+      return name in values ? values[name] : whole;
+    });
+  }
+
+  // Modal state for collecting custom-variable values before insertion.
+  let varFill = $state<{
+    template: string;
+    vars: string[];
+    values: Record<string, string>;
+    apply: (filled: string) => void;
+  } | null>(null);
+
+  // Resolve system vars, then either insert directly or open the fill-in form.
+  function beginInsert(content: string, apply: (filled: string) => void) {
+    const resolved = resolveSystemVars(content);
+    const vars = extractCustomVars(resolved);
+    if (vars.length === 0) {
+      apply(resolved);
+      return;
+    }
+    varFill = {
+      template: resolved,
+      vars,
+      values: Object.fromEntries(vars.map((v) => [v, ''])),
+      apply
+    };
+  }
+
+  function submitVarFill() {
+    if (!varFill) return;
+    const filled = fillCustomVars(varFill.template, varFill.values);
+    const apply = varFill.apply;
+    varFill = null;
+    apply(filled);
+  }
+
+  function cancelVarFill() {
+    varFill = null;
+  }
+
+  function focusOnMount(node: HTMLElement) {
+    node.focus();
   }
 
   function insertPrompt(p: Prompt) {
-    const text = substituteVars(p.content);
-    input = input ? `${input}\n${text}` : text;
+    beginInsert(p.content, (filled) => {
+      input = input ? `${input}\n${filled}` : filled;
+    });
   }
 
   async function removePrompt(id: number) {
@@ -766,12 +840,21 @@
     if (!cmd || !composer) return;
     const before = input.slice(0, cmd.start);
     const after = input.slice(cmd.end);
-    let caretPos = before.length;
     if (cmd.kind === 'prompt' && typeof item !== 'string' && 'content' in item) {
-      const text = substituteVars(item.content);
-      input = before + text + after;
-      caretPos = (before + text).length;
-    } else if (cmd.kind === 'model' && typeof item === 'string') {
+      // Drop the command token now; insertion (possibly after a var-fill form)
+      // splices the resolved prompt into the gap and restores the caret.
+      cmd = null;
+      beginInsert(item.content, async (filled) => {
+        input = before + filled + after;
+        const caretPos = (before + filled).length;
+        await tick();
+        composer?.focus();
+        composer?.setSelectionRange(caretPos, caretPos);
+      });
+      return;
+    }
+    let caretPos = before.length;
+    if (cmd.kind === 'model' && typeof item === 'string') {
       model = item;
       input = before + after;
     } else if (cmd.kind === 'collection' && typeof item !== 'string' && 'document_count' in item) {
@@ -955,7 +1038,7 @@
 
     <div class="docs">
       <div class="docs-head">
-        <span class="lbl">prompts</span>
+        <span class="lbl">prompts <span class="hint">{`{{var}}`} prompts you for input</span></span>
         <button class="action" type="button" onclick={savePromptFromInput} disabled={!input.trim()}>
           + save current
         </button>
@@ -1299,7 +1382,118 @@
   </div>
 </form>
 
+{#if varFill}
+  <div
+    class="var-overlay"
+    role="presentation"
+    onclick={(e) => { if (e.target === e.currentTarget) cancelVarFill(); }}
+  >
+    <div
+      class="var-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="fill in prompt variables"
+      tabindex="-1"
+      onkeydown={(e) => {
+        if (e.key === 'Escape') cancelVarFill();
+        else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitVarFill();
+      }}
+    >
+      <h3>fill in the prompt</h3>
+      <p class="var-hint">⌘/Ctrl+Enter to insert</p>
+      {#each varFill.vars as v, i (v)}
+        <label class="var-row">
+          <span class="var-name">{v}</span>
+          {#if i === 0}
+            <textarea rows="2" bind:value={varFill.values[v]} placeholder={v} use:focusOnMount></textarea>
+          {:else}
+            <textarea rows="2" bind:value={varFill.values[v]} placeholder={v}></textarea>
+          {/if}
+        </label>
+      {/each}
+      <div class="var-actions">
+        <button type="button" onclick={cancelVarFill}>cancel</button>
+        <button type="button" class="primary" onclick={submitVarFill}>insert</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
+  .var-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.45);
+    padding: 1rem;
+  }
+  .var-modal {
+    width: min(480px, 100%);
+    max-height: 85vh;
+    overflow-y: auto;
+    background: var(--bg-elev);
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+    padding: 1.25rem;
+  }
+  .var-modal h3 {
+    margin: 0 0 0.25rem;
+    font-size: 1rem;
+  }
+  .var-hint {
+    margin: 0 0 1rem;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+  }
+  .var-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin-bottom: 0.85rem;
+  }
+  .var-name {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    font-family: var(--mono, ui-monospace, monospace);
+  }
+  .var-row textarea {
+    resize: vertical;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.5rem 0.6rem;
+    font: inherit;
+    font-size: 0.9rem;
+  }
+  .var-row textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .var-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+  .var-actions button {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.45rem 0.9rem;
+    font: inherit;
+    cursor: pointer;
+    background: var(--bg-elev);
+    color: var(--text);
+  }
+  .var-actions .primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
   header {
     display: flex;
     align-items: center;

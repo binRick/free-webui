@@ -36,6 +36,8 @@ class ConversationSummary(BaseModel):
     title: str
     model: str | None
     updated_at: int
+    pinned: bool = False
+    archived: bool = False
 
 
 class StoredMessage(BaseModel):
@@ -98,6 +100,8 @@ class UpdateBody(BaseModel):
     presence_penalty: float | None = None
     frequency_penalty: float | None = None
     seed: int | None = None
+    pinned: bool | None = None
+    archived: bool | None = None
 
 
 def _db(request: Request) -> aiosqlite.Connection:
@@ -461,15 +465,16 @@ async def list_conversations(
     request: Request,
     user: dict = Depends(current_user),
     q: str | None = Query(default=None, max_length=200),
+    archived: bool = Query(default=False),
 ):
     db = _db(request)
     params: list[Any] = [user["id"]]
-    search_sql = ""
+    search_sql = f"AND conversations.archived = {1 if archived else 0}"
     term = (q or "").strip()
     if term:
         # Match the title OR any message body (active or not) in the conversation.
         like = f"%{term}%"
-        search_sql = """
+        search_sql += """
           AND (
             conversations.title LIKE ? COLLATE NOCASE
             OR EXISTS (
@@ -482,18 +487,22 @@ async def list_conversations(
         params += [like, like]
     cur = await db.execute(
         f"""
-        SELECT id, title, model, updated_at
+        SELECT id, title, model, updated_at, pinned, archived
         FROM conversations
         WHERE user_id = ?
           AND EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = conversations.id)
           {search_sql}
-        ORDER BY updated_at DESC
+        ORDER BY pinned DESC, updated_at DESC
         """,
         params,
     )
     rows = await cur.fetchall()
     return [
-        ConversationSummary(id=r[0], title=r[1], model=r[2], updated_at=r[3]) for r in rows
+        ConversationSummary(
+            id=r[0], title=r[1], model=r[2], updated_at=r[3],
+            pinned=bool(r[4]), archived=bool(r[5]),
+        )
+        for r in rows
     ]
 
 

@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS conversations (
     presence_penalty  REAL,
     frequency_penalty REAL,
     seed          INTEGER,
+    pinned        INTEGER NOT NULL DEFAULT 0,
+    archived      INTEGER NOT NULL DEFAULT 0,
     created_at    INTEGER NOT NULL,
     updated_at    INTEGER NOT NULL
 );
@@ -251,6 +253,8 @@ _MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("conversations", "presence_penalty", "REAL"),
     ("conversations", "frequency_penalty", "REAL"),
     ("conversations", "seed", "INTEGER"),
+    ("conversations", "pinned", "INTEGER NOT NULL DEFAULT 0"),
+    ("conversations", "archived", "INTEGER NOT NULL DEFAULT 0"),
     ("messages", "parent_id", "INTEGER"),
     ("messages", "active", "INTEGER NOT NULL DEFAULT 1"),
     ("users", "token_version", "INTEGER NOT NULL DEFAULT 0"),

@@ -216,6 +216,27 @@ async def test_generation_params_persist_and_forward(client, upstream):
     assert body["seed"] == 42
 
 
+async def test_pin_and_archive(client):
+    await _signup(client)
+    cid = await _new(client)
+    await _consume(client, "POST", f"/api/conversations/{cid}/messages", {"content": "hi"})
+
+    row = (await client.get("/api/conversations")).json()[0]
+    assert row["id"] == cid and row["pinned"] is False and row["archived"] is False
+
+    await client.patch(f"/api/conversations/{cid}", json={"pinned": True})
+    assert (await client.get("/api/conversations")).json()[0]["pinned"] is True
+
+    # archiving removes it from the default list but keeps it in the archived view
+    await client.patch(f"/api/conversations/{cid}", json={"archived": True})
+    assert (await client.get("/api/conversations")).json() == []
+    arch = (await client.get("/api/conversations", params={"archived": "true"})).json()
+    assert len(arch) == 1 and arch[0]["id"] == cid and arch[0]["archived"] is True
+
+    await client.patch(f"/api/conversations/{cid}", json={"archived": False})
+    assert len((await client.get("/api/conversations")).json()) == 1
+
+
 async def test_conversation_search(client):
     await _signup(client)
     c1 = await _new(client)

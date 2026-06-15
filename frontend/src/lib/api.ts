@@ -10,6 +10,8 @@ export interface ConversationSummary {
   title: string;
   model: string | null;
   updated_at: number;
+  pinned: boolean;
+  archived: boolean;
 }
 
 export interface StoredMessage {
@@ -52,6 +54,8 @@ export interface UpdateConversation {
   presence_penalty?: number | null;
   frequency_penalty?: number | null;
   seed?: number | null;
+  pinned?: boolean | null;
+  archived?: boolean | null;
 }
 
 export interface WebSearchStatus {
@@ -87,16 +91,29 @@ export async function getCodeStatus(): Promise<CodeStatus> {
   return res.json();
 }
 
-export async function listConversations(q?: string): Promise<ConversationSummary[]> {
-  const term = q?.trim();
-  const url = term ? `/api/conversations?q=${encodeURIComponent(term)}` : '/api/conversations';
-  const res = await fetch(url);
+export async function listConversations(
+  q?: string,
+  archived = false
+): Promise<ConversationSummary[]> {
+  const params = new URLSearchParams();
+  if (q?.trim()) params.set('q', q.trim());
+  if (archived) params.set('archived', 'true');
+  const qs = params.toString();
+  const res = await fetch(`/api/conversations${qs ? '?' + qs : ''}`);
   if (!res.ok) return [];
   return res.json();
 }
 
 export async function renameConversation(id: string, title: string): Promise<void> {
   await updateConversation(id, { title });
+}
+
+export async function setPinned(id: string, pinned: boolean): Promise<void> {
+  await updateConversation(id, { pinned });
+}
+
+export async function setArchived(id: string, archived: boolean): Promise<void> {
+  await updateConversation(id, { archived });
 }
 
 export async function autotitle(id: string): Promise<string | null> {

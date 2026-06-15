@@ -4,17 +4,41 @@
   import { page } from '$app/state';
   import { auth } from './auth.svelte';
   import { convs } from './conversations.svelte';
-  import { deleteConversation, renameConversation, type ConversationSummary } from './api';
+  import {
+    deleteConversation,
+    renameConversation,
+    setArchived,
+    setPinned,
+    type ConversationSummary
+  } from './api';
   import { sidebar } from './sidebarState.svelte';
   import { theme, type ThemeMode } from './theme.svelte';
 
   onMount(() => convs.refresh());
 
   let query = $state('');
+  let showArchived = $state(false);
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   function onSearch() {
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => convs.refresh(query), 200);
+    searchTimer = setTimeout(() => convs.refresh(query, showArchived), 200);
+  }
+  function toggleArchivedView() {
+    showArchived = !showArchived;
+    convs.refresh(query, showArchived);
+  }
+
+  async function pin(c: ConversationSummary, e: Event) {
+    e.preventDefault();
+    e.stopPropagation();
+    await setPinned(c.id, !c.pinned);
+    await convs.refresh(query, showArchived);
+  }
+  async function archive(c: ConversationSummary, e: Event) {
+    e.preventDefault();
+    e.stopPropagation();
+    await setArchived(c.id, !c.archived);
+    await convs.refresh(query, showArchived);
   }
 
   async function del(id: string, e: Event) {
@@ -22,7 +46,7 @@
     e.stopPropagation();
     if (!confirm('delete this chat?')) return;
     await deleteConversation(id);
-    await convs.refresh(query);
+    await convs.refresh(query, showArchived);
     if (page.params.id === id) goto('/');
   }
 
@@ -43,7 +67,7 @@
     renamingId = null;
     if (t) {
       await renameConversation(id, t);
-      await convs.refresh(query);
+      await convs.refresh(query, showArchived);
     }
   }
   function focusOnMount(node: HTMLInputElement) {
@@ -65,14 +89,18 @@
     return 'Older';
   }
   const grouped = $derived.by(() => {
+    const pinned = convs.list.filter((c) => c.pinned);
     const map = new Map<string, ConversationSummary[]>();
     for (const c of convs.list) {
+      if (c.pinned) continue;
       const b = bucketOf(c.updated_at);
       const arr = map.get(b);
       if (arr) arr.push(c);
       else map.set(b, [c]);
     }
-    return ORDER.filter((b) => map.has(b)).map((b) => ({ label: b, items: map.get(b)! }));
+    const groups = ORDER.filter((b) => map.has(b)).map((b) => ({ label: b, items: map.get(b)! }));
+    if (pinned.length) groups.unshift({ label: '📌 Pinned', items: pinned });
+    return groups;
   });
 
   function openChat() {
@@ -125,14 +153,19 @@
             />
           {:else}
             <a class="link" href="/chat/{c.id}" onclick={openChat} title={c.title}>{c.title}</a>
+            <button class="act" class:on={c.pinned} aria-label="pin chat" title={c.pinned ? 'unpin' : 'pin'} onclick={(e) => pin(c, e)}>📌</button>
             <button class="act" aria-label="rename chat" title="rename" onclick={(e) => startRename(c, e)}>✎</button>
+            <button class="act" aria-label={c.archived ? 'unarchive' : 'archive'} title={c.archived ? 'unarchive' : 'archive'} onclick={(e) => archive(c, e)}>🗄</button>
             <button class="act del" aria-label="delete chat" title="delete" onclick={(e) => del(c.id, e)}>×</button>
           {/if}
         </div>
       {/each}
     {:else}
-      <div class="empty">{query.trim() ? 'no matches' : 'no chats yet'}</div>
+      <div class="empty">{query.trim() ? 'no matches' : showArchived ? 'no archived chats' : 'no chats yet'}</div>
     {/each}
+    <button class="archived-toggle" onclick={toggleArchivedView}>
+      {showArchived ? '← back to chats' : '🗄 archived'}
+    </button>
   </nav>
   {#if auth.user}
     <footer>
@@ -277,6 +310,21 @@
   .act.del { font-size: 1rem; }
   .row:hover .act,
   .row.active .act { opacity: 1; }
+  .act.on { opacity: 1; }
+  .archived-toggle {
+    width: 100%;
+    margin-top: 0.5rem;
+    background: transparent;
+    border: 0;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 0.78rem;
+    text-align: left;
+    padding: 0.4rem 0.5rem;
+    cursor: pointer;
+    border-radius: 6px;
+  }
+  .archived-toggle:hover { background: var(--bg-elev); color: var(--text); }
   .act:hover { color: var(--text); background: var(--bg-hover); }
   .act.del:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
   .empty {

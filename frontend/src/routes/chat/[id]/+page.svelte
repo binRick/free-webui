@@ -2,6 +2,7 @@
   import { tick } from 'svelte';
   import { page } from '$app/state';
   import {
+    autotitle,
     createMemory,
     createPreset,
     createPrompt,
@@ -415,6 +416,7 @@
   async function send() {
     const text = input.trim();
     if ((!text && pendingImages.length === 0) || streaming) return;
+    const wasFirst = messages.length === 0; // no prior turns -> this is the opener
     const outgoing = buildOutgoing(text, pendingImages);
     const localContent = serializeForLocal(text, pendingImages);
     input = '';
@@ -427,6 +429,13 @@
     await tick();
     scroller?.scrollTo({ top: scroller.scrollHeight });
     await runStream((opts) => sendMessage(currentId, outgoing, model, opts));
+    if (wasFirst) {
+      const t = await autotitle(currentId).catch(() => null);
+      if (t) {
+        title = t;
+        convs.refresh();
+      }
+    }
   }
 
   async function filesToDataUrls(files: FileList | File[]): Promise<string[]> {

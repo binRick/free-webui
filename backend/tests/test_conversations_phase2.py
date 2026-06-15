@@ -122,6 +122,43 @@ async def test_feedback_is_owner_scoped(client):
 
 # ---- search ----
 
+async def test_autotitle_generates_from_exchange(client, upstream):
+    await _signup(client)
+    cid = await _new(client)
+    await _consume(client, "POST", f"/api/conversations/{cid}/messages", {"content": "tell me about penguins"})
+
+    # The titling call consumes the next queued upstream response.
+    upstream.queue_chat(sse(content_chunk("Penguin Facts"), finish()))
+    r = await client.post(f"/api/conversations/{cid}/autotitle")
+    assert r.status_code == 200
+    assert r.json()["title"] == "Penguin Facts"
+
+    summary = next(c for c in (await client.get("/api/conversations")).json() if c["id"] == cid)
+    assert summary["title"] == "Penguin Facts"
+
+
+async def test_autotitle_noop_without_exchange(client, upstream):
+    await _signup(client)
+    cid = await _new(client)
+    r = await client.post(f"/api/conversations/{cid}/autotitle")
+    assert r.status_code == 200
+    assert r.json()["title"] == "new chat"
+    assert upstream.chat_calls == []  # no upstream call when there's nothing to title
+
+
+async def test_autotitle_disabled_is_noop(client, upstream, monkeypatch):
+    from app import conversations
+
+    await _signup(client)
+    cid = await _new(client)
+    await _consume(client, "POST", f"/api/conversations/{cid}/messages", {"content": "hi there"})
+    monkeypatch.setattr(conversations.settings, "auto_title", False)
+    before = len(upstream.chat_calls)
+    r = await client.post(f"/api/conversations/{cid}/autotitle")
+    assert r.status_code == 200
+    assert len(upstream.chat_calls) == before  # disabled -> no upstream call
+
+
 async def test_conversation_search(client):
     await _signup(client)
     c1 = await _new(client)

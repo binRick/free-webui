@@ -91,6 +91,12 @@ export async function renameConversation(id: string, title: string): Promise<voi
   await updateConversation(id, { title });
 }
 
+export async function autotitle(id: string): Promise<string | null> {
+  const res = await fetch(`/api/conversations/${id}/autotitle`, { method: 'POST' });
+  if (!res.ok) return null;
+  return (await res.json()).title ?? null;
+}
+
 export async function setFeedback(
   conversationId: string,
   messageId: number,

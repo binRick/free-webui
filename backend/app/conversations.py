@@ -626,6 +626,15 @@ async def _maybe_update_title(
         )
 
 
+def _clean_title(text: str) -> str:
+    """Reduce a model's title reply to a single clean line, <= 60 chars."""
+    stripped = text.strip()
+    if not stripped:
+        return ""
+    line = stripped.splitlines()[0].strip().strip('"').strip("'").strip()
+    return line.rstrip(".").strip()[:60].strip()
+
+
 async def _maybe_update_model(
     db: aiosqlite.Connection, cid: str, requested: str | None, current: str | None
 ) -> str:
@@ -785,6 +794,68 @@ async def edit_message(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/{cid}/autotitle")
+async def autotitle(
+    cid: str, request: Request, user: dict = Depends(current_user)
+) -> dict:
+    """Generate a short conversation title from the first exchange via a
+    lightweight upstream call. No-op (returns the current title) when disabled,
+    when there's no exchange yet, or on any upstream failure."""
+    db = _db(request)
+    await _owned(db, cid, user["id"])
+    http = _http(request)
+    conv = await _conv_settings(db, cid)
+    if not settings.auto_title:
+        return {"title": conv["title"]}
+
+    history = await _load_history(db, cid)
+    convo = [m for m in history if m["role"] in ("user", "assistant")]
+    if len(convo) < 2:
+        return {"title": conv["title"]}
+
+    # Text-only view of the opening turns (don't ship images to the titler).
+    snippet = [
+        {"role": m["role"], "content": _content_text(m["content"])} for m in convo[:4]
+    ]
+    instruction = {
+        "role": "user",
+        "content": (
+            "Summarise this conversation as a short title of 3-6 words. "
+            "Reply with ONLY the title — no quotes and no trailing punctuation."
+        ),
+    }
+    body = {
+        "model": conv["model"] or settings.default_model,
+        "messages": [*snippet, instruction],
+        "stream": True,
+        "temperature": 0.2,
+    }
+    text = ""
+    try:
+        async with http.stream("POST", "/chat/completions", json=body) as r:
+            if r.status_code >= 400:
+                return {"title": conv["title"]}
+            async for line in r.aiter_lines():
+                if line.endswith("[DONE]"):
+                    break
+                if not line.startswith("data: "):
+                    continue
+                try:
+                    chunk = json.loads(line[6:])
+                except json.JSONDecodeError:
+                    continue
+                delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content")
+                if isinstance(delta, str):
+                    text += delta
+    except httpx.HTTPError:
+        return {"title": conv["title"]}
+
+    new_title = _clean_title(text) or conv["title"]
+    await db.execute("UPDATE conversations SET title = ? WHERE id = ?", (new_title, cid))
+    await db.commit()
+    return {"title": new_title}
 
 
 class FeedbackBody(BaseModel):

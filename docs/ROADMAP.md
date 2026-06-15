@@ -54,7 +54,7 @@ Most are `S`/`M` and high risk-reduction. **Partially landed on
 | Feedback/rating table + thumbs up/down | M | ✅ landed (`message_feedback` upsert + per-message rating in GET) |
 | Per-message regenerate/delete (any assistant turn) | S | ⬜ deferred (backend regenerate is trailing-only today) |
 | Uniform API error handling + toast store + 401-redirect | M | ⬜ deferred (touches every `api.ts` call) |
-| **LLM-based titling** + follow-up suggestions | M | ⬜ deferred (titles are the raw first 60 chars today) |
+| **LLM-based titling** | M | ✅ landed (`POST …/autotitle`; frontend fires it after the first exchange; falls back to the heuristic on failure). Follow-up suggestions ⬜ deferred |
 
 ## Phase 3 — Differentiators (P1 depth)
 

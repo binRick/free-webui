@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     # default so a plain-HTTP localhost can't poison a browser's HSTS cache.
     security_hsts: bool = False
 
+    # After the first exchange, ask the model for a short conversation title
+    # (POST /api/conversations/{id}/autotitle). Falls back to the first-message
+    # heuristic on any failure. Set false to keep the heuristic title.
+    auto_title: bool = True
+
     # RAG: embedding model + chunking params (set embedding_model to
     # something your upstream actually serves, e.g. nomic-embed-text).
     embedding_model: str = "nomic-embed-text"

@@ -24,7 +24,9 @@
     getConversationTags,
     getFollowups,
     getShareToken,
+    listFolders,
     setConversationTags,
+    type Folder,
     listCollections,
     listDocuments,
     listMemories,
@@ -87,6 +89,8 @@
   let frequencyPenalty = $state<string>('');
   let seed = $state<string>('');
   let tagsText = $state('');
+  let folders = $state<Folder[]>([]);
+  let folderId = $state<number | null>(null);
   let savingSettings = $state(false);
   let docs = $state<Document[]>([]);
   let docUploading = $state(false);
@@ -154,6 +158,8 @@
       collections = await listCollections();
       attachedCollections = new Set(await getConversationCollections(id));
       tagsText = (await getConversationTags(id)).join(', ');
+      folders = await listFolders();
+      folderId = conv.folder_id ?? null;
       shareToken = await getShareToken(id);
       prompts = await listPrompts();
       presets = await listPresets();
@@ -441,7 +447,8 @@
         frequency_penalty: parseNumber(frequencyPenalty),
         seed: parseNumber(seed),
         web_search: webSearch,
-        tools_enabled: toolsEnabled
+        tools_enabled: toolsEnabled,
+        folder_id: folderId
       });
       const tags = tagsText
         .split(',')
@@ -839,6 +846,17 @@
       <span class="lbl">tags <span class="hint">comma-separated</span></span>
       <input type="text" bind:value={tagsText} placeholder="e.g. work, research" />
     </label>
+    {#if folders.length}
+      <label>
+        <span class="lbl">folder</span>
+        <select bind:value={folderId}>
+          <option value={null}>— none —</option>
+          {#each folders as f (f.id)}
+            <option value={f.id}>{f.name}</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
     <label class="toggle">
       <input type="checkbox" bind:checked={webSearch} disabled={!webSearchAvailable} />
       <span class="lbl" style="text-transform: none; letter-spacing: 0;">
@@ -1451,6 +1469,7 @@
     color: var(--text-dim);
   }
   a.action:hover { color: var(--text); background: var(--bg-hover); }
+  select,
   button,
   textarea,
   input {

@@ -46,6 +46,7 @@ class ConversationSummary(BaseModel):
     updated_at: int
     pinned: bool = False
     archived: bool = False
+    folder_id: int | None = None
     tags: list[str] = []
 
 
@@ -72,6 +73,7 @@ class Conversation(BaseModel):
     presence_penalty: float | None = None
     frequency_penalty: float | None = None
     seed: int | None = None
+    folder_id: int | None = None
     created_at: int
     updated_at: int
     messages: list[StoredMessage]
@@ -112,6 +114,9 @@ class UpdateBody(BaseModel):
     seed: int | None = Field(default=None, ge=0)
     pinned: bool | None = None
     archived: bool | None = None
+    # 3-state via model_fields_set: omitted = leave as-is, an int = move into that
+    # folder (validated to one the caller owns), explicit null = remove from folder.
+    folder_id: int | None = Field(default=None)
 
 
 def _db(request: Request) -> aiosqlite.Connection:
@@ -516,6 +521,7 @@ async def list_conversations(
     q: str | None = Query(default=None, max_length=200),
     archived: bool = Query(default=False),
     tag: str | None = Query(default=None, max_length=80),
+    folder_id: int | None = Query(default=None),
 ):
     db = _db(request)
     params: list[Any] = [user["id"]]
@@ -526,6 +532,9 @@ async def list_conversations(
             "WHERE t.conversation_id = conversations.id AND t.tag = ?)"
         )
         params.append(tag)
+    if folder_id is not None:
+        search_sql += " AND conversations.folder_id = ?"
+        params.append(folder_id)
     term = (q or "").strip()
     if term:
         # Match the title OR any message body (active or not) in the conversation.
@@ -543,7 +552,7 @@ async def list_conversations(
         params += [like, like]
     cur = await db.execute(
         f"""
-        SELECT id, title, model, updated_at, pinned, archived,
+        SELECT id, title, model, updated_at, pinned, archived, folder_id,
                (SELECT GROUP_CONCAT(tag, ',') FROM conversation_tags t
                 WHERE t.conversation_id = conversations.id) AS tags
         FROM conversations
@@ -558,8 +567,8 @@ async def list_conversations(
     return [
         ConversationSummary(
             id=r[0], title=r[1], model=r[2], updated_at=r[3],
-            pinned=bool(r[4]), archived=bool(r[5]),
-            tags=sorted(r[6].split(",")) if r[6] else [],
+            pinned=bool(r[4]), archived=bool(r[5]), folder_id=r[6],
+            tags=sorted(r[7].split(",")) if r[7] else [],
         )
         for r in rows
     ]
@@ -664,7 +673,7 @@ async def get_conversation(
         """
         SELECT id, title, model, system_prompt, temperature, top_p, stop,
                web_search, tools_enabled, created_at, updated_at,
-               max_tokens, presence_penalty, frequency_penalty, seed
+               max_tokens, presence_penalty, frequency_penalty, seed, folder_id
         FROM conversations WHERE id = ?
         """,
         (cid,),
@@ -700,6 +709,7 @@ async def get_conversation(
         presence_penalty=row[12],
         frequency_penalty=row[13],
         seed=row[14],
+        folder_id=row[15],
         messages=[
             StoredMessage(
                 id=m[0], role=m[1], content=m[2], created_at=m[3], rating=m[4],
@@ -721,6 +731,13 @@ async def update_conversation(
         raise HTTPException(
             status_code=403, detail=f"model '{fields['model']}' is not available to you"
         )
+    if fields.get("folder_id") is not None:
+        cur = await db.execute(
+            "SELECT 1 FROM folders WHERE id = ? AND user_id = ?",
+            (fields["folder_id"], user["id"]),
+        )
+        if not await cur.fetchone():
+            raise HTTPException(status_code=404, detail="folder not found")
     if fields:
         sets: list[str] = []
         params: list[Any] = []

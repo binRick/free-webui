@@ -244,6 +244,18 @@ CREATE TABLE IF NOT EXISTS files (
     size            INTEGER NOT NULL,
     created_at      INTEGER NOT NULL
 );
+
+-- Conversation folders (single-home organization, complementary to tags).
+-- conversations.folder_id (added by migration) points here; deleting a folder
+-- nulls its conversations' folder_id (handled in the delete endpoint, since the
+-- migrated column carries no DB-level FK).
+CREATE TABLE IF NOT EXISTS folders (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
 """
 
 # Indexes are created AFTER _ensure_columns so an index on a migrated column
@@ -273,6 +285,8 @@ CREATE INDEX IF NOT EXISTS idx_conversation_tags_conv ON conversation_tags(conve
 CREATE INDEX IF NOT EXISTS idx_conversation_tags_tag ON conversation_tags(tag);
 CREATE INDEX IF NOT EXISTS idx_files_conv ON files(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_files_user ON files(user_id);
+CREATE INDEX IF NOT EXISTS idx_folders_user ON folders(user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_conversations_folder ON conversations(folder_id);
 """
 
 _MIGRATIONS: tuple[tuple[str, str, str], ...] = (
@@ -289,6 +303,7 @@ _MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("conversations", "seed", "INTEGER"),
     ("conversations", "pinned", "INTEGER NOT NULL DEFAULT 0"),
     ("conversations", "archived", "INTEGER NOT NULL DEFAULT 0"),
+    ("conversations", "folder_id", "INTEGER"),
     ("messages", "parent_id", "INTEGER"),
     ("messages", "active", "INTEGER NOT NULL DEFAULT 1"),
     ("messages", "sources", "TEXT"),

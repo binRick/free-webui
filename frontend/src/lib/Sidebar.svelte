@@ -6,23 +6,64 @@
   import { convs } from './conversations.svelte';
   import {
     cloneConversation,
+    createFolder,
     deleteConversation,
+    deleteFolder,
+    listFolders,
     renameConversation,
+    renameFolder,
     setArchived,
     setPinned,
-    type ConversationSummary
+    type ConversationSummary,
+    type Folder
   } from './api';
   import { sidebar } from './sidebarState.svelte';
   import { theme, type ThemeMode } from './theme.svelte';
 
-  onMount(() => convs.refresh());
+  onMount(async () => {
+    await convs.refresh();
+    folders = await listFolders();
+  });
 
   let query = $state('');
   let showArchived = $state(false);
   let tagFilter = $state<string | null>(null);
+  let folders = $state<Folder[]>([]);
+  let folderFilter = $state<number | null>(null);
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   function refreshList() {
-    convs.refresh(query, showArchived, tagFilter ?? undefined);
+    convs.refresh(query, showArchived, tagFilter ?? undefined, folderFilter);
+  }
+  async function refreshFolders() {
+    folders = await listFolders();
+  }
+  function selectFolder(id: number | null) {
+    folderFilter = id;
+    refreshList();
+  }
+  async function newFolder() {
+    const name = window.prompt('folder name')?.trim();
+    if (!name) return;
+    const f = await createFolder(name);
+    await refreshFolders();
+    selectFolder(f.id);
+  }
+  async function editFolder(f: Folder, e: Event) {
+    e.preventDefault();
+    e.stopPropagation();
+    const name = window.prompt('rename folder', f.name)?.trim();
+    if (!name || name === f.name) return;
+    await renameFolder(f.id, name);
+    await refreshFolders();
+  }
+  async function removeFolder(f: Folder, e: Event) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm(`delete folder "${f.name}"? chats inside are kept (just un-filed).`)) return;
+    await deleteFolder(f.id);
+    if (folderFilter === f.id) folderFilter = null;
+    await refreshFolders();
+    refreshList();
   }
   function onSearch() {
     clearTimeout(searchTimer);
@@ -155,6 +196,19 @@
       oninput={onSearch}
       aria-label="search conversations"
     />
+  </div>
+  <div class="folder-bar">
+    <button class="folder-chip" class:on={folderFilter === null} onclick={() => selectFolder(null)}>all</button>
+    {#each folders as f (f.id)}
+      <span class="folder-group" class:on={folderFilter === f.id}>
+        <button class="folder-chip" class:on={folderFilter === f.id} onclick={() => selectFolder(f.id)} title={f.name}>📁 {f.name}</button>
+        {#if folderFilter === f.id}
+          <button class="folder-act" aria-label="rename folder" title="rename" onclick={(e) => editFolder(f, e)}>✎</button>
+          <button class="folder-act" aria-label="delete folder" title="delete" onclick={(e) => removeFolder(f, e)}>×</button>
+        {/if}
+      </span>
+    {/each}
+    <button class="folder-chip add" onclick={newFolder} title="new folder">＋</button>
   </div>
   {#if tagFilter}
     <div class="tag-bar">
@@ -305,6 +359,45 @@
   }
   .tag-chip:hover { color: var(--text); border-color: var(--accent); }
   .tag-chip.on { color: var(--accent); border-color: var(--accent); }
+  .folder-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.5rem 0.75rem 0.25rem;
+  }
+  .folder-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+  }
+  .folder-chip {
+    background: var(--bg-elev);
+    color: var(--text-dim);
+    border: 1px solid var(--border-soft);
+    border-radius: 999px;
+    padding: 0.1rem 0.5rem;
+    font: inherit;
+    font-size: 0.72rem;
+    cursor: pointer;
+    max-width: 130px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .folder-chip:hover { color: var(--text); border-color: var(--accent); }
+  .folder-chip.on { color: var(--accent); border-color: var(--accent); }
+  .folder-chip.add { font-size: 0.85rem; line-height: 1; padding: 0.1rem 0.45rem; }
+  .folder-act {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 0.72rem;
+    padding: 0 0.1rem;
+    line-height: 1;
+  }
+  .folder-act:hover { color: var(--accent); }
   nav {
     flex: 1;
     overflow-y: auto;

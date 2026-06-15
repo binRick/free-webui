@@ -23,7 +23,8 @@ authoritative status):
   (`max_tokens`/penalties/seed).
 - **Knowledge bases**: reusable document **collections** attachable to any chat.
 - **Organization**: per-conversation **tags** (sidebar tag-filter chips +
-  drawer editor), on top of search/pin/archive.
+  drawer editor) and **folders** (single-home, sidebar filter + drawer move),
+  on top of search/pin/archive.
 - **Composer UX**: **searchable model picker** (scales to many merged models)
   and in-composer commands — `/` insert a saved prompt, `@` switch model, `#`
   attach a knowledge collection — with keyboard navigation.

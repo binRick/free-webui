@@ -33,6 +33,7 @@ export interface ConversationSummary {
   updated_at: number;
   pinned: boolean;
   archived: boolean;
+  folder_id: number | null;
   tags: string[];
 }
 
@@ -65,6 +66,7 @@ export interface Conversation {
   presence_penalty: number | null;
   frequency_penalty: number | null;
   seed: number | null;
+  folder_id: number | null;
   created_at: number;
   updated_at: number;
   messages: StoredMessage[];
@@ -85,6 +87,44 @@ export interface UpdateConversation {
   seed?: number | null;
   pinned?: boolean | null;
   archived?: boolean | null;
+  folder_id?: number | null;
+}
+
+export interface Folder {
+  id: number;
+  name: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export async function listFolders(): Promise<Folder[]> {
+  const res = await apiFetch('/api/folders');
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function createFolder(name: string): Promise<Folder> {
+  const res = await apiFetch('/api/folders', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name })
+  });
+  if (!res.ok) throw new Error(`create folder failed: ${res.status}`);
+  return res.json();
+}
+
+export async function renameFolder(id: number, name: string): Promise<Folder> {
+  const res = await apiFetch(`/api/folders/${id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name })
+  });
+  if (!res.ok) throw new Error(`rename folder failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteFolder(id: number): Promise<void> {
+  await apiFetch(`/api/folders/${id}`, { method: 'DELETE' });
 }
 
 export interface WebSearchStatus {
@@ -123,12 +163,14 @@ export async function getCodeStatus(): Promise<CodeStatus> {
 export async function listConversations(
   q?: string,
   archived = false,
-  tag?: string
+  tag?: string,
+  folderId?: number | null
 ): Promise<ConversationSummary[]> {
   const params = new URLSearchParams();
   if (q?.trim()) params.set('q', q.trim());
   if (archived) params.set('archived', 'true');
   if (tag) params.set('tag', tag);
+  if (folderId != null) params.set('folder_id', String(folderId));
   const qs = params.toString();
   const res = await apiFetch(`/api/conversations${qs ? '?' + qs : ''}`);
   if (!res.ok) return [];

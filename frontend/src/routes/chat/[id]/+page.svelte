@@ -254,8 +254,11 @@
   // {{time}}, {{datetime}}) resolve automatically; any other {{name}} is a
   // custom input the user fills in via a small form before the prompt is used.
   const SYSTEM_VARS = ['date', 'time', 'datetime'];
-  // A single {{ token }}: capture the inner spec, no nested braces.
-  const VAR_RE = /\{\{\s*([^{}]+?)\s*\}\}/g;
+  // A single {{ token }}: capture the inner spec, no nested braces. The name is
+  // length-bounded and has NO surrounding \s* group — overlapping \s* and
+  // [^{}]+? over a whitespace run caused O(n^2) backtracking (a tab-freezing
+  // ReDoS) on an unclosed "{{". Callers .trim() the captured group instead.
+  const VAR_RE = /\{\{([^{}]{1,200}?)\}\}/g;
 
   function resolveSystemVars(text: string): string {
     const now = new Date();

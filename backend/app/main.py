@@ -11,6 +11,7 @@ from .admin_models import router as admin_models_router
 from .access import filter_models
 from .admin_access import router as admin_access_router
 from .admin_connections import router as admin_connections_router
+from .admin_feedback import router as admin_feedback_router
 from .admin_users import router as admin_users_router
 from .connections import merged_model_ids
 from .anthropic_compat import router as anthropic_compat_router
@@ -194,6 +195,7 @@ app.include_router(admin_users_router)
 app.include_router(admin_access_router)
 app.include_router(admin_connections_router)
 app.include_router(audit_router)
+app.include_router(admin_feedback_router)
 app.include_router(web_search_router)
 app.include_router(api_keys_router)
 app.include_router(memories_router)

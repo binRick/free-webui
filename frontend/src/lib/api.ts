@@ -596,6 +596,24 @@ export async function listAudit(limit = 100): Promise<AuditEntry[]> {
   return res.json();
 }
 
+export interface FeedbackRow {
+  id: number;
+  rating: number;
+  comment: string | null;
+  username: string | null;
+  conversation_id: string | null;
+  conversation_title: string | null;
+  snippet: string;
+  created_at: number;
+}
+
+export async function listFeedback(rating?: number): Promise<FeedbackRow[]> {
+  const q = rating === 1 || rating === -1 ? `?rating=${rating}` : '';
+  const res = await fetch(`/api/admin/feedback${q}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
 export interface PluginRecord {
   name: string;
   priority: number;

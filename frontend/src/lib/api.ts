@@ -12,6 +12,7 @@ export interface ConversationSummary {
   updated_at: number;
   pinned: boolean;
   archived: boolean;
+  tags: string[];
 }
 
 export interface Source {
@@ -100,15 +101,33 @@ export async function getCodeStatus(): Promise<CodeStatus> {
 
 export async function listConversations(
   q?: string,
-  archived = false
+  archived = false,
+  tag?: string
 ): Promise<ConversationSummary[]> {
   const params = new URLSearchParams();
   if (q?.trim()) params.set('q', q.trim());
   if (archived) params.set('archived', 'true');
+  if (tag) params.set('tag', tag);
   const qs = params.toString();
   const res = await fetch(`/api/conversations${qs ? '?' + qs : ''}`);
   if (!res.ok) return [];
   return res.json();
+}
+
+export async function getConversationTags(id: string): Promise<string[]> {
+  const res = await fetch(`/api/conversations/${id}/tags`);
+  if (!res.ok) return [];
+  return (await res.json()).tags ?? [];
+}
+
+export async function setConversationTags(id: string, tags: string[]): Promise<string[]> {
+  const res = await fetch(`/api/conversations/${id}/tags`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ tags })
+  });
+  if (!res.ok) throw new Error(`update failed: ${res.status}`);
+  return (await res.json()).tags ?? [];
 }
 
 export async function renameConversation(id: string, title: string): Promise<void> {

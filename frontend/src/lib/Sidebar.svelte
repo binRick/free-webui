@@ -18,27 +18,40 @@
 
   let query = $state('');
   let showArchived = $state(false);
+  let tagFilter = $state<string | null>(null);
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  function refreshList() {
+    convs.refresh(query, showArchived, tagFilter ?? undefined);
+  }
   function onSearch() {
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => convs.refresh(query, showArchived), 200);
+    searchTimer = setTimeout(refreshList, 200);
   }
   function toggleArchivedView() {
     showArchived = !showArchived;
-    convs.refresh(query, showArchived);
+    refreshList();
   }
+  function selectTag(t: string | null) {
+    tagFilter = t;
+    refreshList();
+  }
+  const allTags = $derived.by(() => {
+    const set = new Set<string>();
+    for (const c of convs.list) for (const t of c.tags) set.add(t);
+    return [...set].sort();
+  });
 
   async function pin(c: ConversationSummary, e: Event) {
     e.preventDefault();
     e.stopPropagation();
     await setPinned(c.id, !c.pinned);
-    await convs.refresh(query, showArchived);
+    refreshList();
   }
   async function archive(c: ConversationSummary, e: Event) {
     e.preventDefault();
     e.stopPropagation();
     await setArchived(c.id, !c.archived);
-    await convs.refresh(query, showArchived);
+    refreshList();
   }
 
   async function del(id: string, e: Event) {
@@ -46,7 +59,7 @@
     e.stopPropagation();
     if (!confirm('delete this chat?')) return;
     await deleteConversation(id);
-    await convs.refresh(query, showArchived);
+    refreshList();
     if (page.params.id === id) goto('/');
   }
 
@@ -67,7 +80,7 @@
     renamingId = null;
     if (t) {
       await renameConversation(id, t);
-      await convs.refresh(query, showArchived);
+      refreshList();
     }
   }
   function focusOnMount(node: HTMLInputElement) {
@@ -134,6 +147,17 @@
       aria-label="search conversations"
     />
   </div>
+  {#if tagFilter}
+    <div class="tag-bar">
+      <button class="tag-chip on" onclick={() => selectTag(null)} title="clear tag filter">🏷 {tagFilter} ✕</button>
+    </div>
+  {:else if allTags.length}
+    <div class="tag-bar">
+      {#each allTags as t (t)}
+        <button class="tag-chip" onclick={() => selectTag(t)}>{t}</button>
+      {/each}
+    </div>
+  {/if}
   <nav>
     {#each grouped as group (group.label)}
       <div class="group-label">{group.label}</div>
@@ -253,6 +277,24 @@
   }
   .search input::placeholder { color: var(--text-muted); }
   .search input:focus { outline: none; border-color: var(--accent); }
+  .tag-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    padding: 0 0.75rem 0.5rem;
+  }
+  .tag-chip {
+    background: var(--bg-elev);
+    color: var(--text-dim);
+    border: 1px solid var(--border-soft);
+    border-radius: 999px;
+    padding: 0.1rem 0.5rem;
+    font: inherit;
+    font-size: 0.72rem;
+    cursor: pointer;
+  }
+  .tag-chip:hover { color: var(--text); border-color: var(--accent); }
+  .tag-chip.on { color: var(--accent); border-color: var(--accent); }
   nav {
     flex: 1;
     overflow-y: auto;

@@ -259,6 +259,28 @@ async def test_pin_and_archive(client):
     assert len((await client.get("/api/conversations")).json()) == 1
 
 
+async def test_tags_set_get_filter(client):
+    await _signup(client)
+    c1 = await _new(client)
+    await _consume(client, "POST", f"/api/conversations/{c1}/messages", {"content": "a"})
+    c2 = await _new(client)
+    await _consume(client, "POST", f"/api/conversations/{c2}/messages", {"content": "b"})
+
+    # set tags (dedup case-insensitively + trim)
+    r = await client.put(f"/api/conversations/{c1}/tags", json={"tags": ["Work", "work", "  urgent  ", ""]})
+    assert r.json()["tags"] == ["Work", "urgent"]
+    assert (await client.get(f"/api/conversations/{c1}/tags")).json()["tags"] == ["Work", "urgent"]
+
+    # tags surface on the summary
+    summary = {c["id"]: c for c in (await client.get("/api/conversations")).json()}
+    assert summary[c1]["tags"] == ["Work", "urgent"]
+    assert summary[c2]["tags"] == []
+
+    # filter by tag
+    filtered = (await client.get("/api/conversations", params={"tag": "urgent"})).json()
+    assert [c["id"] for c in filtered] == [c1]
+
+
 async def test_gen_params_validation_422(client):
     await _signup(client)
     cid = await _new(client)

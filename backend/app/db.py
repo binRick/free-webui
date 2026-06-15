@@ -205,6 +205,13 @@ CREATE TABLE IF NOT EXISTS model_access (
     -- model 'restricted' while granting access to no one)
     CHECK (group_id IS NOT NULL OR user_id IS NOT NULL)
 );
+-- Free-text tags on a conversation (for sidebar filtering/organization).
+CREATE TABLE IF NOT EXISTS conversation_tags (
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    tag             TEXT NOT NULL,
+    PRIMARY KEY (conversation_id, tag)
+);
+
 -- Public read-only share links for a conversation (one per conversation).
 CREATE TABLE IF NOT EXISTS shares (
     token           TEXT PRIMARY KEY,
@@ -248,6 +255,8 @@ CREATE INDEX IF NOT EXISTS idx_collections_user ON collections(user_id, updated_
 CREATE INDEX IF NOT EXISTS idx_collection_documents_coll ON collection_documents(collection_id);
 CREATE INDEX IF NOT EXISTS idx_collection_chunks_doc ON collection_chunks(document_id);
 CREATE INDEX IF NOT EXISTS idx_conversation_collections_conv ON conversation_collections(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_conversation_tags_conv ON conversation_tags(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_conversation_tags_tag ON conversation_tags(tag);
 """
 
 _MIGRATIONS: tuple[tuple[str, str, str], ...] = (

@@ -38,6 +38,7 @@ class ConversationSummary(BaseModel):
     updated_at: int
     pinned: bool = False
     archived: bool = False
+    tags: list[str] = []
 
 
 class StoredMessage(BaseModel):
@@ -501,10 +502,17 @@ async def list_conversations(
     user: dict = Depends(current_user),
     q: str | None = Query(default=None, max_length=200),
     archived: bool = Query(default=False),
+    tag: str | None = Query(default=None, max_length=80),
 ):
     db = _db(request)
     params: list[Any] = [user["id"]]
     search_sql = f"AND conversations.archived = {1 if archived else 0}"
+    if tag:
+        search_sql += (
+            " AND EXISTS (SELECT 1 FROM conversation_tags t "
+            "WHERE t.conversation_id = conversations.id AND t.tag = ?)"
+        )
+        params.append(tag)
     term = (q or "").strip()
     if term:
         # Match the title OR any message body (active or not) in the conversation.
@@ -522,7 +530,9 @@ async def list_conversations(
         params += [like, like]
     cur = await db.execute(
         f"""
-        SELECT id, title, model, updated_at, pinned, archived
+        SELECT id, title, model, updated_at, pinned, archived,
+               (SELECT GROUP_CONCAT(tag, ',') FROM conversation_tags t
+                WHERE t.conversation_id = conversations.id) AS tags
         FROM conversations
         WHERE user_id = ?
           AND EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = conversations.id)
@@ -536,6 +546,7 @@ async def list_conversations(
         ConversationSummary(
             id=r[0], title=r[1], model=r[2], updated_at=r[3],
             pinned=bool(r[4]), archived=bool(r[5]),
+            tags=sorted(r[6].split(",")) if r[6] else [],
         )
         for r in rows
     ]
@@ -1031,6 +1042,44 @@ async def followups(cid: str, request: Request, user: dict = Depends(current_use
         if s:
             suggestions.append(s)
     return {"suggestions": suggestions[:3]}
+
+
+class TagsBody(BaseModel):
+    tags: list[str]
+
+
+@router.get("/{cid}/tags")
+async def get_tags(cid: str, request: Request, user: dict = Depends(current_user)) -> dict:
+    db = _db(request)
+    await _owned(db, cid, user["id"])
+    cur = await db.execute(
+        "SELECT tag FROM conversation_tags WHERE conversation_id = ? ORDER BY tag", (cid,)
+    )
+    return {"tags": [r[0] for r in await cur.fetchall()]}
+
+
+@router.put("/{cid}/tags")
+async def set_tags(
+    cid: str, body: TagsBody, request: Request, user: dict = Depends(current_user)
+) -> dict:
+    db = _db(request)
+    await _owned(db, cid, user["id"])
+    clean: list[str] = []
+    seen: set[str] = set()
+    for raw in body.tags:
+        t = raw.strip()[:40]
+        if t and t.lower() not in seen:
+            seen.add(t.lower())
+            clean.append(t)
+        if len(clean) >= 20:
+            break
+    await db.execute("DELETE FROM conversation_tags WHERE conversation_id = ?", (cid,))
+    for t in clean:
+        await db.execute(
+            "INSERT INTO conversation_tags (conversation_id, tag) VALUES (?, ?)", (cid, t)
+        )
+    await db.commit()
+    return {"tags": clean}
 
 
 class FeedbackBody(BaseModel):

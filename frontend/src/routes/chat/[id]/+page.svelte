@@ -20,8 +20,10 @@
     createShare,
     deleteShare,
     getConversationCollections,
+    getConversationTags,
     getFollowups,
     getShareToken,
+    setConversationTags,
     listCollections,
     listDocuments,
     listMemories,
@@ -82,6 +84,7 @@
   let presencePenalty = $state<string>('');
   let frequencyPenalty = $state<string>('');
   let seed = $state<string>('');
+  let tagsText = $state('');
   let savingSettings = $state(false);
   let docs = $state<Document[]>([]);
   let docUploading = $state(false);
@@ -148,6 +151,7 @@
       docs = await listDocuments(id);
       collections = await listCollections();
       attachedCollections = new Set(await getConversationCollections(id));
+      tagsText = (await getConversationTags(id)).join(', ');
       shareToken = await getShareToken(id);
       prompts = await listPrompts();
       presets = await listPresets();
@@ -437,6 +441,11 @@
         web_search: webSearch,
         tools_enabled: toolsEnabled
       });
+      const tags = tagsText
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean);
+      tagsText = (await setConversationTags(currentId, tags)).join(', ');
       settingsOpen = false;
     } finally {
       savingSettings = false;
@@ -726,6 +735,10 @@
     <label>
       <span class="lbl">stop sequences <span class="hint">comma-separated</span></span>
       <input type="text" bind:value={stopText} placeholder="e.g. ###, END" />
+    </label>
+    <label>
+      <span class="lbl">tags <span class="hint">comma-separated</span></span>
+      <input type="text" bind:value={tagsText} placeholder="e.g. work, research" />
     </label>
     <label class="toggle">
       <input type="checkbox" bind:checked={webSearch} disabled={!webSearchAvailable} />

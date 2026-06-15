@@ -853,9 +853,12 @@
     const before = input.slice(0, cmd.start);
     const after = input.slice(cmd.end);
     if (cmd.kind === 'prompt' && typeof item !== 'string' && 'content' in item) {
-      // Drop the command token now; insertion (possibly after a var-fill form)
-      // splices the resolved prompt into the gap and restores the caret.
+      // Remove the command token from the composer NOW (not only via the
+      // deferred splice) so cancelling the var-fill form can't leave an orphaned
+      // "/query" behind. The composer is disabled while the form is open, so the
+      // captured before/after can't drift before the (possibly deferred) insert.
       cmd = null;
+      input = before + after;
       beginInsert(item.content, async (filled) => {
         input = before + filled + after;
         const caretPos = (before + filled).length;
@@ -1384,7 +1387,7 @@
       onblur={() => setTimeout(() => (cmd = null), 120)}
       onpaste={onPaste}
       rows="2"
-      disabled={streaming || editingIndex !== null}
+      disabled={streaming || editingIndex !== null || varFill !== null}
     ></textarea>
     {#if streaming}
       <button type="button" onclick={stop}>stop</button>

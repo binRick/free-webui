@@ -117,6 +117,12 @@ class Settings(BaseSettings):
     audio_timeout_seconds: float = 120.0
     audio_max_upload_bytes: int = 25 * 1024 * 1024  # reject audio uploads over this
 
+    # Real-time channels: cap concurrent WebSocket connections per user (a coarse
+    # DoS backstop); a revoked session is re-validated on the live socket at most
+    # this many seconds after revocation.
+    channel_max_connections_per_user: int = 10
+    channel_ws_revalidate_seconds: float = 30.0
+
     # Code interpreter. Exposes the built-in `run_python` tool. Backends:
     #   "docker"     — strongest isolation (no network, read-only rootfs,
     #                  non-root, dropped caps, mem/cpu/pids limits). Preferred.

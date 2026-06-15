@@ -12,6 +12,7 @@ single-process design; horizontal scaling would need an external pub/sub (Redis)
 import asyncio
 import time
 import uuid
+from collections import deque
 from typing import Any
 
 import aiosqlite
@@ -27,10 +28,15 @@ from fastapi import (
 from pydantic import BaseModel, Field
 
 from .auth import SESSION_COOKIE, current_user, read_session
+from .config import settings
 
 router = APIRouter(prefix="/api/channels", tags=["channels"])
 
 _MAX_CONTENT = 4000
+# Per-connection inbound frame budget (covers message + typing) — bounds DB
+# writes / broadcasts a single socket can drive.
+_FRAME_RATE_MAX = 20
+_FRAME_RATE_WINDOW = 10.0
 
 
 class ChannelHub:
@@ -38,7 +44,24 @@ class ChannelHub:
 
     def __init__(self) -> None:
         self._channels: dict[str, set[WebSocket]] = {}
+        self._user_counts: dict[int, int] = {}
         self._lock = asyncio.Lock()
+
+    async def try_reserve(self, user_id: int, cap: int) -> bool:
+        """Reserve a connection slot for a user, capping concurrent sockets."""
+        async with self._lock:
+            if self._user_counts.get(user_id, 0) >= cap:
+                return False
+            self._user_counts[user_id] = self._user_counts.get(user_id, 0) + 1
+            return True
+
+    async def release(self, user_id: int) -> None:
+        async with self._lock:
+            n = self._user_counts.get(user_id, 0) - 1
+            if n <= 0:
+                self._user_counts.pop(user_id, None)
+            else:
+                self._user_counts[user_id] = n
 
     async def connect(self, channel_id: str, ws: WebSocket) -> None:
         async with self._lock:
@@ -100,6 +123,16 @@ class MessageOut(BaseModel):
     username: str
     content: str
     created_at: int
+
+
+def _rate_allow(frames: deque, now: float, max_n: int, window: float) -> bool:
+    """Sliding-window limiter: True (and records `now`) if under the budget."""
+    while frames and now - frames[0] > window:
+        frames.popleft()
+    if len(frames) >= max_n:
+        return False
+    frames.append(now)
+    return True
 
 
 def _db(request: Request) -> aiosqlite.Connection:
@@ -265,7 +298,8 @@ async def _ws_user(db: aiosqlite.Connection, raw: str | None) -> dict | None:
 @router.websocket("/{channel_id}/ws")
 async def channel_ws(channel_id: str, websocket: WebSocket) -> None:
     db: aiosqlite.Connection = websocket.app.state.db
-    user = await _ws_user(db, websocket.cookies.get(SESSION_COOKIE))
+    raw_cookie = websocket.cookies.get(SESSION_COOKIE)
+    user = await _ws_user(db, raw_cookie)
     if user is None:
         await websocket.close(code=1008)  # policy violation: not authenticated
         return
@@ -273,36 +307,74 @@ async def channel_ws(channel_id: str, websocket: WebSocket) -> None:
     if not await cur.fetchone():
         await websocket.close(code=1008)
         return
+    # Cap concurrent sockets per user (coarse DoS backstop).
+    if not await hub.try_reserve(user["id"], settings.channel_max_connections_per_user):
+        await websocket.close(code=1013)  # try again later
+        return
 
+    uid, uname = user["id"], user["username"]
     await websocket.accept()
     await hub.connect(channel_id, websocket)
     await hub.broadcast(
         channel_id,
-        {"type": "presence", "event": "join", "username": user["username"],
+        {"type": "presence", "event": "join", "username": uname,
          "online": await hub.count(channel_id)},
     )
+    interval = settings.channel_ws_revalidate_seconds
+    frames: deque[float] = deque()
+    last_check = time.time()
     try:
         while True:
-            data: Any = await websocket.receive_json()
+            try:
+                data: Any = await asyncio.wait_for(
+                    websocket.receive_json(), timeout=interval
+                )
+                got = True
+            except asyncio.TimeoutError:
+                got = False
+            except WebSocketDisconnect:
+                break
+            except Exception:
+                break  # malformed frame / transport error — drop the connection
+
+            # Periodic re-validation: a session revoked AFTER connect
+            # (logout-everywhere / password reset / user deletion) must not keep
+            # this socket alive. Time-based so a flood can't starve the check.
+            now = time.time()
+            if now - last_check >= interval:
+                last_check = now
+                if await _ws_user(db, raw_cookie) is None:
+                    break
+            if not got:
+                continue
+
+            # Rate-limit ALL inbound frames before any DB work / broadcast.
+            if not _rate_allow(frames, now, _FRAME_RATE_MAX, _FRAME_RATE_WINDOW):
+                continue
+
             kind = data.get("type") if isinstance(data, dict) else None
             if kind == "message":
                 content = str(data.get("content") or "").strip()
-                if content and len(content) <= _MAX_CONTENT:
-                    msg = await _persist_message(db, channel_id, user, content)
-                    await hub.broadcast(channel_id, {"type": "message", **msg})
+                if not content or len(content) > _MAX_CONTENT:
+                    continue
+                # Re-validate immediately before writing under this identity so a
+                # revoked user can't post (the integrity half of revocation).
+                fresh = await _ws_user(db, raw_cookie)
+                if fresh is None:
+                    break
+                msg = await _persist_message(db, channel_id, fresh, content)
+                await hub.broadcast(channel_id, {"type": "message", **msg})
             elif kind == "typing":
-                await hub.broadcast(
-                    channel_id, {"type": "typing", "username": user["username"]}
-                )
-    except WebSocketDisconnect:
-        pass
-    except Exception:
-        # Malformed frame or transport error — drop the connection cleanly.
-        pass
+                await hub.broadcast(channel_id, {"type": "typing", "username": uname})
     finally:
         await hub.disconnect(channel_id, websocket)
+        await hub.release(uid)
         await hub.broadcast(
             channel_id,
-            {"type": "presence", "event": "leave", "username": user["username"],
+            {"type": "presence", "event": "leave", "username": uname,
              "online": await hub.count(channel_id)},
         )
+        try:
+            await websocket.close(code=1008)
+        except Exception:
+            pass

@@ -34,6 +34,33 @@ async def test_hub_broadcast_and_disconnect():
     assert b.sent[-1] == {"x": 1}
 
 
+async def test_hub_per_user_connection_cap():
+    from app.channels import ChannelHub
+
+    h = ChannelHub()
+    assert await h.try_reserve(7, cap=2) is True
+    assert await h.try_reserve(7, cap=2) is True
+    assert await h.try_reserve(7, cap=2) is False  # at cap
+    assert await h.try_reserve(8, cap=2) is True  # a different user is independent
+    await h.release(7)
+    assert await h.try_reserve(7, cap=2) is True  # a slot freed up
+
+
+def test_rate_allow_sliding_window():
+    from collections import deque
+
+    from app.channels import _rate_allow
+
+    frames: deque = deque()
+    # 3 allowed in the window, the 4th blocked
+    assert _rate_allow(frames, 100.0, 3, 10.0) is True
+    assert _rate_allow(frames, 100.5, 3, 10.0) is True
+    assert _rate_allow(frames, 101.0, 3, 10.0) is True
+    assert _rate_allow(frames, 101.5, 3, 10.0) is False
+    # once the window slides past the earliest entries, room opens again
+    assert _rate_allow(frames, 112.0, 3, 10.0) is True
+
+
 async def test_hub_isolates_channels_and_drops_dead():
     from app.channels import ChannelHub
 

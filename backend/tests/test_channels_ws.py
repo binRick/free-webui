@@ -86,3 +86,39 @@ def test_ws_rejects_unknown_channel(ws_client):
     with pytest.raises(WebSocketDisconnect):
         with ws_client.websocket_connect("/api/channels/does-not-exist/ws"):
             pass
+
+
+def test_ws_session_revocation_closes_socket(ws_client):
+    """A session revoked (logout-everywhere bumps token_version) after connect
+    must not keep posting on the live socket — the per-message re-validation
+    closes it and the post is dropped."""
+    _setup_admin(ws_client)
+    cid = _new_channel(ws_client)
+    with ws_client.websocket_connect(f"/api/channels/{cid}/ws") as ws:
+        ws.receive_json()  # presence join
+        # revoke every session for this user
+        assert ws_client.post("/api/auth/logout_all").status_code in (200, 204)
+        # the stale socket tries to post -> server re-validates, rejects, closes
+        ws.send_json({"type": "message", "content": "ghost"})
+        with pytest.raises(WebSocketDisconnect):
+            ws.receive_json()
+    # the post was never persisted
+    ws_client.post("/api/auth/login", json={"username": "alice", "password": "hunter22hunter"})
+    history = ws_client.get(f"/api/channels/{cid}/messages").json()
+    assert all(m["content"] != "ghost" for m in history)
+
+
+def test_ws_connection_cap(ws_client):
+    from app.config import settings
+
+    _setup_admin(ws_client)
+    cid = _new_channel(ws_client)
+    settings.channel_max_connections_per_user = 2
+    with ws_client.websocket_connect(f"/api/channels/{cid}/ws") as ws1:
+        ws1.receive_json()
+        with ws_client.websocket_connect(f"/api/channels/{cid}/ws") as ws2:
+            ws2.receive_json()
+            # a third concurrent socket for the same user exceeds the cap
+            with pytest.raises(WebSocketDisconnect):
+                with ws_client.websocket_connect(f"/api/channels/{cid}/ws"):
+                    pass

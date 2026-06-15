@@ -14,12 +14,19 @@ export interface ConversationSummary {
   archived: boolean;
 }
 
+export interface Source {
+  kind: string; // 'document' | 'web'
+  label: string;
+  detail?: string;
+}
+
 export interface StoredMessage {
   id: number;
   role: Role;
   content: string;
   created_at: number;
   rating?: number | null; // current user's feedback: 1, -1, or null
+  sources?: Source[] | null;
 }
 
 export interface Conversation {
@@ -863,6 +870,7 @@ export interface StreamOpts {
   onDelta: (delta: string) => void;
   onToolCall?: (tc: ToolCallEvent) => void;
   onImage?: (url: string) => void;
+  onSources?: (sources: Source[]) => void;
 }
 
 async function consumeStream(res: Response, opts: StreamOpts): Promise<void> {
@@ -892,6 +900,8 @@ async function consumeStream(res: Response, opts: StreamOpts): Promise<void> {
           opts.onToolCall?.(json as ToolCallEvent);
         } else if (eventType === 'image') {
           if (typeof json.url === 'string') opts.onImage?.(json.url);
+        } else if (eventType === 'sources') {
+          if (Array.isArray(json)) opts.onSources?.(json as Source[]);
         } else {
           const delta = json.choices?.[0]?.delta?.content;
           if (typeof delta === 'string' && delta.length) opts.onDelta(delta);

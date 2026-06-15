@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS messages (
     -- deleted, so regenerate is non-destructive). Reads filter active=1.
     parent_id       INTEGER,
     active          INTEGER NOT NULL DEFAULT 1,
+    sources         TEXT,
     created_at      INTEGER NOT NULL
 );
 
@@ -265,6 +266,7 @@ _MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("conversations", "archived", "INTEGER NOT NULL DEFAULT 0"),
     ("messages", "parent_id", "INTEGER"),
     ("messages", "active", "INTEGER NOT NULL DEFAULT 1"),
+    ("messages", "sources", "TEXT"),
     ("users", "token_version", "INTEGER NOT NULL DEFAULT 0"),
     ("users", "oidc_sub", "TEXT"),
 )

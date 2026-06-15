@@ -44,6 +44,7 @@
     type Preset,
     type Prompt,
     type Role,
+    type Source,
     type ToolCallEvent
   } from '$lib/api';
   import { convs } from '$lib/conversations.svelte';
@@ -57,6 +58,7 @@
     tool_calls?: ToolCallEvent[];
     images?: string[];
     rating?: number | null;
+    sources?: Source[];
   }
 
   let models = $state<string[]>([]);
@@ -128,7 +130,8 @@
         id: m.id,
         role: m.role,
         content: m.content,
-        rating: m.rating ?? null
+        rating: m.rating ?? null,
+        sources: m.sources ?? undefined
       }));
       await refreshVariants();
       systemPrompt = conv.system_prompt ?? '';
@@ -458,12 +461,18 @@
     scroller?.scrollTo({ top: scroller.scrollHeight });
   }
 
+  function setSources(sources: Source[]) {
+    const last = messages[messages.length - 1];
+    messages[messages.length - 1] = { ...last, sources };
+  }
+
   async function runStream(
     operation: (opts: {
       signal: AbortSignal;
       onDelta: (d: string) => void;
       onToolCall: (tc: ToolCallEvent) => void;
       onImage: (url: string) => void;
+      onSources: (s: Source[]) => void;
     }) => Promise<void>
   ) {
     streaming = true;
@@ -473,7 +482,8 @@
         signal: abort.signal,
         onDelta: appendDelta,
         onToolCall: appendToolCall,
-        onImage: appendImage
+        onImage: appendImage,
+        onSources: setSources
       });
       await load(currentId);
     } catch (err) {
@@ -982,6 +992,18 @@
             {/each}
           {/if}
         {/if}
+        {#if msg.sources && msg.sources.length}
+          <div class="sources">
+            <span class="src-label">sources</span>
+            {#each msg.sources as s, si (si)}
+              {#if s.kind === 'web' && s.detail}
+                <a class="src" href={s.detail} target="_blank" rel="noreferrer noopener" title={s.detail}>🌐 {s.label}</a>
+              {:else}
+                <span class="src" title={s.label}>📄 {s.label}</span>
+              {/if}
+            {/each}
+          </div>
+        {/if}
       </div>
     </div>
   {/each}
@@ -1340,6 +1362,30 @@
   .action.vnav:disabled { opacity: 0.4; cursor: default; }
   .vcount { font-size: 0.7rem; color: var(--text-muted); min-width: 1.8rem; text-align: center; }
   .content { line-height: 1.5; word-wrap: break-word; }
+  .sources {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 0.6rem;
+    padding-top: 0.5rem;
+    border-top: 1px dashed var(--border-soft);
+  }
+  .src-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+  .src {
+    font-size: 0.74rem;
+    color: var(--text-dim);
+    background: var(--bg-elev);
+    border: 1px solid var(--border-soft);
+    border-radius: 999px;
+    padding: 0.1rem 0.5rem;
+    max-width: 16rem;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    text-decoration: none;
+  }
+  a.src:hover { color: var(--text); border-color: var(--accent); }
   .edit {
     width: 100%;
     resize: vertical;

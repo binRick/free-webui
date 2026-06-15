@@ -78,9 +78,10 @@ async def test_attached_collection_is_searched_in_rag(client):
     conv = (await client.post("/api/conversations", json={})).json()["id"]
 
     # before attaching: no context from the collection
-    ctx = await retrieve_context(app.state.db, app.state.http, conv, "penguins")
+    ctx, _sources = await retrieve_context(app.state.db, app.state.http, conv, "penguins")
     assert ctx is None
 
     await client.put(f"/api/conversations/{conv}/collections", json={"collection_ids": [c["id"]]})
-    ctx = await retrieve_context(app.state.db, app.state.http, conv, "penguins")
+    ctx, sources = await retrieve_context(app.state.db, app.state.http, conv, "penguins")
     assert ctx is not None and "Penguins huddle" in ctx
+    assert sources and sources[0]["kind"] == "document"

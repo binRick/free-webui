@@ -46,6 +46,7 @@ class StoredMessage(BaseModel):
     content: str
     created_at: int
     rating: int | None = None  # current user's feedback: 1 (up), -1 (down), or None
+    sources: list[dict] | None = None  # RAG/web sources that grounded this reply
 
 
 class Conversation(BaseModel):
@@ -214,6 +215,32 @@ async def _conv_settings(db: aiosqlite.Connection, cid: str) -> dict[str, Any]:
     }
 
 
+async def _gather_context(
+    db: aiosqlite.Connection,
+    http: httpx.AsyncClient,
+    cid: str,
+    query: str,
+    conv: dict,
+    user_id: int,
+) -> tuple[str | None, list[dict]]:
+    """Build the injected system context (memories + web + RAG) and the list of
+    sources (documents + web results) that grounded it."""
+    rag_ctx, sources = await retrieve_context(db, http, cid, query)
+    web_ctx = None
+    if conv.get("web_search"):
+        results = await web_search(query)
+        web_ctx = format_web_context(results)
+        for r in results:
+            sources.append({
+                "kind": "web",
+                "label": r.get("title") or r.get("url") or "result",
+                "detail": r.get("url", ""),
+            })
+    mem_ctx = await load_memory_context(db, user_id)
+    context = "\n\n".join(c for c in (mem_ctx, web_ctx, rag_ctx) if c) or None
+    return context, sources
+
+
 def _build_upstream_messages(
     system_prompt: str | None,
     context: str | None,
@@ -247,6 +274,7 @@ async def _stream_and_persist(
     parent_message_id: int | None = None,
     conn: Connection | None = None,
     gen: dict[str, Any] | None = None,
+    sources: list[dict] | None = None,
 ) -> AsyncIterator[bytes]:
     """Stream a chat completion. If tools_enabled, runs a tool loop until
     the upstream finishes with a non-tool finish reason, surfacing each
@@ -305,6 +333,10 @@ async def _stream_and_persist(
         return p
 
     try:
+        # Surface the grounding sources up front so the UI can render a strip
+        # immediately; they're also persisted with the assistant message below.
+        if sources:
+            yield f"event: sources\ndata: {json.dumps(sources)}\n\n".encode()
         for _ in range(max_tool_loops):
             iter_content: list[str] = []
             tool_buf: dict[int, dict] = {}
@@ -450,9 +482,10 @@ async def _stream_and_persist(
                     stored = text
                 ts = int(time.time())
                 await db.execute(
-                    "INSERT INTO messages (conversation_id, role, content, parent_id, created_at) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (cid, "assistant", stored, parent_message_id, ts),
+                    "INSERT INTO messages (conversation_id, role, content, parent_id, sources, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (cid, "assistant", stored, parent_message_id,
+                     json.dumps(sources) if sources else None, ts),
                 )
                 await db.execute(
                     "UPDATE conversations SET updated_at = ? WHERE id = ?", (ts, cid)
@@ -546,7 +579,7 @@ async def get_conversation(
         raise HTTPException(status_code=404, detail="conversation not found")
     cur = await db.execute(
         """
-        SELECT m.id, m.role, m.content, m.created_at, fb.rating
+        SELECT m.id, m.role, m.content, m.created_at, fb.rating, m.sources
         FROM messages m
         LEFT JOIN message_feedback fb
                ON fb.message_id = m.id AND fb.user_id = ?
@@ -573,7 +606,10 @@ async def get_conversation(
         frequency_penalty=row[13],
         seed=row[14],
         messages=[
-            StoredMessage(id=m[0], role=m[1], content=m[2], created_at=m[3], rating=m[4])
+            StoredMessage(
+                id=m[0], role=m[1], content=m[2], created_at=m[3], rating=m[4],
+                sources=json.loads(m[5]) if m[5] else None,
+            )
             for m in msg_rows
         ],
     )
@@ -735,12 +771,7 @@ async def send_message(
     await db.commit()
 
     query_text = _content_text(body.content)
-    rag_ctx = await retrieve_context(db, http, cid, query_text)
-    web_ctx = None
-    if conv.get("web_search"):
-        web_ctx = format_web_context(await web_search(query_text))
-    mem_ctx = await load_memory_context(db, user["id"])
-    context = "\n\n".join(c for c in (mem_ctx, web_ctx, rag_ctx) if c) or None
+    context, sources = await _gather_context(db, http, cid, query_text, conv, user["id"])
     upstream = _build_upstream_messages(
         conv["system_prompt"],
         context,
@@ -755,6 +786,7 @@ async def send_message(
             plugins=getattr(request.app.state, "plugins", None),
             conn=conn,
             gen=conv,
+            sources=sources,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -796,12 +828,7 @@ async def regenerate(
         if m["role"] == "user":
             last_user_text = _content_text(m["content"])
             break
-    rag_ctx = await retrieve_context(db, http, cid, last_user_text)
-    web_ctx = None
-    if conv.get("web_search"):
-        web_ctx = format_web_context(await web_search(last_user_text))
-    mem_ctx = await load_memory_context(db, user["id"])
-    context = "\n\n".join(c for c in (mem_ctx, web_ctx, rag_ctx) if c) or None
+    context, sources = await _gather_context(db, http, cid, last_user_text, conv, user["id"])
     upstream = _build_upstream_messages(conv["system_prompt"], context, history)
     conn = await resolve_connection(request, db, chosen_model)
     return StreamingResponse(
@@ -812,6 +839,7 @@ async def regenerate(
             parent_message_id=archived_id,
             conn=conn,
             gen=conv,
+            sources=sources,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -854,12 +882,7 @@ async def edit_message(
 
     history = await _load_history(db, cid)
     query_text = _content_text(body.content)
-    rag_ctx = await retrieve_context(db, http, cid, query_text)
-    web_ctx = None
-    if conv.get("web_search"):
-        web_ctx = format_web_context(await web_search(query_text))
-    mem_ctx = await load_memory_context(db, user["id"])
-    context = "\n\n".join(c for c in (mem_ctx, web_ctx, rag_ctx) if c) or None
+    context, sources = await _gather_context(db, http, cid, query_text, conv, user["id"])
     upstream = _build_upstream_messages(conv["system_prompt"], context, history)
     conn = await resolve_connection(request, db, chosen_model)
     return StreamingResponse(
@@ -869,6 +892,7 @@ async def edit_message(
             plugins=getattr(request.app.state, "plugins", None),
             conn=conn,
             gen=conv,
+            sources=sources,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

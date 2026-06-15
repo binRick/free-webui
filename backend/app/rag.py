@@ -153,12 +153,12 @@ async def retrieve_context(
     cid: str,
     query: str,
     top_k: int | None = None,
-) -> str | None:
-    """Embed the query, score all chunks for the conversation, return a context
-    block string for prepending as a system message. None if nothing attached.
-    """
+) -> tuple[str | None, list[dict]]:
+    """Embed the query, score the conversation's chunks (own uploads + attached
+    collections), and return (context_block, sources). sources is a list of
+    {kind: "document", label: filename}. (None, []) if nothing matched."""
     if not query.strip():
-        return None
+        return None, []
     top_k = top_k or settings.rag_top_k
 
     # The conversation's own uploads...
@@ -185,7 +185,7 @@ async def retrieve_context(
     )
     rows += list(await cur.fetchall())
     if not rows:
-        return None
+        return None, []
 
     [query_vec] = await embed_texts(http, [query])
 
@@ -197,14 +197,21 @@ async def retrieve_context(
     scored.sort(key=lambda x: x[0], reverse=True)
     top = scored[:top_k]
     if not top or top[0][0] <= 0.0:
-        return None
+        return None, []
 
     sections = [
         f'--- from "{fn}" (score={score:.2f}) ---\n{txt}'
         for score, fn, txt in top
     ]
-    return (
+    sources: list[dict] = []
+    seen: set[str] = set()
+    for _score, fn, _txt in top:
+        if fn not in seen:
+            seen.add(fn)
+            sources.append({"kind": "document", "label": fn})
+    context = (
         "You have access to the following excerpts from documents the user attached "
         "to this conversation. Use them when answering, and say so if the answer "
         "isn't supported by the excerpts.\n\n" + "\n\n".join(sections)
     )
+    return context, sources

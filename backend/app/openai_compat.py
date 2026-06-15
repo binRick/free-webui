@@ -12,6 +12,7 @@ import httpx
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from .access import can_access_model, filter_models
 from .api_keys import user_from_bearer
 
 router = APIRouter(prefix="/v1", tags=["openai_compat"])
@@ -32,19 +33,39 @@ def _error_frame(message: str, type_: str = "upstream_error") -> bytes:
     return f"data: {payload}\n\ndata: [DONE]\n\n".encode()
 
 
+def _passthrough_upstream(r: httpx.Response) -> JSONResponse:
+    """Forward an upstream error: keep client 4xx (status + body) so SDKs see the
+    real 400/404/429, and collapse upstream 5xx to a generic 502."""
+    if 400 <= r.status_code < 500:
+        try:
+            body = r.json()
+        except json.JSONDecodeError:
+            body = {"error": {"message": r.text[:400], "type": "upstream_error"}}
+        return JSONResponse(status_code=r.status_code, content=body)
+    return _error(502, r.text[:400], "upstream_error")
+
+
 @router.get("/models")
-async def list_models(request: Request, _user: dict = Depends(user_from_bearer)):
+async def list_models(request: Request, user: dict = Depends(user_from_bearer)):
     http = _http(request)
     try:
         r = await http.get("/models")
     except httpx.HTTPError as e:
         return _error(502, f"upstream unreachable: {e}", "upstream_error")
     if r.status_code >= 400:
-        return _error(502, r.text[:400], "upstream_error")
+        return _passthrough_upstream(r)
     try:
-        return r.json()
+        payload = r.json()
     except json.JSONDecodeError:
         return _error(502, "upstream returned non-JSON for models", "upstream_error")
+    # Apply the same per-model access control as /api/models so a key can't even
+    # see the names of models it isn't allowed to use.
+    data = payload.get("data")
+    if isinstance(data, list):
+        ids = [m.get("id") for m in data if isinstance(m, dict) and m.get("id")]
+        allowed = set(await filter_models(request.app.state.db, user, ids))
+        payload["data"] = [m for m in data if isinstance(m, dict) and m.get("id") in allowed]
+    return payload
 
 
 def _validate_chat_body(body: object) -> str | None:
@@ -60,7 +81,7 @@ def _validate_chat_body(body: object) -> str | None:
 
 
 @router.post("/chat/completions")
-async def chat_completions(request: Request, _user: dict = Depends(user_from_bearer)):
+async def chat_completions(request: Request, user: dict = Depends(user_from_bearer)):
     http = _http(request)
     try:
         body = await request.json()
@@ -69,6 +90,8 @@ async def chat_completions(request: Request, _user: dict = Depends(user_from_bea
     invalid = _validate_chat_body(body)
     if invalid:
         return _error(400, invalid)
+    if not await can_access_model(request.app.state.db, user, body["model"]):
+        return _error(403, f"model '{body['model']}' is not available to this key", "access_denied")
 
     if bool(body.get("stream")):
         async def proxy() -> AsyncIterator[bytes]:
@@ -90,7 +113,7 @@ async def chat_completions(request: Request, _user: dict = Depends(user_from_bea
     except httpx.HTTPError as e:
         return _error(502, f"upstream unreachable: {e}", "upstream_error")
     if r.status_code >= 400:
-        return _error(502, r.text[:400], "upstream_error")
+        return _passthrough_upstream(r)
     try:
         return r.json()
     except json.JSONDecodeError:
@@ -106,8 +129,10 @@ async def embeddings(request: Request, _user: dict = Depends(user_from_bearer)):
         return _error(400, "invalid json body")
     if not isinstance(body, dict):
         return _error(400, "request body must be a JSON object")
-    if not body.get("input"):
-        return _error(400, "missing or invalid 'input'")
+    # input may be a string or an array (incl. token-id arrays); let upstream
+    # adjudicate emptiness/element validity rather than rejecting valid shapes.
+    if not isinstance(body.get("input"), (str, list)):
+        return _error(400, "missing or invalid 'input' (expected string or array)")
     if not isinstance(body.get("model"), str) or not body.get("model"):
         return _error(400, "missing or invalid 'model'")
     try:
@@ -115,7 +140,7 @@ async def embeddings(request: Request, _user: dict = Depends(user_from_bearer)):
     except httpx.HTTPError as e:
         return _error(502, f"upstream unreachable: {e}", "upstream_error")
     if r.status_code >= 400:
-        return _error(502, r.text[:400], "upstream_error")
+        return _passthrough_upstream(r)
     try:
         return r.json()
     except json.JSONDecodeError:

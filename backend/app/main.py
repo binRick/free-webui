@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .admin_models import router as admin_models_router
+from .access import filter_models
+from .admin_access import router as admin_access_router
 from .admin_users import router as admin_users_router
 from .api_keys import router as api_keys_router
 from .auth import current_user
@@ -147,6 +149,7 @@ app.include_router(prompts_router)
 app.include_router(presets_router)
 app.include_router(admin_models_router)
 app.include_router(admin_users_router)
+app.include_router(admin_access_router)
 app.include_router(web_search_router)
 app.include_router(api_keys_router)
 app.include_router(memories_router)
@@ -163,7 +166,7 @@ async def health() -> dict[str, str]:
 
 
 @app.get("/api/models", response_model=ModelList)
-async def list_models(user: dict = Depends(current_user)) -> ModelList:
+async def list_models(request: Request, user: dict = Depends(current_user)) -> ModelList:
     client: httpx.AsyncClient = app.state.http
     try:
         r = await client.get("/models")
@@ -171,5 +174,6 @@ async def list_models(user: dict = Depends(current_user)) -> ModelList:
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail=f"upstream models error: {e}")
     payload = r.json()
-    data = [ModelInfo(id=m["id"]) for m in payload.get("data", [])]
-    return ModelList(data=data)
+    ids = [m["id"] for m in payload.get("data", [])]
+    allowed = await filter_models(request.app.state.db, user, ids)
+    return ModelList(data=[ModelInfo(id=i) for i in allowed])

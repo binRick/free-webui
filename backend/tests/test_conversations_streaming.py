@@ -55,7 +55,8 @@ async def test_stream_surfaces_upstream_error_frame(client, upstream):
     frames = _frames(text)
     error_frames = [d for _ev, d in frames if d and d != "[DONE]" and '"error"' in d]
     assert len(error_frames) == 1
-    assert "kaboom" in json.loads(error_frames[0])["error"]
+    # OpenAI-shaped error object: {"error": {"message": ..., "type": ...}}
+    assert "kaboom" in json.loads(error_frames[0])["error"]["message"]
     assert "[DONE]" in [d for _ev, d in frames]
 
     # An upstream error must not persist a phantom assistant message.

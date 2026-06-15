@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
+from .access import can_access_model
 from .auth import current_user
 from .config import settings
 from .mcp import compose_tool_specs, run_tool as run_dispatch
@@ -286,7 +287,15 @@ async def _stream_and_persist(
             async with http.stream("POST", "/chat/completions", json=_payload()) as r:
                 if r.status_code >= 400:
                     err = (await r.aread()).decode(errors="replace")
-                    yield f"data: {json.dumps({'error': err})}\n\n".encode()
+                    # OpenAI-shaped error object (matches the /v1 proxy); the
+                    # finally block emits the single trailing [DONE].
+                    frame = {
+                        "error": {
+                            "message": f"upstream error {r.status_code}: {err[:300]}",
+                            "type": "upstream_error",
+                        }
+                    }
+                    yield f"data: {json.dumps(frame)}\n\n".encode()
                     return
 
                 async for line in r.aiter_lines():
@@ -468,6 +477,10 @@ async def create_conversation(
     body: CreateBody, request: Request, user: dict = Depends(current_user)
 ):
     db = _db(request)
+    if body.model is not None and not await can_access_model(db, user, body.model):
+        raise HTTPException(
+            status_code=403, detail=f"model '{body.model}' is not available to you"
+        )
     cid = uuid.uuid4().hex
     now = int(time.time())
     await db.execute(
@@ -534,6 +547,10 @@ async def update_conversation(
     db = _db(request)
     await _owned(db, cid, user["id"])
     fields = body.model_dump(exclude_unset=True)
+    if fields.get("model") is not None and not await can_access_model(db, user, fields["model"]):
+        raise HTTPException(
+            status_code=403, detail=f"model '{fields['model']}' is not available to you"
+        )
     if fields:
         sets: list[str] = []
         params: list[Any] = []
@@ -646,6 +663,17 @@ async def _maybe_update_model(
     return chosen
 
 
+async def _guard_model(
+    db: aiosqlite.Connection, user: dict, requested: str | None, current: str | None
+) -> None:
+    """Reject (403) before any mutation if the user may not use the chosen model."""
+    candidate = requested or current or settings.default_model
+    if not await can_access_model(db, user, candidate):
+        raise HTTPException(
+            status_code=403, detail=f"model '{candidate}' is not available to you"
+        )
+
+
 @router.post("/{cid}/messages")
 async def send_message(
     cid: str, body: SendBody, request: Request, user: dict = Depends(current_user)
@@ -655,6 +683,7 @@ async def send_message(
     http = _http(request)
 
     conv = await _conv_settings(db, cid)
+    await _guard_model(db, user, body.model, conv["model"])
     history = await _load_history(db, cid)
 
     now = int(time.time())
@@ -699,6 +728,7 @@ async def regenerate(
     http = _http(request)
 
     conv = await _conv_settings(db, cid)
+    await _guard_model(db, user, body.model, conv["model"])
 
     cur = await db.execute(
         "SELECT id, role FROM messages WHERE conversation_id = ? AND active = 1 "
@@ -765,6 +795,7 @@ async def edit_message(
         raise HTTPException(status_code=400, detail="only user messages can be edited")
 
     conv = await _conv_settings(db, cid)
+    await _guard_model(db, user, body.model, conv["model"])
 
     await db.execute(
         "UPDATE messages SET content = ? WHERE id = ?", (_encode_content(body.content), msg_id)
@@ -814,6 +845,9 @@ async def autotitle(
     convo = [m for m in history if m["role"] in ("user", "assistant")]
     if len(convo) < 2:
         return {"title": conv["title"]}
+    # Don't run inference on a model the user may not use (e.g. one that was
+    # restricted after this conversation was created). Matches the chat guards.
+    await _guard_model(db, user, None, conv["model"])
 
     # Text-only view of the opening turns (don't ship images to the titler).
     snippet = [

@@ -141,6 +141,7 @@
         <a class="admin-link" href="/account" title="api keys">🔑 api</a>
         {#if auth.user.role === 'admin'}
           <a class="admin-link" href="/admin/users" title="manage users">👥 users</a>
+          <a class="admin-link" href="/admin/access" title="groups & model access">🔒 access</a>
           <a class="admin-link" href="/admin/models" title="manage installed models">⚙ models</a>
           <a class="admin-link" href="/admin/plugins" title="loaded plugins">🧩 plugins</a>
         {/if}

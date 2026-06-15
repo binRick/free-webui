@@ -63,7 +63,7 @@ Most are `S`/`M` and high risk-reduction. **Partially landed on
 | Scalable RAG index + hybrid retrieval | M | Replace pure-Python full-scan cosine (`rag.py`) with `sqlite-vec` / numpy-vectorized + optional BM25. |
 | **Knowledge bases / collections** reusable across chats | L | RAG is per-conversation only; same doc re-embedded per chat. |
 | **Multiple upstream connections** | L | Single baked-in `upstream_base_url`; add a connections table + merged `/api/models` + per-model routing. |
-| User **groups** + granular permissions + per-model access control | L | Binary admin/user today; enforce model access on chat **and** `/v1`. |
+| User **groups** + per-model access control | L | ✅ landed (`groups`/`group_members`/`model_access`; public-unless-restricted; enforced on `/api/models`, `/v1/models`, chat send/regen/edit, `/v1/chat/completions`, autotitle, and conversation create/patch; admin UI at `/admin/access`). Granular per-feature RBAC still ⬜. |
 | Server-side session store / revocation | M | ✅ landed (`users.token_version`; password reset + "log out everywhere" bump it; `current_user` rejects stale cookies). Role changes already apply live (role is read from the DB each request). |
 | **OAuth / OIDC SSO** | L | authlib flow + account linking + open-signup toggle. |
 | Decompose the 1194-LOC chat route + Vitest harness | L | Split into MessageList/MessageItem/Composer/SettingsDrawer; cache status endpoints. |

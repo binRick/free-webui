@@ -121,6 +121,30 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS groups (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT UNIQUE NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS group_members (
+    group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (group_id, user_id)
+);
+
+-- A model with NO rows here is public (everyone). With rows, only the listed
+-- users + members of the listed groups (and admins) may see/use it.
+CREATE TABLE IF NOT EXISTS model_access (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    model_id TEXT NOT NULL,
+    group_id INTEGER REFERENCES groups(id) ON DELETE CASCADE,
+    user_id  INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    -- a grant must name a group or a user (never both-null, which would mark a
+    -- model 'restricted' while granting access to no one)
+    CHECK (group_id IS NOT NULL OR user_id IS NOT NULL)
+);
 """
 
 # Indexes are created AFTER _ensure_columns so an index on a migrated column
@@ -138,6 +162,8 @@ CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, updated_at DES
 CREATE INDEX IF NOT EXISTS idx_mcp_servers_user ON mcp_servers(user_id, enabled);
 CREATE INDEX IF NOT EXISTS idx_messages_active ON messages(conversation_id, active, id);
 CREATE INDEX IF NOT EXISTS idx_feedback_message ON message_feedback(message_id);
+CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_model_access_model ON model_access(model_id);
 """
 
 _MIGRATIONS: tuple[tuple[str, str, str], ...] = (

@@ -57,6 +57,21 @@ async def test_v1_nonstream_success_and_error(client, upstream):
     assert r.json()["error"]["type"] == "upstream_error"
 
 
+async def test_v1_4xx_passthrough(client, upstream):
+    """An upstream client error (e.g. 404 no-such-model) keeps its status + body
+    so SDKs see the real error, instead of being collapsed to 502."""
+    key = await _key(client)
+    upstream.queue_chat(
+        httpx.Response(404, json={"error": {"message": "no such model", "type": "not_found"}})
+    )
+    r = await client.post(
+        "/v1/chat/completions", headers=_auth(key),
+        json={"model": "fake-a", "messages": [{"role": "user", "content": "hi"}], "stream": False},
+    )
+    assert r.status_code == 404
+    assert r.json()["error"]["message"] == "no such model"
+
+
 async def test_v1_stream_error_frame(client, upstream):
     key = await _key(client)
     upstream.queue_chat(error_response(500, "boom"))

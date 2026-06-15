@@ -316,6 +316,77 @@ export async function adminDeleteUser(id: number): Promise<void> {
   }
 }
 
+export interface Group {
+  id: number;
+  name: string;
+  member_count: number;
+  created_at: number;
+}
+
+export async function listGroups(): Promise<Group[]> {
+  const res = await fetch('/api/admin/groups');
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function createGroup(name: string): Promise<Group> {
+  const res = await fetch('/api/admin/groups', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name })
+  });
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}));
+    throw new Error(b.detail ?? `create failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteGroup(id: number): Promise<void> {
+  const res = await fetch(`/api/admin/groups/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`delete failed: ${res.status}`);
+}
+
+export async function getGroupMembers(id: number): Promise<number[]> {
+  const res = await fetch(`/api/admin/groups/${id}/members`);
+  if (!res.ok) return [];
+  return (await res.json()).user_ids ?? [];
+}
+
+export async function setGroupMembers(id: number, userIds: number[]): Promise<number[]> {
+  const res = await fetch(`/api/admin/groups/${id}/members`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ user_ids: userIds })
+  });
+  if (!res.ok) throw new Error(`update failed: ${res.status}`);
+  return (await res.json()).user_ids ?? [];
+}
+
+export interface ModelAccessEntry {
+  group_ids: number[];
+  user_ids: number[];
+}
+
+export async function listModelAccess(): Promise<Record<string, ModelAccessEntry>> {
+  const res = await fetch('/api/admin/model_access');
+  if (!res.ok) return {};
+  return res.json();
+}
+
+export async function setModelAccess(
+  modelId: string,
+  groupIds: number[],
+  userIds: number[]
+): Promise<void> {
+  const res = await fetch('/api/admin/model_access', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model_id: modelId, group_ids: groupIds, user_ids: userIds })
+  });
+  if (!res.ok) throw new Error(`update failed: ${res.status}`);
+}
+
 export interface PluginRecord {
   name: string;
   priority: number;

@@ -26,6 +26,7 @@ from .conversations import router as conversations_router
 from .db import open_db
 from .files import router as files_router
 from .folders import router as folders_router
+from .notes import router as notes_router
 from .documents import router as documents_router
 from .images import router as images_router
 from .mcp import router as mcp_router
@@ -218,6 +219,7 @@ app.include_router(collections_router)
 app.include_router(shares_router)
 app.include_router(files_router)
 app.include_router(folders_router)
+app.include_router(notes_router)
 app.include_router(prompts_router)
 app.include_router(presets_router)
 app.include_router(admin_models_router)

@@ -22,6 +22,7 @@ authoritative status):
   message, **LLM auto-titling**, extra generation params
   (`max_tokens`/penalties/seed).
 - **Knowledge bases**: reusable document **collections** attachable to any chat.
+- **Notes**: a per-user markdown notebook workspace (`/notes`) with live preview.
 - **Organization**: per-conversation **tags** (sidebar tag-filter chips +
   drawer editor) and **folders** (single-home, sidebar filter + drawer move),
   on top of search/pin/archive.

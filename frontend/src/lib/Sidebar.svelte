@@ -260,6 +260,7 @@
       <span class="user" title={auth.user.role}>{auth.user.username}</span>
       <div class="footer-actions">
         <a class="admin-link" href="/account" title="api keys">🔑 api</a>
+        <a class="admin-link" href="/notes" title="notes">📝 notes</a>
         <a class="admin-link" href="/collections" title="knowledge bases">📚 kb</a>
         {#if auth.user.role === 'admin'}
           <a class="admin-link" href="/admin/users" title="manage users">👥 users</a>

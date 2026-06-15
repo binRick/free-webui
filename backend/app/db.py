@@ -256,6 +256,16 @@ CREATE TABLE IF NOT EXISTS folders (
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
+
+-- Per-user markdown notebook (a workspace surface, distinct from chats/prompts).
+CREATE TABLE IF NOT EXISTS notes (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title      TEXT NOT NULL,
+    content    TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
 """
 
 # Indexes are created AFTER _ensure_columns so an index on a migrated column
@@ -287,6 +297,7 @@ CREATE INDEX IF NOT EXISTS idx_files_conv ON files(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_files_user ON files(user_id);
 CREATE INDEX IF NOT EXISTS idx_folders_user ON folders(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_conversations_folder ON conversations(folder_id);
+CREATE INDEX IF NOT EXISTS idx_notes_user ON notes(user_id, updated_at DESC);
 """
 
 _MIGRATIONS: tuple[tuple[str, str, str], ...] = (

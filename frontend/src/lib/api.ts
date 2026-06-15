@@ -127,6 +127,47 @@ export async function deleteFolder(id: number): Promise<void> {
   await apiFetch(`/api/folders/${id}`, { method: 'DELETE' });
 }
 
+export interface Note {
+  id: number;
+  title: string;
+  content: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export async function listNotes(): Promise<Note[]> {
+  const res = await apiFetch('/api/notes');
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function createNote(title: string, content = ''): Promise<Note> {
+  const res = await apiFetch('/api/notes', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ title, content })
+  });
+  if (!res.ok) throw new Error(`create note failed: ${res.status}`);
+  return res.json();
+}
+
+export async function updateNote(
+  id: number,
+  patch: { title?: string; content?: string }
+): Promise<Note> {
+  const res = await apiFetch(`/api/notes/${id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(patch)
+  });
+  if (!res.ok) throw new Error(`update note failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteNote(id: number): Promise<void> {
+  await apiFetch(`/api/notes/${id}`, { method: 'DELETE' });
+}
+
 export interface WebSearchStatus {
   available: boolean;
   url: string | null;

@@ -24,6 +24,9 @@ authoritative status):
 - **Knowledge bases**: reusable document **collections** attachable to any chat.
 - **Organization**: per-conversation **tags** (sidebar tag-filter chips +
   drawer editor), on top of search/pin/archive.
+- **Composer UX**: **searchable model picker** (scales to many merged models)
+  and in-composer commands — `/` insert a saved prompt, `@` switch model, `#`
+  attach a knowledge collection — with keyboard navigation.
 - **Object/media store**: base64 image payloads (generated + vision uploads)
   are externalized to a `files` blob table and served via `/api/files/{id}`
   instead of bloating every message row; re-inlined for upstream vision replay

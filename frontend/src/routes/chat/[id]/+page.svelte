@@ -651,7 +651,100 @@
     abort?.abort();
   }
 
+  // ---- in-composer commands: / prompts · @ models · # collections ----
+  type CmdKind = 'prompt' | 'model' | 'collection';
+  let composer = $state<HTMLTextAreaElement | null>(null);
+  let cmd = $state<{ kind: CmdKind; query: string; start: number; end: number } | null>(null);
+  let cmdIndex = $state(0);
+
+  const CMD_HINT: Record<CmdKind, string> = {
+    prompt: 'prompts — insert',
+    model: 'models — switch',
+    collection: 'knowledge — attach'
+  };
+
+  // The active command is the trailing /@# token at the caret (whitespace-
+  // delimited), e.g. "summarise /sum" -> prompt command, query "sum".
+  function syncCommand() {
+    const el = composer;
+    if (!el || streaming || editingIndex !== null) {
+      cmd = null;
+      return;
+    }
+    const caret = el.selectionStart ?? input.length;
+    const m = /(?:^|\s)([/@#])(\S*)$/.exec(input.slice(0, caret));
+    if (!m) {
+      cmd = null;
+      return;
+    }
+    const kind: CmdKind = m[1] === '/' ? 'prompt' : m[1] === '@' ? 'model' : 'collection';
+    // Preserve the highlighted row across caret-only events (arrow nav fires
+    // keyup -> syncCommand); only reset when the actual token changes.
+    if (!cmd || cmd.kind !== kind || cmd.query !== m[2] || cmd.start !== caret - m[2].length - 1)
+      cmdIndex = 0;
+    cmd = { kind, query: m[2], start: caret - m[2].length - 1, end: caret };
+  }
+
+  const cmdItems = $derived.by<(Prompt | Collection | string)[]>(() => {
+    if (!cmd) return [];
+    const q = cmd.query.toLowerCase();
+    if (cmd.kind === 'prompt')
+      return prompts
+        .filter((p) => p.title.toLowerCase().includes(q) || p.content.toLowerCase().includes(q))
+        .slice(0, 8);
+    if (cmd.kind === 'model') return models.filter((m) => m.toLowerCase().includes(q)).slice(0, 8);
+    return collections.filter((c) => c.name.toLowerCase().includes(q)).slice(0, 8);
+  });
+
+  function cmdLabel(item: Prompt | Collection | string): string {
+    if (typeof item === 'string') return item;
+    return 'title' in item ? item.title : item.name;
+  }
+
+  async function applyCommand(item: Prompt | Collection | string) {
+    if (!cmd || !composer) return;
+    const before = input.slice(0, cmd.start);
+    const after = input.slice(cmd.end);
+    let caretPos = before.length;
+    if (cmd.kind === 'prompt' && typeof item !== 'string' && 'content' in item) {
+      input = before + item.content + after;
+      caretPos = (before + item.content).length;
+    } else if (cmd.kind === 'model' && typeof item === 'string') {
+      model = item;
+      input = before + after;
+    } else if (cmd.kind === 'collection' && typeof item !== 'string' && 'document_count' in item) {
+      if (!attachedCollections.has(item.id)) await toggleCollection(item.id);
+      input = before + after;
+    }
+    cmd = null;
+    await tick();
+    composer.focus();
+    composer.setSelectionRange(caretPos, caretPos);
+  }
+
   function onKey(e: KeyboardEvent) {
+    if (cmd && cmdItems.length) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        cmdIndex = Math.min(cmdItems.length - 1, cmdIndex + 1);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        cmdIndex = Math.max(0, cmdIndex - 1);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        applyCommand(cmdItems[cmdIndex]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        cmd = null;
+        return;
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       send();
@@ -1042,6 +1135,27 @@
   ondrop={onDrop}
   onsubmit={(e) => { e.preventDefault(); send(); }}
 >
+  {#if cmd && cmdItems.length}
+    <div class="cmd-menu" role="listbox">
+      <div class="cmd-hint">{CMD_HINT[cmd.kind]}</div>
+      {#each cmdItems as item, i (cmdLabel(item))}
+        <button
+          type="button"
+          role="option"
+          aria-selected={i === cmdIndex}
+          class="cmd-item"
+          class:active={i === cmdIndex}
+          onmousedown={(e) => { e.preventDefault(); applyCommand(item); }}
+          onmouseenter={() => (cmdIndex = i)}
+        >
+          <span class="cmd-label">{cmdLabel(item)}</span>
+          {#if cmd.kind === 'collection' && typeof item !== 'string' && 'document_count' in item}
+            <span class="cmd-meta">{attachedCollections.has(item.id) ? 'attached' : `${item.document_count} docs`}</span>
+          {/if}
+        </button>
+      {/each}
+    </div>
+  {/if}
   {#if pendingImages.length}
     <div class="pending">
       {#each pendingImages as src, i (src)}
@@ -1077,9 +1191,14 @@
       disabled={streaming || editingIndex !== null}
     >🎤</button>
     <textarea
-      placeholder="message…  (paste / drop images, or click 📎)"
+      bind:this={composer}
+      placeholder="message…  (/ prompts · @ models · # knowledge)"
       bind:value={input}
       onkeydown={onKey}
+      oninput={syncCommand}
+      onkeyup={syncCommand}
+      onclick={syncCommand}
+      onblur={() => setTimeout(() => (cmd = null), 120)}
       onpaste={onPaste}
       rows="2"
       disabled={streaming || editingIndex !== null}
@@ -1447,6 +1566,7 @@
   }
   .followup:hover { color: var(--text); border-color: var(--accent); background: var(--bg-hover); }
   .composer {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
@@ -1457,6 +1577,55 @@
     width: calc(100% - 2rem);
   }
   .composer .row { display: flex; gap: 0.5rem; align-items: stretch; }
+  .cmd-menu {
+    position: absolute;
+    bottom: calc(100% - 0.25rem);
+    left: 1rem;
+    right: 1rem;
+    z-index: 30;
+    background: var(--bg-elev);
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.25);
+    padding: 0.3rem;
+    display: flex;
+    flex-direction: column;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+  .cmd-hint {
+    color: var(--text-dim);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.25rem 0.5rem;
+  }
+  .cmd-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    text-align: left;
+    background: transparent;
+    color: var(--text);
+    border: none;
+    border-radius: 6px;
+    padding: 0.4rem 0.5rem;
+    font: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .cmd-item.active { background: var(--bg-sidebar); }
+  .cmd-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cmd-meta {
+    flex-shrink: 0;
+    color: var(--text-dim);
+    font-size: 0.72rem;
+  }
   .pending {
     display: flex;
     flex-wrap: wrap;

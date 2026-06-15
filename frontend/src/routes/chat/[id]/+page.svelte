@@ -35,6 +35,7 @@
     setConversationCollections,
     type Collection,
     listPresets,
+    updatePreset,
     listPrompts,
     parseContent,
     regenerateMessage,
@@ -279,11 +280,32 @@
       top_p: parseNumber(topP),
       stop: parseStop(stopText),
       tools_enabled: toolsEnabled,
-      web_search: webSearch
+      web_search: webSearch,
+      collection_ids: [...attachedCollections]
     });
     presets = await listPresets();
   }
 
+  // Update an existing assistant in place with the chat's current configuration.
+  async function updatePresetFromCurrent(p: Preset) {
+    if (!confirm(`overwrite "${p.name}" with the current configuration?`)) return;
+    await updatePreset(p.id, {
+      name: p.name,
+      model,
+      system_prompt: systemPrompt.trim() || null,
+      temperature: parseNumber(temperature),
+      top_p: parseNumber(topP),
+      stop: parseStop(stopText),
+      tools_enabled: toolsEnabled,
+      web_search: webSearch,
+      collection_ids: [...attachedCollections]
+    });
+    presets = await listPresets();
+  }
+
+  // Applying a preset = "become this assistant": set its persona/behavior and,
+  // if it carries knowledge, attach exactly those collections. A preset with no
+  // knowledge leaves the chat's manually-attached collections untouched.
   async function applyPreset(p: Preset) {
     if (p.model) model = p.model;
     systemPrompt = p.system_prompt ?? '';
@@ -301,6 +323,9 @@
       tools_enabled: toolsEnabled,
       web_search: webSearch
     });
+    if (p.collection_ids.length) {
+      attachedCollections = new Set(await setConversationCollections(currentId, p.collection_ids));
+    }
   }
 
   async function removePreset(id: number) {
@@ -899,19 +924,28 @@
 
     <div class="docs">
       <div class="docs-head">
-        <span class="lbl">presets ("modelfiles")</span>
+        <span class="lbl">assistants <span class="hint">model · persona · tools · knowledge</span></span>
         <button class="action" type="button" onclick={saveCurrentAsPreset}>+ save current</button>
       </div>
       {#if presets.length === 0}
-        <div class="doc-empty">no presets — save the current model + system prompt + params as a named bundle</div>
+        <div class="doc-empty">no assistants — configure the chat (model, system prompt, tools, web, knowledge) then "save current"</div>
       {:else}
         <ul class="doc-list">
           {#each presets as p (p.id)}
             <li>
-              <button class="prompt-pick" type="button" onclick={() => applyPreset(p)} title="{p.model ?? 'any model'} · {p.system_prompt ?? 'no system prompt'}">
+              <button
+                class="prompt-pick"
+                type="button"
+                onclick={() => applyPreset(p)}
+                title={p.description ?? `${p.model ?? 'any model'} · ${p.system_prompt ?? 'no system prompt'}`}
+              >
                 {p.name}
+                {#if p.tools_enabled}<span class="badge" title="tools on">🔧</span>{/if}
+                {#if p.web_search}<span class="badge" title="web search on">🌐</span>{/if}
+                {#if p.collection_ids.length}<span class="badge" title="{p.collection_ids.length} knowledge collection(s)">📚 {p.collection_ids.length}</span>{/if}
               </button>
               <span class="doc-meta">{p.model ?? '—'}</span>
+              <button class="doc-x" aria-label="overwrite with current config" title="overwrite with current config" onclick={() => updatePresetFromCurrent(p)}>↑</button>
               <button class="doc-x" aria-label="delete" onclick={() => removePreset(p.id)}>×</button>
             </li>
           {/each}
@@ -1482,6 +1516,12 @@
     text-overflow: ellipsis;
   }
   .prompt-pick:hover { color: var(--accent); }
+  .prompt-pick .badge {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    margin-left: 0.3rem;
+    white-space: nowrap;
+  }
   a.action {
     text-decoration: none;
     color: var(--text-dim);

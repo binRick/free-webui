@@ -22,6 +22,11 @@ authoritative status):
   message, **LLM auto-titling**, extra generation params
   (`max_tokens`/penalties/seed).
 - **Knowledge bases**: reusable document **collections** attachable to any chat.
+- **Custom assistants**: presets graduate into full assistants — model + persona
+  (system prompt) + behavior (tools/web/params) + **bundled knowledge
+  collections**; applying one configures the chat and attaches its knowledge;
+  editable in place (`PUT /api/presets/{id}`). Cross-user collection access is
+  filtered out on both save and attach.
 - **Notes**: a per-user markdown notebook workspace (`/notes`) with live preview.
 - **Organization**: per-conversation **tags** (sidebar tag-filter chips +
   drawer editor) and **folders** (single-home, sidebar filter + drawer move),

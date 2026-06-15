@@ -260,6 +260,14 @@ CREATE TABLE IF NOT EXISTS folders (
     updated_at INTEGER NOT NULL
 );
 
+-- Knowledge attached to a preset (custom assistant): which reusable
+-- collections it bundles. Rows are reclaimed when either side is deleted.
+CREATE TABLE IF NOT EXISTS preset_collections (
+    preset_id     INTEGER NOT NULL REFERENCES presets(id) ON DELETE CASCADE,
+    collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    PRIMARY KEY (preset_id, collection_id)
+);
+
 -- Per-user markdown notebook (a workspace surface, distinct from chats/prompts).
 CREATE TABLE IF NOT EXISTS notes (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -301,6 +309,7 @@ CREATE INDEX IF NOT EXISTS idx_files_user ON files(user_id);
 CREATE INDEX IF NOT EXISTS idx_folders_user ON folders(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_conversations_folder ON conversations(folder_id);
 CREATE INDEX IF NOT EXISTS idx_notes_user ON notes(user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_preset_collections_preset ON preset_collections(preset_id);
 """
 
 _MIGRATIONS: tuple[tuple[str, str, str], ...] = (

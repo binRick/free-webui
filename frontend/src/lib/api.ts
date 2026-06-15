@@ -891,6 +891,7 @@ export interface Preset {
   description: string | null;
   tools_enabled: boolean;
   web_search: boolean;
+  collection_ids: number[];
   created_at: number;
   updated_at: number;
 }
@@ -905,6 +906,7 @@ export interface PresetIn {
   description?: string | null;
   tools_enabled?: boolean;
   web_search?: boolean;
+  collection_ids?: number[];
 }
 
 export async function listPresets(): Promise<Preset[]> {
@@ -920,6 +922,16 @@ export async function createPreset(body: PresetIn): Promise<Preset> {
     body: JSON.stringify(body)
   });
   if (!res.ok) throw new Error(`create preset failed: ${res.status}`);
+  return res.json();
+}
+
+export async function updatePreset(id: number, body: PresetIn): Promise<Preset> {
+  const res = await apiFetch(`/api/presets/${id}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error(`update preset failed: ${res.status}`);
   return res.json();
 }
 

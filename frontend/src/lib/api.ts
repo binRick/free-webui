@@ -116,6 +116,36 @@ export async function setArchived(id: string, archived: boolean): Promise<void> 
   await updateConversation(id, { archived });
 }
 
+export async function getShareToken(conversationId: string): Promise<string | null> {
+  const res = await fetch(`/api/conversations/${conversationId}/share`);
+  if (!res.ok) return null;
+  return (await res.json()).token ?? null;
+}
+
+export async function createShare(conversationId: string): Promise<string> {
+  const res = await fetch(`/api/conversations/${conversationId}/share`, { method: 'POST' });
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}));
+    throw new Error(b.detail ?? `share failed: ${res.status}`);
+  }
+  return (await res.json()).token;
+}
+
+export async function deleteShare(conversationId: string): Promise<void> {
+  await fetch(`/api/conversations/${conversationId}/share`, { method: 'DELETE' });
+}
+
+export interface SharedConversation {
+  title: string;
+  messages: { role: string; content: MessageContent }[];
+}
+
+export async function getSharedConversation(token: string): Promise<SharedConversation | null> {
+  const res = await fetch(`/api/shared/${token}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
 export async function autotitle(id: string): Promise<string | null> {
   const res = await fetch(`/api/conversations/${id}/autotitle`, { method: 'POST' });
   if (!res.ok) return null;

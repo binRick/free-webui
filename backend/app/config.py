@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     # default so a plain-HTTP localhost can't poison a browser's HSTS cache.
     security_hsts: bool = False
 
+    # Allow users to create public read-only share links for conversations.
+    allow_public_sharing: bool = True
+
     # After the first exchange, ask the model for a short conversation title
     # (POST /api/conversations/{id}/autotitle). Falls back to the first-message
     # heuristic on any failure. Set false to keep the heuristic title.

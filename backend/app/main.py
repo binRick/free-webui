@@ -34,6 +34,7 @@ from .plugins import router as plugins_router
 from .presets import router as presets_router
 from .prompts import router as prompts_router
 from .schemas import ModelInfo, ModelList
+from .shares import router as shares_router
 from .web_search import router as web_search_router
 
 log = logging.getLogger("free_webui")
@@ -185,6 +186,7 @@ app.include_router(oidc_router)
 app.include_router(conversations_router)
 app.include_router(documents_router)
 app.include_router(collections_router)
+app.include_router(shares_router)
 app.include_router(prompts_router)
 app.include_router(presets_router)
 app.include_router(admin_models_router)

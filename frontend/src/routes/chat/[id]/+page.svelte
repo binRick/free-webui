@@ -17,7 +17,10 @@
     getConversation,
     getImageStatus,
     getWebSearchStatus,
+    createShare,
+    deleteShare,
     getConversationCollections,
+    getShareToken,
     listCollections,
     listDocuments,
     listMemories,
@@ -81,6 +84,8 @@
   let docUploading = $state(false);
   let collections = $state<Collection[]>([]);
   let attachedCollections = $state<Set<number>>(new Set());
+  let shareToken = $state<string | null>(null);
+  let shareCopied = $state(false);
   let docError = $state<string | null>(null);
   let docInput: HTMLInputElement;
   let prompts = $state<Prompt[]>([]);
@@ -138,6 +143,7 @@
       docs = await listDocuments(id);
       collections = await listCollections();
       attachedCollections = new Set(await getConversationCollections(id));
+      shareToken = await getShareToken(id);
       prompts = await listPrompts();
       presets = await listPresets();
       memories = await listMemories();
@@ -182,6 +188,31 @@
     if (next.has(id)) next.delete(id);
     else next.add(id);
     attachedCollections = new Set(await setConversationCollections(currentId, [...next]));
+  }
+
+  function shareUrl(token: string): string {
+    return `${window.location.origin}/shared/${token}`;
+  }
+  async function makeShare() {
+    try {
+      shareToken = await createShare(currentId);
+    } catch {
+      /* sharing disabled / failed */
+    }
+  }
+  async function revokeShare() {
+    await deleteShare(currentId);
+    shareToken = null;
+  }
+  async function copyShare() {
+    if (!shareToken) return;
+    try {
+      await navigator.clipboard.writeText(shareUrl(shareToken));
+      shareCopied = true;
+      setTimeout(() => (shareCopied = false), 1200);
+    } catch {
+      /* clipboard unavailable */
+    }
   }
 
   function formatBytes(n: number): string {
@@ -768,6 +799,25 @@
           <a class="action" href={exportConversationUrl(currentId, 'md')} download>↓ markdown</a>
         </div>
       </div>
+    </div>
+
+    <div class="docs">
+      <div class="docs-head">
+        <span class="lbl">public share link</span>
+        {#if shareToken}
+          <div style="display: flex; gap: 0.35rem;">
+            <button class="action" type="button" onclick={copyShare}>{shareCopied ? '✓ copied' : 'copy link'}</button>
+            <button class="action" type="button" onclick={revokeShare}>revoke</button>
+          </div>
+        {:else}
+          <button class="action" type="button" onclick={makeShare}>create link</button>
+        {/if}
+      </div>
+      {#if shareToken}
+        <div class="doc-empty" style="word-break: break-all;">{shareUrl(shareToken)}</div>
+      {:else}
+        <div class="doc-empty">anyone with the link can view this conversation read-only</div>
+      {/if}
     </div>
 
     <div class="docs">

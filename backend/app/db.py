@@ -204,6 +204,14 @@ CREATE TABLE IF NOT EXISTS model_access (
     -- model 'restricted' while granting access to no one)
     CHECK (group_id IS NOT NULL OR user_id IS NOT NULL)
 );
+-- Public read-only share links for a conversation (one per conversation).
+CREATE TABLE IF NOT EXISTS shares (
+    token           TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL UNIQUE REFERENCES conversations(id) ON DELETE CASCADE,
+    user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at      INTEGER NOT NULL
+);
+
 -- Admin audit trail (user/role/model-access/connection changes). user_id is
 -- nulled on user deletion but username is denormalized so the entry survives.
 CREATE TABLE IF NOT EXISTS audit_log (

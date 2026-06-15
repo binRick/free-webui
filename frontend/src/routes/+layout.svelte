@@ -11,7 +11,10 @@
 
   // Routes that don't require auth; sidebar is hidden on these.
   const PUBLIC_ROUTES = ['/login', '/setup'];
-  let isPublic = $derived(PUBLIC_ROUTES.includes(page.url.pathname));
+  function isPublicPath(path: string): boolean {
+    return PUBLIC_ROUTES.includes(path) || path.startsWith('/shared/');
+  }
+  let isPublic = $derived(isPublicPath(page.url.pathname));
 
   onMount(async () => {
     theme.init();
@@ -19,11 +22,12 @@
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/service-worker.js').catch(() => {});
     }
-    const s = await auth.refresh();
     const path = page.url.pathname;
+    if (isPublicPath(path)) return; // public share view: no auth, no redirects
+    const s = await auth.refresh();
     if (s.setup_required && path !== '/setup') {
       await goto('/setup', { replaceState: true });
-    } else if (!s.setup_required && !s.user && !PUBLIC_ROUTES.includes(path)) {
+    } else if (!s.setup_required && !s.user) {
       await goto('/login', { replaceState: true });
     }
   });

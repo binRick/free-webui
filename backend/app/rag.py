@@ -130,6 +130,21 @@ async def embed_texts(
     return [item["embedding"] for item in data_sorted]
 
 
+async def prepare_document(
+    http: httpx.AsyncClient, filename: str, content_type: str | None, data: bytes
+) -> tuple[list[str], list[list[float]]]:
+    """Extract, chunk, and embed a file. Shared by per-chat uploads and
+    knowledge-base collections. Raises HTTPException on bad input/upstream."""
+    text = extract_text(filename, content_type, data)
+    chunks = chunk_text(text)
+    if not chunks:
+        raise HTTPException(status_code=400, detail="no extractable text in file")
+    embeddings = await embed_texts(http, chunks)
+    if len(embeddings) != len(chunks):
+        raise HTTPException(status_code=502, detail="upstream returned wrong number of embeddings")
+    return chunks, embeddings
+
+
 # ---------- retrieval ----------
 
 async def retrieve_context(
@@ -146,23 +161,36 @@ async def retrieve_context(
         return None
     top_k = top_k or settings.rag_top_k
 
+    # The conversation's own uploads...
     cur = await db.execute(
         """
-        SELECT c.id, c.text, c.embedding, d.filename
-        FROM chunks c
-        JOIN documents d ON d.id = c.document_id
+        SELECT c.text, c.embedding, d.filename
+        FROM chunks c JOIN documents d ON d.id = c.document_id
         WHERE d.conversation_id = ?
         """,
         (cid,),
     )
-    rows = await cur.fetchall()
+    rows = list(await cur.fetchall())
+    # ...plus every attached knowledge-base collection.
+    cur = await db.execute(
+        """
+        SELECT cc.text, cc.embedding, cd.filename
+        FROM collection_chunks cc
+        JOIN collection_documents cd ON cd.id = cc.document_id
+        WHERE cd.collection_id IN (
+            SELECT collection_id FROM conversation_collections WHERE conversation_id = ?
+        )
+        """,
+        (cid,),
+    )
+    rows += list(await cur.fetchall())
     if not rows:
         return None
 
     [query_vec] = await embed_texts(http, [query])
 
     scored: list[tuple[float, str, str]] = []
-    for _cid, text, blob, filename in rows:
+    for text, blob, filename in rows:
         v = unpack(blob)
         scored.append((cosine(query_vec, v), filename, text))
 

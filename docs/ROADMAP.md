@@ -61,7 +61,7 @@ Most are `S`/`M` and high risk-reduction. **Partially landed on
 | Item | Effort | Notes |
 | --- | --- | --- |
 | Scalable RAG index + hybrid retrieval | M | Replace pure-Python full-scan cosine (`rag.py`) with `sqlite-vec` / numpy-vectorized + optional BM25. |
-| **Knowledge bases / collections** reusable across chats | L | RAG is per-conversation only; same doc re-embedded per chat. |
+| **Knowledge bases / collections** reusable across chats | L | ✅ landed (`collections` + `collection_documents`/`collection_chunks`; `/api/collections` CRUD + uploads; attach to a conversation via `PUT …/collections`; RAG searches the conversation's docs + every attached collection; `/collections` management page + chat-drawer attach). |
 | **Multiple upstream connections** | L | ✅ landed (`connections` table; env upstream = implicit conn 0; admin CRUD + `/test` probe at `/admin/connections`; merged `/api/models` + `/v1/models`; per-model routing with a cached, concurrent `/models` resolver; keyless connections don't inherit the env key). |
 | User **groups** + per-model access control | L | ✅ landed (`groups`/`group_members`/`model_access`; public-unless-restricted; enforced on `/api/models`, `/v1/models`, chat send/regen/edit, `/v1/chat/completions`, autotitle, and conversation create/patch; admin UI at `/admin/access`). Granular per-feature RBAC still ⬜. |
 | Server-side session store / revocation | M | ✅ landed (`users.token_version`; password reset + "log out everywhere" bump it; `current_user` rejects stale cookies). Role changes already apply live (role is read from the DB each request). |

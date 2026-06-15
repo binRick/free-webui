@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from .auth import current_user
 from .config import settings
-from .rag import chunk_text, embed_texts, extract_text, pack
+from .rag import pack, prepare_document
 
 router = APIRouter(
     prefix="/api/conversations",
@@ -81,19 +81,8 @@ async def upload_document(
             detail=f"file too large (max {settings.rag_max_upload_bytes} bytes)",
         )
 
-    text = extract_text(file.filename or "upload", file.content_type, data)
-    chunks = chunk_text(text)
-    if not chunks:
-        raise HTTPException(
-            status_code=400, detail="no extractable text in file"
-        )
-
     http = _http(request)
-    embeddings = await embed_texts(http, chunks)
-    if len(embeddings) != len(chunks):
-        raise HTTPException(
-            status_code=502, detail="upstream returned wrong number of embeddings"
-        )
+    chunks, embeddings = await prepare_document(http, file.filename or "upload", file.content_type, data)
 
     now = int(time.time())
     cur = await db.execute(

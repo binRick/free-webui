@@ -16,6 +16,7 @@ from .api_keys import router as api_keys_router
 from .auth import current_user
 from .auth import router as auth_router
 from .code_exec import router as code_router
+from .collections import router as collections_router
 from .config import settings
 from .conversations import router as conversations_router
 from .db import open_db
@@ -151,6 +152,7 @@ app.include_router(auth_router)
 app.include_router(oidc_router)
 app.include_router(conversations_router)
 app.include_router(documents_router)
+app.include_router(collections_router)
 app.include_router(prompts_router)
 app.include_router(presets_router)
 app.include_router(admin_models_router)

@@ -198,6 +198,78 @@ export async function deleteDocument(
   );
 }
 
+export interface Collection {
+  id: number;
+  name: string;
+  document_count: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export async function listCollections(): Promise<Collection[]> {
+  const res = await fetch('/api/collections');
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function createCollection(name: string): Promise<Collection> {
+  const res = await fetch('/api/collections', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name })
+  });
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}));
+    throw new Error(b.detail ?? `create failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteCollection(id: number): Promise<void> {
+  const res = await fetch(`/api/collections/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`delete failed: ${res.status}`);
+}
+
+export async function listCollectionDocuments(id: number): Promise<Document[]> {
+  const res = await fetch(`/api/collections/${id}/documents`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function uploadCollectionDocument(id: number, file: File): Promise<Document> {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch(`/api/collections/${id}/documents`, { method: 'POST', body: fd });
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}));
+    throw new Error(b.detail ?? `upload failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteCollectionDocument(collectionId: number, documentId: number): Promise<void> {
+  await fetch(`/api/collections/${collectionId}/documents/${documentId}`, { method: 'DELETE' });
+}
+
+export async function getConversationCollections(conversationId: string): Promise<number[]> {
+  const res = await fetch(`/api/conversations/${conversationId}/collections`);
+  if (!res.ok) return [];
+  return (await res.json()).collection_ids ?? [];
+}
+
+export async function setConversationCollections(
+  conversationId: string,
+  collectionIds: number[]
+): Promise<number[]> {
+  const res = await fetch(`/api/conversations/${conversationId}/collections`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ collection_ids: collectionIds })
+  });
+  if (!res.ok) throw new Error(`update failed: ${res.status}`);
+  return (await res.json()).collection_ids ?? [];
+}
+
 export interface McpServer {
   id: number;
   name: string;

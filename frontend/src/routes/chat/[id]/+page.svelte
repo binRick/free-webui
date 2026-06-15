@@ -17,10 +17,14 @@
     getConversation,
     getImageStatus,
     getWebSearchStatus,
+    getConversationCollections,
+    listCollections,
     listDocuments,
     listMemories,
     listModels,
     listVariants,
+    setConversationCollections,
+    type Collection,
     listPresets,
     listPrompts,
     parseContent,
@@ -71,6 +75,8 @@
   let savingSettings = $state(false);
   let docs = $state<Document[]>([]);
   let docUploading = $state(false);
+  let collections = $state<Collection[]>([]);
+  let attachedCollections = $state<Set<number>>(new Set());
   let docError = $state<string | null>(null);
   let docInput: HTMLInputElement;
   let prompts = $state<Prompt[]>([]);
@@ -122,6 +128,8 @@
       stopText = (conv.stop ?? []).join(', ');
       editingIndex = null;
       docs = await listDocuments(id);
+      collections = await listCollections();
+      attachedCollections = new Set(await getConversationCollections(id));
       prompts = await listPrompts();
       presets = await listPresets();
       memories = await listMemories();
@@ -159,6 +167,13 @@
     if (!confirm('remove this document?')) return;
     await deleteDocument(currentId, id);
     docs = await listDocuments(currentId);
+  }
+
+  async function toggleCollection(id: number) {
+    const next = new Set(attachedCollections);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    attachedCollections = new Set(await setConversationCollections(currentId, [...next]));
   }
 
   function formatBytes(n: number): string {
@@ -573,9 +588,9 @@
   <button class="hamburger" aria-label="open sidebar" onclick={() => sidebar.toggle()}>☰</button>
   <div class="title">
     {title}
-    {#if docs.length > 0}
-      <span class="rag-badge" title="{docs.length} document{docs.length === 1 ? '' : 's'} attached — RAG active">
-        📎 {docs.length}
+    {#if docs.length + attachedCollections.size > 0}
+      <span class="rag-badge" title="{docs.length} doc(s) + {attachedCollections.size} collection(s) — RAG active">
+        📎 {docs.length + attachedCollections.size}
       </span>
     {/if}
     {#if webSearch}
@@ -751,6 +766,32 @@
               <span class="doc-name" title={d.filename}>{d.filename}</span>
               <span class="doc-meta">{d.chunk_count} chunks · {formatBytes(d.bytes)}</span>
               <button class="doc-x" aria-label="remove" onclick={() => removeDoc(d.id)}>×</button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
+
+    <div class="docs">
+      <div class="docs-head">
+        <span class="lbl">knowledge bases</span>
+        <a class="action" href="/collections">manage →</a>
+      </div>
+      {#if collections.length === 0}
+        <div class="doc-empty">no collections — create reusable document sets in knowledge bases</div>
+      {:else}
+        <ul class="doc-list">
+          {#each collections as c (c.id)}
+            <li>
+              <label class="kb-row">
+                <input
+                  type="checkbox"
+                  checked={attachedCollections.has(c.id)}
+                  onchange={() => toggleCollection(c.id)}
+                />
+                <span class="doc-name" title={c.name}>{c.name}</span>
+              </label>
+              <span class="doc-meta">{c.document_count} docs</span>
             </li>
           {/each}
         </ul>
@@ -1109,6 +1150,7 @@
     text-overflow: ellipsis;
     color: var(--text);
   }
+  .kb-row { display: flex; align-items: center; gap: 0.4rem; flex: 1; min-width: 0; cursor: pointer; }
   .doc-meta {
     color: var(--text-muted);
     font-size: 0.72rem;

@@ -43,6 +43,44 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at      INTEGER NOT NULL
 );
 
+-- Knowledge bases: named, reusable document collections (vs per-conversation
+-- documents above). Kept as separate tables so documents.conversation_id stays
+-- NOT NULL (the additive migrator can't relax it on existing DBs).
+CREATE TABLE IF NOT EXISTS collections (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS collection_documents (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    collection_id   INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    filename        TEXT NOT NULL,
+    mime            TEXT,
+    bytes           INTEGER NOT NULL,
+    chunk_count     INTEGER NOT NULL DEFAULT 0,
+    embedding_model TEXT,
+    created_at      INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS collection_chunks (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id INTEGER NOT NULL REFERENCES collection_documents(id) ON DELETE CASCADE,
+    seq         INTEGER NOT NULL,
+    text        TEXT NOT NULL,
+    embedding   BLOB NOT NULL
+);
+
+-- Which collections are attached to a conversation (searched in RAG alongside
+-- the conversation's own uploads).
+CREATE TABLE IF NOT EXISTS conversation_collections (
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    collection_id   INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    PRIMARY KEY (conversation_id, collection_id)
+);
+
 CREATE TABLE IF NOT EXISTS message_feedback (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
@@ -180,6 +218,10 @@ CREATE INDEX IF NOT EXISTS idx_feedback_message ON message_feedback(message_id);
 CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_model_access_model ON model_access(model_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_oidc_sub ON users(oidc_sub) WHERE oidc_sub IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_collections_user ON collections(user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_collection_documents_coll ON collection_documents(collection_id);
+CREATE INDEX IF NOT EXISTS idx_collection_chunks_doc ON collection_chunks(document_id);
+CREATE INDEX IF NOT EXISTS idx_conversation_collections_conv ON conversation_collections(conversation_id);
 """
 
 _MIGRATIONS: tuple[tuple[str, str, str], ...] = (

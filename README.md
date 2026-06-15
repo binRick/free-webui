@@ -68,20 +68,24 @@ If `open-webui` is the kitchen-sink reference, `free-webui` aims to be the lean,
 ## Status
 
 **v0.1 — a full self-host chat platform.** Built on a SvelteKit SPA + FastAPI
-backend + SQLite, with a 220+-test backend suite and CI. What works today:
+backend + SQLite, with a 260+-test backend suite and CI. What works today:
 
 - **Chat** — streaming against any OpenAI-compatible upstream (Ollama, vLLM, LM
   Studio, llama.cpp, OpenAI); persistence; sidebar with search, date grouping,
-  rename, **pin/archive**; markdown (shiki/KaTeX/mermaid); edit + **non-destructive
-  regenerate with variant navigation** (`◀ n/m ▶`); per-chat params incl.
+  rename, **pin/archive**, **tags + folders**; **searchable model picker**;
+  in-composer **`/` prompts · `@` models · `#` knowledge** commands; markdown
+  (shiki/KaTeX/mermaid); edit + **regenerate any turn** + **delete** with
+  non-destructive variant navigation (`◀ n/m ▶`); **clone**; per-chat params incl.
   `max_tokens`/penalties/seed; **LLM auto-titling**; copy + 👍/👎 per message.
 - **Knowledge** — per-chat RAG uploads **and reusable knowledge-base collections**
-  attachable to any conversation; SearXNG web search; multimodal image input.
+  attachable to any conversation; SearXNG web search; multimodal image input; a
+  blob **object store** (generated/uploaded images served via `/api/files/{id}`
+  instead of base64-in-DB); a per-user markdown **notes** workspace.
 - **Tools** — function-calling loop with built-ins, MCP servers, image generation
   (OpenAI/A1111/ComfyUI), a sandboxed `run_python` code interpreter, and plugins.
 - **Multi-user** — argon2 auth, **OIDC/SSO**, server-side session revocation,
   user **groups + per-model access control**, admin user management + **audit log**
-  + **feedback log**.
+  + **feedback log**; mid-session expiry redirects to login instead of breaking.
 - **Connectivity** — **multiple upstream connections** (per-model routing); an
   own OpenAI-compatible `/v1` surface (chat/models/embeddings) **and an Anthropic
   `/v1/messages` proxy** (Claude Code / the Anthropic SDK can target free-webui);
@@ -89,12 +93,12 @@ backend + SQLite, with a 220+-test backend suite and CI. What works today:
 - **Sharing** — conversation export (JSON/Markdown) and **public read-only share
   links**; memories; prompt/preset libraries; voice (Web Speech); PWA.
 
-Security-sensitive features (auth/access/connections/OIDC) were each shipped with
-adversarial multi-agent review. See [`docs/ROADMAP.md`](./docs/ROADMAP.md) for
-what's done vs. planned.
+Security-sensitive features (auth/access/connections/OIDC) and the object store
+were each shipped with adversarial multi-agent review. See
+[`docs/ROADMAP.md`](./docs/ROADMAP.md) for what's done vs. planned.
 
-Still deferred / non-goals: in-composer `#`/`@`/`/` commands, inline citations,
-real-time channels, evaluation/leaderboard, LDAP/SCIM, full i18n.
+Still deferred / non-goals: inline-citation hovercards, real-time channels,
+evaluation/leaderboard, LDAP/SCIM, full i18n.
 
 ---
 

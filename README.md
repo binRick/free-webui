@@ -90,8 +90,10 @@ backend + SQLite, with a 260+-test backend suite and CI. What works today:
   own OpenAI-compatible `/v1` surface (chat/models/embeddings) **and an Anthropic
   `/v1/messages` proxy** (Claude Code / the Anthropic SDK can target free-webui);
   per-user API keys.
-- **Sharing** — conversation export (JSON/Markdown) and **public read-only share
-  links**; memories; prompt/preset libraries; voice (Web Speech); PWA.
+- **Sharing & collaboration** — conversation export (JSON/Markdown), **public
+  read-only share links**, and **real-time channels** (shared multi-user rooms
+  over WebSocket: live messages, presence, typing); memories; prompt/preset
+  libraries; server or browser voice; PWA.
 
 Security-sensitive features (auth/access/connections/OIDC) and the object store
 were each shipped with adversarial multi-agent review. See

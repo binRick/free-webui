@@ -241,6 +241,75 @@ export async function synthesizeSpeech(input: string, voice?: string): Promise<B
   return res.blob();
 }
 
+// ---- real-time channels ----
+
+export interface Channel {
+  id: string;
+  name: string;
+  description: string | null;
+  created_by: number | null;
+  created_at: number;
+}
+
+export interface ChannelMessage {
+  id: number;
+  channel_id: string;
+  user_id: number | null;
+  username: string;
+  content: string;
+  created_at: number;
+}
+
+export async function listChannels(): Promise<Channel[]> {
+  const res = await apiFetch('/api/channels');
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function createChannel(name: string, description?: string): Promise<Channel> {
+  const res = await apiFetch('/api/channels', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name, description: description ?? null })
+  });
+  if (!res.ok) throw new Error(`create channel failed: ${res.status}`);
+  return res.json();
+}
+
+export async function getChannel(id: string): Promise<Channel | null> {
+  const res = await apiFetch(`/api/channels/${id}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function deleteChannel(id: string): Promise<void> {
+  await apiFetch(`/api/channels/${id}`, { method: 'DELETE' });
+}
+
+export async function listChannelMessages(id: string, before?: number): Promise<ChannelMessage[]> {
+  const qs = before != null ? `?before=${before}` : '';
+  const res = await apiFetch(`/api/channels/${id}/messages${qs}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function postChannelMessage(id: string, content: string): Promise<ChannelMessage> {
+  const res = await apiFetch(`/api/channels/${id}/messages`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ content })
+  });
+  if (!res.ok) throw new Error(`post failed: ${res.status}`);
+  return res.json();
+}
+
+// Same-origin WebSocket URL for a channel's live feed (the session cookie rides
+// along on the handshake).
+export function channelSocketUrl(id: string): string {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${location.host}/api/channels/${id}/ws`;
+}
+
 export async function listConversations(
   q?: string,
   archived = false,

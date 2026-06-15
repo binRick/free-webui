@@ -50,6 +50,10 @@ authoritative status):
   hardened OpenAI `/v1` surface (+`/v1/embeddings`); **Anthropic `/v1/messages`
   proxy**.
 - **Sharing**: public read-only conversation **share links**.
+- **Real-time channels**: shared multi-user chat rooms with live **WebSocket**
+  delivery (message broadcast, presence count, typing indicators) on top of REST
+  CRUD + paginated history; an in-process broadcast hub, cookie-authenticated
+  sockets, with REST→socket fallback and auto-reconnect.
 - **Resilience**: a central `apiFetch` wrapper redirects to `/login?next=…`
   (with a toast) when a session expires mid-use instead of silently breaking the
   UI; reusable toast store + container; **clone conversation**.

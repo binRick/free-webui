@@ -85,7 +85,9 @@ Whisper/TTS backend; browser Web Speech fallback).
 ## Phase 5 — Big architectural bets (XL, optional)
 
 Postgres + horizontal scaling (the single-process single-SQLite-connection
-design is the blocker) → Helm chart → real-time channels → full i18n + RTL.
+design is the blocker) → Helm chart → ~~real-time channels~~ ✅ landed
+(WebSocket rooms with an **in-process** broadcast hub — multi-process scaling
+still needs an external pub/sub like Redis) → full i18n + RTL.
 Pursue only if the product targets teams/enterprise.
 
 ---

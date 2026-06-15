@@ -277,6 +277,25 @@ CREATE TABLE IF NOT EXISTS notes (
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
+
+-- Real-time channels: shared multi-user chat rooms (workspace-wide; every
+-- authenticated user can read/post). Distinct from 1:1 AI conversations.
+CREATE TABLE IF NOT EXISTS channels (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    description TEXT,
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS channel_messages (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    user_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    username   TEXT NOT NULL,  -- denormalized so a deleted user's posts keep an author
+    content    TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
 """
 
 # Indexes are created AFTER _ensure_columns so an index on a migrated column
@@ -310,6 +329,8 @@ CREATE INDEX IF NOT EXISTS idx_folders_user ON folders(user_id, updated_at DESC)
 CREATE INDEX IF NOT EXISTS idx_conversations_folder ON conversations(folder_id);
 CREATE INDEX IF NOT EXISTS idx_notes_user ON notes(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_preset_collections_preset ON preset_collections(preset_id);
+CREATE INDEX IF NOT EXISTS idx_channels_created ON channels(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_channel_messages_channel ON channel_messages(channel_id, id);
 """
 
 _MIGRATIONS: tuple[tuple[str, str, str], ...] = (

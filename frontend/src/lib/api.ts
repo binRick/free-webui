@@ -535,6 +535,20 @@ export async function setModelAccess(
   if (!res.ok) throw new Error(`update failed: ${res.status}`);
 }
 
+export interface AuditEntry {
+  id: number;
+  username: string | null;
+  action: string;
+  detail: string | null;
+  created_at: number;
+}
+
+export async function listAudit(limit = 100): Promise<AuditEntry[]> {
+  const res = await fetch(`/api/admin/audit?limit=${limit}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
 export interface PluginRecord {
   name: string;
   priority: number;

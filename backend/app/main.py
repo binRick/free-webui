@@ -1,4 +1,5 @@
 import logging
+import uuid
 from contextlib import asynccontextmanager
 
 import httpx
@@ -14,6 +15,7 @@ from .admin_users import router as admin_users_router
 from .connections import merged_model_ids
 from .anthropic_compat import router as anthropic_compat_router
 from .api_keys import router as api_keys_router
+from .audit import router as audit_router
 from .auth import current_user
 from .auth import router as auth_router
 from .code_exec import router as code_router
@@ -93,6 +95,34 @@ class BodySizeLimitMiddleware:
         await self.app(scope, receive, send)
 
 
+class RequestIdMiddleware:
+    """Attach an X-Request-ID to every response (honoring an inbound one) so a
+    request can be correlated across logs/proxies."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        inbound = None
+        for key, value in scope.get("headers", []):
+            if key == b"x-request-id":
+                inbound = value
+                break
+        rid = inbound or uuid.uuid4().hex[:16].encode()
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                headers = message.setdefault("headers", [])
+                if not any(h[0] == b"x-request-id" for h in headers):
+                    headers.append((b"x-request-id", rid))
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # No default Authorization header: every request now carries its own
@@ -134,6 +164,7 @@ if settings.security_hsts:
 # app/exception-handler response; body-limit rejects oversized bodies pre-routing.
 app.add_middleware(SecurityHeadersMiddleware, headers=_security_headers)
 app.add_middleware(BodySizeLimitMiddleware)
+app.add_middleware(RequestIdMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
@@ -160,6 +191,7 @@ app.include_router(admin_models_router)
 app.include_router(admin_users_router)
 app.include_router(admin_access_router)
 app.include_router(admin_connections_router)
+app.include_router(audit_router)
 app.include_router(web_search_router)
 app.include_router(api_keys_router)
 app.include_router(memories_router)

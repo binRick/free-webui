@@ -12,6 +12,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from .audit import record
 from .auth import require_admin
 from .connections import Connection, conn_headers, conn_url, invalidate_model_map
 
@@ -75,7 +76,7 @@ async def list_connections(request: Request):
 
 
 @router.post("", response_model=ConnectionOut)
-async def create_connection(body: ConnectionIn, request: Request):
+async def create_connection(body: ConnectionIn, request: Request, me: dict = Depends(require_admin)):
     db = _db(request)
     now = int(time.time())
     headers_json = json.dumps(body.headers) if body.headers else None
@@ -88,7 +89,9 @@ async def create_connection(body: ConnectionIn, request: Request):
     )
     await db.commit()
     invalidate_model_map(request.app)
-    cur = await db.execute(f"{_SELECT} WHERE id = ?", (cur.lastrowid,))
+    new_id = cur.lastrowid
+    await record(db, me, "connection.create", f"name={body.name} base_url={body.base_url}")
+    cur = await db.execute(f"{_SELECT} WHERE id = ?", (new_id,))
     return _row_to_out(await cur.fetchone())
 
 
@@ -123,11 +126,12 @@ async def patch_connection(cid: int, body: ConnectionPatch, request: Request):
 
 
 @router.delete("/{cid}", status_code=204)
-async def delete_connection(cid: int, request: Request):
+async def delete_connection(cid: int, request: Request, me: dict = Depends(require_admin)):
     db = _db(request)
     await db.execute("DELETE FROM connections WHERE id = ?", (cid,))
     await db.commit()
     invalidate_model_map(request.app)
+    await record(db, me, "connection.delete", f"id={cid}")
 
 
 @router.post("/test")

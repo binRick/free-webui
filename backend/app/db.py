@@ -202,12 +202,23 @@ CREATE TABLE IF NOT EXISTS model_access (
     -- model 'restricted' while granting access to no one)
     CHECK (group_id IS NOT NULL OR user_id IS NOT NULL)
 );
+-- Admin audit trail (user/role/model-access/connection changes). user_id is
+-- nulled on user deletion but username is denormalized so the entry survives.
+CREATE TABLE IF NOT EXISTS audit_log (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    username   TEXT,
+    action     TEXT NOT NULL,
+    detail     TEXT,
+    created_at INTEGER NOT NULL
+);
 """
 
 # Indexes are created AFTER _ensure_columns so an index on a migrated column
 # (e.g. conversations.user_id, added to a legacy pre-auth table) does not fail
 # with "no such column" when an old DB is opened by a newer build.
 INDEXES = """
+CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, id);
 CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_documents_conv ON documents(conversation_id);

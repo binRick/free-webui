@@ -4,6 +4,7 @@ import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from .audit import record
 from .auth import current_user, hash_password, require_admin
 
 router = APIRouter(
@@ -48,7 +49,7 @@ async def list_users(request: Request):
 
 
 @router.post("", response_model=UserListed)
-async def create_user(body: CreateUserBody, request: Request):
+async def create_user(body: CreateUserBody, request: Request, me: dict = Depends(current_user)):
     db = _db(request)
     cur = await db.execute(
         "SELECT 1 FROM users WHERE username = ?", (body.username,)
@@ -61,6 +62,7 @@ async def create_user(body: CreateUserBody, request: Request):
         (body.username, hash_password(body.password), body.role, now),
     )
     await db.commit()
+    await record(db, me, "user.create", f"username={body.username} role={body.role}")
     return UserListed(
         id=cur.lastrowid, username=body.username, role=body.role, created_at=now
     )
@@ -101,6 +103,10 @@ async def update_user(
     if body.role is not None and body.role != row[1]:
         await db.execute("UPDATE users SET role = ? WHERE id = ?", (new_role, uid))
     await db.commit()
+    if body.password is not None:
+        await record(db, me, "user.password_reset", f"user={row[0]}")
+    if body.role is not None and body.role != row[1]:
+        await record(db, me, "user.role_change", f"user={row[0]} {row[1]} -> {new_role}")
     return UserListed(id=uid, username=row[0], role=new_role, created_at=row[2])
 
 
@@ -123,3 +129,4 @@ async def delete_user(
             )
     await db.execute("DELETE FROM users WHERE id = ?", (uid,))
     await db.commit()
+    await record(db, me, "user.delete", f"uid={uid}")

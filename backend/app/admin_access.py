@@ -9,6 +9,7 @@ import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from .audit import record
 from .auth import require_admin
 
 router = APIRouter(
@@ -72,7 +73,7 @@ async def list_groups(request: Request):
 
 
 @router.post("/groups", response_model=GroupOut)
-async def create_group(body: GroupIn, request: Request):
+async def create_group(body: GroupIn, request: Request, me: dict = Depends(require_admin)):
     db = _db(request)
     cur = await db.execute("SELECT 1 FROM groups WHERE name = ?", (body.name,))
     if await cur.fetchone():
@@ -82,14 +83,16 @@ async def create_group(body: GroupIn, request: Request):
         "INSERT INTO groups (name, created_at) VALUES (?, ?)", (body.name, now)
     )
     await db.commit()
+    await record(db, me, "group.create", f"name={body.name}")
     return GroupOut(id=cur.lastrowid, name=body.name, member_count=0, created_at=now)
 
 
 @router.delete("/groups/{gid}", status_code=204)
-async def delete_group(gid: int, request: Request):
+async def delete_group(gid: int, request: Request, me: dict = Depends(require_admin)):
     db = _db(request)
     await db.execute("DELETE FROM groups WHERE id = ?", (gid,))
     await db.commit()
+    await record(db, me, "group.delete", f"gid={gid}")
 
 
 @router.get("/groups/{gid}/members")
@@ -147,7 +150,7 @@ async def list_model_access(request: Request) -> dict:
 
 
 @router.put("/model_access")
-async def set_model_access(body: ModelAccessIn, request: Request) -> dict:
+async def set_model_access(body: ModelAccessIn, request: Request, me: dict = Depends(require_admin)) -> dict:
     """Replace the grants for a model. Empty group_ids + user_ids makes it
     public again (all grant rows removed)."""
     db = _db(request)
@@ -173,4 +176,9 @@ async def set_model_access(body: ModelAccessIn, request: Request) -> dict:
             (body.model_id, uid),
         )
     await db.commit()
+    public = not groups and not users
+    await record(
+        db, me, "model_access.set",
+        f"model={body.model_id} {'public' if public else f'groups={groups} users={users}'}",
+    )
     return {"model_id": body.model_id, "group_ids": groups, "user_ids": users}

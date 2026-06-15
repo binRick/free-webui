@@ -985,3 +985,25 @@ export async function editMessage(
   );
   await consumeStream(res, opts);
 }
+
+export async function regenerateMessage(
+  conversationId: string,
+  messageId: number,
+  model: string | null,
+  opts: StreamOpts
+): Promise<void> {
+  const res = await fetch(
+    `/api/conversations/${conversationId}/messages/${messageId}/regenerate`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model }),
+      signal: opts.signal
+    }
+  );
+  await consumeStream(res, opts);
+}
+
+export async function deleteMessage(conversationId: string, messageId: number): Promise<void> {
+  await fetch(`/api/conversations/${conversationId}/messages/${messageId}`, { method: 'DELETE' });
+}

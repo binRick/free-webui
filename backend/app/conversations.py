@@ -833,12 +833,47 @@ async def regenerate(
         raise HTTPException(
             status_code=400, detail="nothing to regenerate (no trailing assistant message)"
         )
+    return await _regenerate_assistant(request, db, http, cid, conv, user, last[0], body.model)
+
+
+@router.post("/{cid}/messages/{msg_id}/regenerate")
+async def regenerate_message(
+    cid: str, msg_id: int, body: RegenerateBody, request: Request,
+    user: dict = Depends(current_user),
+) -> StreamingResponse:
+    """Regenerate a specific (not necessarily trailing) assistant turn. Any turns
+    after it are discarded — regenerating mid-thread branches the conversation."""
+    db = _db(request)
+    await _owned(db, cid, user["id"])
+    http = _http(request)
+    conv = await _conv_settings(db, cid)
+    await _guard_model(db, user, body.model, conv["model"])
+
+    cur = await db.execute(
+        "SELECT role FROM messages WHERE id = ? AND conversation_id = ? AND active = 1",
+        (msg_id, cid),
+    )
+    row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="message not found")
+    if row[0] != "assistant":
+        raise HTTPException(status_code=400, detail="only assistant messages can be regenerated")
+    # Discard everything after this turn (later turns + their variants).
+    await db.execute(
+        "DELETE FROM messages WHERE conversation_id = ? AND id > ?", (cid, msg_id)
+    )
+    return await _regenerate_assistant(request, db, http, cid, conv, user, msg_id, body.model)
+
+
+async def _regenerate_assistant(
+    request: Request, db: aiosqlite.Connection, http: httpx.AsyncClient,
+    cid: str, conv: dict, user: dict, archived_id: int, body_model: str | None,
+) -> StreamingResponse:
     # Non-destructive: archive the superseded assistant variant (active=0) rather
     # than deleting it, so the prior reply is preserved. The new variant chains
     # back to it via parent_id; reads return only the active (latest) variant.
-    archived_id = last[0]
     await db.execute("UPDATE messages SET active = 0 WHERE id = ?", (archived_id,))
-    chosen_model = await _maybe_update_model(db, cid, body.model, conv["model"])
+    chosen_model = await _maybe_update_model(db, cid, body_model, conv["model"])
     await db.commit()
 
     history = await _load_history(db, cid)
@@ -917,6 +952,30 @@ async def edit_message(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.delete("/{cid}/messages/{msg_id}")
+async def delete_message(
+    cid: str, msg_id: int, request: Request, user: dict = Depends(current_user)
+) -> dict:
+    """Delete a message and everything after it (truncate the thread here),
+    including any archived variants. Keeps history coherent — no dangling reply
+    to a removed turn."""
+    db = _db(request)
+    await _owned(db, cid, user["id"])
+    cur = await db.execute(
+        "SELECT 1 FROM messages WHERE id = ? AND conversation_id = ?", (msg_id, cid)
+    )
+    if not await cur.fetchone():
+        raise HTTPException(status_code=404, detail="message not found")
+    await db.execute(
+        "DELETE FROM messages WHERE conversation_id = ? AND id >= ?", (cid, msg_id)
+    )
+    await db.execute(
+        "UPDATE conversations SET updated_at = ? WHERE id = ?", (int(time.time()), cid)
+    )
+    await db.commit()
+    return {"ok": True}
 
 
 @router.post("/{cid}/autotitle")

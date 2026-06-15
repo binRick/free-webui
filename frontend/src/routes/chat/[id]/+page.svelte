@@ -11,6 +11,7 @@
     deleteMemory,
     deletePreset,
     deletePrompt,
+    deleteMessage,
     editMessage,
     exportConversationUrl,
     getCodeStatus,
@@ -34,7 +35,7 @@
     listPresets,
     listPrompts,
     parseContent,
-    regenerate,
+    regenerateMessage,
     sendMessage,
     setFeedback,
     updateConversation,
@@ -600,21 +601,32 @@
     pendingImages = pendingImages.filter((_, idx) => idx !== i);
   }
 
-  async function regen() {
+  // Regenerate any assistant turn (not just the trailing one). Regenerating
+  // mid-thread discards the turns after it (the backend branches there).
+  async function regenAt(i: number) {
     if (streaming) return;
-    const last = messages[messages.length - 1];
-    if (!last || last.role !== 'assistant') return;
+    const msg = messages[i];
+    if (msg.role !== 'assistant' || msg.id == null) return;
+    if (i < messages.length - 1 && !confirm('regenerate this reply? later messages will be discarded')) return;
     // clear carry-over so the prior variant's sources/tools/images don't
     // briefly mis-attribute to the regenerating reply
-    messages[messages.length - 1] = {
-      ...last,
-      content: '',
-      sources: undefined,
-      tool_calls: undefined,
-      images: undefined
-    };
+    messages = [...messages.slice(0, i), { id: null, role: 'assistant', content: '' }];
     await tick();
-    await runStream((opts) => regenerate(currentId, model, opts));
+    scroller?.scrollTo({ top: scroller.scrollHeight });
+    await runStream((opts) => regenerateMessage(currentId, msg.id!, model, opts));
+  }
+
+  // Delete a message and everything after it (truncate the thread here).
+  async function deleteAt(i: number) {
+    if (streaming) return;
+    const msg = messages[i];
+    if (msg.id == null) return;
+    const trailing = i === messages.length - 1;
+    if (!confirm(trailing ? 'delete this message?' : 'delete this message and everything after it?')) return;
+    await deleteMessage(currentId, msg.id);
+    messages = messages.slice(0, i);
+    editingIndex = null;
+    convs.refresh();
   }
 
   function startEdit(i: number) {
@@ -1041,8 +1053,8 @@
                 >▶</button>
               </span>
             {/if}
-            {#if msg.role === 'assistant' && i === messages.length - 1 && msg.content}
-              <button class="action" onclick={regen}>regenerate</button>
+            {#if msg.role === 'assistant' && msg.id != null && msg.content}
+              <button class="action" title="regenerate this reply" onclick={() => regenAt(i)}>regenerate</button>
             {/if}
             {#if msg.role === 'assistant' && msg.id != null && msg.content}
               <button
@@ -1064,6 +1076,9 @@
               <button class="action" onclick={() => speakMessage(i, messagePlainText(msg.content))}>
                 {speakingIdx === i ? '⏹ stop' : '🔊 speak'}
               </button>
+            {/if}
+            {#if msg.id != null}
+              <button class="action del" title="delete from here" aria-label="delete message" onclick={() => deleteAt(i)}>🗑</button>
             {/if}
           </div>
         {/if}

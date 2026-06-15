@@ -52,6 +52,7 @@
   } from '$lib/api';
   import { convs } from '$lib/conversations.svelte';
   import Markdown from '$lib/Markdown.svelte';
+  import ModelPicker from '$lib/ModelPicker.svelte';
   import { sidebar } from '$lib/sidebarState.svelte';
 
   interface UIMessage {
@@ -675,14 +676,7 @@
     {/if}
   </div>
   <div class="header-controls">
-    <select bind:value={model} disabled={streaming}>
-      {#if models.length === 0}
-        <option value={null}>no models</option>
-      {/if}
-      {#each models as m}
-        <option value={m}>{m}</option>
-      {/each}
-    </select>
+    <ModelPicker {models} value={model} disabled={streaming} onSelect={(m) => (model = m)} />
     <button
       class="settings-toggle"
       class:active={settingsOpen}
@@ -1323,7 +1317,6 @@
     color: var(--text-dim);
   }
   a.action:hover { color: var(--text); background: var(--bg-hover); }
-  select,
   button,
   textarea,
   input {

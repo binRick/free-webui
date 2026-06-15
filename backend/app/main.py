@@ -22,6 +22,7 @@ from .auth import router as auth_router
 from .code_exec import router as code_router
 from .collections import router as collections_router
 from .config import settings
+from .audio import router as audio_router
 from .conversations import router as conversations_router
 from .db import open_db
 from .files import router as files_router
@@ -236,6 +237,7 @@ app.include_router(anthropic_compat_router)
 app.include_router(mcp_router)
 app.include_router(images_router)
 app.include_router(code_router)
+app.include_router(audio_router)
 app.include_router(plugins_router)
 
 

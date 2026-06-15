@@ -15,10 +15,13 @@
     deleteMessage,
     editMessage,
     exportConversationUrl,
+    getAudioStatus,
     getCodeStatus,
     getConversation,
     getImageStatus,
     getWebSearchStatus,
+    synthesizeSpeech,
+    transcribeAudio,
     createShare,
     deleteShare,
     getConversationCollections,
@@ -56,6 +59,7 @@
     type ToolCallEvent
   } from '$lib/api';
   import { convs } from '$lib/conversations.svelte';
+  import { toasts } from '$lib/toastStore.svelte';
   import Markdown from '$lib/Markdown.svelte';
   import ModelPicker from '$lib/ModelPicker.svelte';
   import { sidebar } from '$lib/sidebarState.svelte';
@@ -119,6 +123,12 @@
   let speakingIdx = $state<number | null>(null);
   let recognition: any = null;
   let abort: AbortController | null = null;
+  // Server-side voice (set from /api/audio/status); falls back to Web Speech.
+  let sttAvailable = $state(false);
+  let ttsAvailable = $state(false);
+  let mediaRecorder: MediaRecorder | null = null;
+  let recChunks: Blob[] = [];
+  let audioEl: HTMLAudioElement | null = null;
   let scroller: HTMLDivElement;
 
   // This route is /chat/[id], so the param is always present here.
@@ -171,6 +181,9 @@
       toolsEnabled = !!conv.tools_enabled;
       imageGenAvailable = (await getImageStatus()).available;
       codeInterpreterAvailable = (await getCodeStatus()).available;
+      const audioStatus = await getAudioStatus();
+      sttAvailable = audioStatus.stt;
+      ttsAvailable = audioStatus.tts;
       await tick();
       scroller?.scrollTo({ top: scroller.scrollHeight });
     } catch (err) {
@@ -425,7 +438,43 @@
     memories = await listMemories();
   }
 
+  // Record a clip with MediaRecorder and transcribe it server-side (Whisper).
+  async function startServerRecording() {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream);
+    recChunks = [];
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size) recChunks.push(e.data);
+    };
+    mediaRecorder.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      recognising = false;
+      const blob = new Blob(recChunks, { type: mediaRecorder?.mimeType || 'audio/webm' });
+      mediaRecorder = null;
+      if (!blob.size) return;
+      try {
+        const text = (await transcribeAudio(blob)).trim();
+        if (text) input = (input ? input + ' ' : '') + text;
+      } catch {
+        toasts.error('transcription failed');
+      }
+    };
+    recognising = true;
+    mediaRecorder.start();
+  }
+
   function toggleMic() {
+    if (sttAvailable) {
+      if (recognising && mediaRecorder) {
+        mediaRecorder.stop();
+      } else {
+        startServerRecording().catch(() => {
+          recognising = false;
+          toasts.error('microphone unavailable');
+        });
+      }
+      return;
+    }
     const SR =
       (globalThis as any).SpeechRecognition ?? (globalThis as any).webkitSpeechRecognition;
     if (!SR) {
@@ -462,17 +511,49 @@
     recognition.start();
   }
 
-  function speakMessage(idx: number, text: string) {
+  function stopAudio() {
+    if (audioEl) {
+      audioEl.pause();
+      audioEl = null;
+    }
+    if ('speechSynthesis' in window) speechSynthesis.cancel();
+  }
+
+  async function speakMessage(idx: number, text: string) {
+    if (speakingIdx === idx) {
+      stopAudio();
+      speakingIdx = null;
+      return;
+    }
+    stopAudio();
+
+    if (ttsAvailable) {
+      speakingIdx = idx;
+      try {
+        const blob = await synthesizeSpeech(text);
+        // Cancelled while the request was in flight.
+        if (speakingIdx !== idx) return;
+        const url = URL.createObjectURL(blob);
+        audioEl = new Audio(url);
+        const done = () => {
+          if (speakingIdx === idx) speakingIdx = null;
+          URL.revokeObjectURL(url);
+          audioEl = null;
+        };
+        audioEl.onended = done;
+        audioEl.onerror = done;
+        await audioEl.play();
+      } catch {
+        if (speakingIdx === idx) speakingIdx = null;
+        toasts.error('speech failed');
+      }
+      return;
+    }
+
     if (!('speechSynthesis' in window)) {
       alert('this browser does not support speech synthesis');
       return;
     }
-    if (speakingIdx === idx) {
-      speechSynthesis.cancel();
-      speakingIdx = null;
-      return;
-    }
-    speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.onend = () => { if (speakingIdx === idx) speakingIdx = null; };
     u.onerror = () => { if (speakingIdx === idx) speakingIdx = null; };

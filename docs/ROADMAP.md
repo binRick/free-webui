@@ -78,7 +78,9 @@ store for images (base64-in-SQLite today)~~ ✅ landed (`files` table + blob
 store; base64 image payloads externalized to `/api/files/{id}` at persist time;
 re-inlined for upstream vision replay and public-share rendering) → observability
 + audit log → ~~Anthropic `/v1/messages` proxy~~ ✅ + harden `/v1` → analytics +
-feedback log → notes → server-side voice (STT/TTS).
+feedback log → ~~notes~~ ✅ → ~~server-side voice (STT/TTS)~~ ✅ landed
+(`/api/audio/transcriptions` + `/api/audio/speech` proxy any OpenAI-compatible
+Whisper/TTS backend; browser Web Speech fallback).
 
 ## Phase 5 — Big architectural bets (XL, optional)
 

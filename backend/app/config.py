@@ -101,6 +101,22 @@ class Settings(BaseSettings):
     # substituted. If empty, a built-in SD1.5 txt2img graph is used.
     comfyui_workflow_path: str = ""
 
+    # Server-side voice: OpenAI-compatible proxies for speech-to-text
+    # (Whisper `/audio/transcriptions`) and text-to-speech (`/audio/speech`).
+    # Point the base URLs at any compatible server (OpenAI, faster-whisper-server,
+    # speaches, openai-edge-tts, kokoro, …). Leave a base URL empty to disable
+    # that direction — the client then falls back to the browser Web Speech API.
+    audio_stt_base_url: str = ""
+    audio_stt_api_key: str = ""
+    audio_stt_model: str = "whisper-1"
+    audio_tts_base_url: str = ""
+    audio_tts_api_key: str = ""
+    audio_tts_model: str = "tts-1"
+    audio_tts_voice: str = "alloy"
+    audio_tts_format: str = "mp3"  # response_format for /audio/speech
+    audio_timeout_seconds: float = 120.0
+    audio_max_upload_bytes: int = 25 * 1024 * 1024  # reject audio uploads over this
+
     # Code interpreter. Exposes the built-in `run_python` tool. Backends:
     #   "docker"     — strongest isolation (no network, read-only rootfs,
     #                  non-root, dropped caps, mem/cpu/pids limits). Preferred.

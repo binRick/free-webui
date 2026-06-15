@@ -302,6 +302,24 @@ export FREE_WEBUI_CODE_TIMEOUT_SECONDS=15
 
 The `subprocess` backend runs code as a same-host child with timeouts, POSIX rlimits, and a stripped environment, but **is not a security boundary** (the code can read the host filesystem) — use it only for trusted, single-user deployments. Saved image files (e.g. `plt.savefig('plot.png')`) are surfaced to the chat just like generated images.
 
+### Server-side voice (STT / TTS)
+
+Point the audio proxies at any OpenAI-compatible audio backend. Leave a base URL unset to disable that direction (the client then uses the browser Web Speech API):
+
+```sh
+# speech-to-text (Whisper /audio/transcriptions)
+export FREE_WEBUI_AUDIO_STT_BASE_URL=https://api.openai.com/v1   # or a local faster-whisper-server / speaches
+export FREE_WEBUI_AUDIO_STT_API_KEY=sk-...
+export FREE_WEBUI_AUDIO_STT_MODEL=whisper-1
+# text-to-speech (/audio/speech)
+export FREE_WEBUI_AUDIO_TTS_BASE_URL=https://api.openai.com/v1   # or openai-edge-tts / kokoro
+export FREE_WEBUI_AUDIO_TTS_API_KEY=sk-...
+export FREE_WEBUI_AUDIO_TTS_MODEL=tts-1
+export FREE_WEBUI_AUDIO_TTS_VOICE=alloy
+```
+
+The base URLs and keys are operator-only (never user-supplied), so there's no SSRF surface and the upstream key is never exposed to clients. Uploads are capped (`FREE_WEBUI_AUDIO_MAX_UPLOAD_BYTES`, default 25 MB) and TTS input is length-bounded.
+
 ### Plugins / pipelines
 
 Point the backend at a directory of operator-installed Python modules to hook the chat flow:
@@ -393,7 +411,7 @@ We're aiming at the 95% workflow people actually want from open-webui — not st
 - ✅ **RAG** — per-chat document upload (txt / md / pdf / common code files), fixed-size chunking with overlap, embeddings via the upstream's OpenAI-compatible `/v1/embeddings` (default model: `nomic-embed-text`), float32 BLOB storage, brute-force cosine retrieval, retrieved excerpts prepended as a system message every turn. Settings drawer shows attached docs + a 📎 N badge appears in the chat header when RAG is active.
 - ✅ **Web search** — SearXNG-compatible provider. Per-chat toggle in the settings drawer; when on, the user's query is searched, top results' title/url/snippet are prepended as a system message, and a 🌐 web badge appears in the chat header. Brave / Tavily / Google PSE as follow-ups.
 - ✅ **Multimodal input** — paste / drop / pick images in the composer; sent as OpenAI multimodal content arrays (`{type:"text"}` + `{type:"image_url"}`) and persisted as JSON. Use any vision model (Ollama `llama3.2-vision`, `qwen2.5-vl`, OpenAI `gpt-4o`, etc.) to actually interpret them.
-- ✅ **Voice** — browser Web Speech API: 🎤 mic button in the composer streams partial transcripts into the textarea (Chrome / Safari), 🔊 button on assistant messages reads them aloud via `speechSynthesis`. Server-side Whisper deferred.
+- ✅ **Voice** — 🎤 mic button in the composer + 🔊 button on assistant messages. **Server-side STT/TTS** when configured: the mic records a clip (MediaRecorder) and posts it to a Whisper-style `/audio/transcriptions`; speak posts text to `/audio/speech` and plays the returned audio. Both proxy any OpenAI-compatible audio backend (OpenAI, faster-whisper-server, speaches, openai-edge-tts, kokoro, …) and **fall back to the browser Web Speech API** when unset.
 - ✅ **Model management** — admin-only `/admin/models` page lists installed Ollama models, supports streaming `pull` (with progress bar) and `delete`. Backend proxies Ollama's native `/api/tags`, `/api/pull`, `/api/delete`. Multiple upstream connections deferred.
 - ✅ **Custom presets / "modelfiles"** — per-user named bundles of (model, system_prompt, temperature, top_p, stop). "Save current" in the settings drawer captures the chat's params; "apply" copies them onto the current conversation.
 - ✅ **Tools / function calling** — per-chat toggle. Built-in safe tools (`now()`, `calculate(expression)` via AST whitelist) plus per-user **MCP server support**: configure any JSON-RPC MCP endpoint at `/account/mcp`, its `tools/list` is merged into the catalogue (namespaced `mcp_<id>_<tool>`), and `tools/call` is fanned out during the loop. Backend runs the full OpenAI-style tool loop server-side: streams partial content, drains `tool_calls` deltas, executes locally or via MCP, surfaces each call as an `event: tool_call` SSE frame, feeds the result back, and continues — up to 5 loops per turn. Frontend renders 🔧 chips inline above the model's reply.

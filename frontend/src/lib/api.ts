@@ -201,6 +201,46 @@ export async function getCodeStatus(): Promise<CodeStatus> {
   return res.json();
 }
 
+export interface AudioStatus {
+  stt: boolean;
+  tts: boolean;
+  voice: string | null;
+}
+
+export async function getAudioStatus(): Promise<AudioStatus> {
+  const res = await apiFetch('/api/audio/status');
+  if (!res.ok) return { stt: false, tts: false, voice: null };
+  return res.json();
+}
+
+// Send a recorded clip to the server's Whisper-style backend; returns the text.
+export async function transcribeAudio(blob: Blob): Promise<string> {
+  const fd = new FormData();
+  const ext = blob.type.includes('mp4')
+    ? 'mp4'
+    : blob.type.includes('ogg')
+      ? 'ogg'
+      : blob.type.includes('wav')
+        ? 'wav'
+        : 'webm';
+  fd.append('file', blob, `audio.${ext}`);
+  // No explicit content-type — the browser sets the multipart boundary.
+  const res = await apiFetch('/api/audio/transcriptions', { method: 'POST', body: fd });
+  if (!res.ok) throw new Error(`transcription failed: ${res.status}`);
+  return (await res.json()).text ?? '';
+}
+
+// Synthesize speech for text; returns an audio Blob to play.
+export async function synthesizeSpeech(input: string, voice?: string): Promise<Blob> {
+  const res = await apiFetch('/api/audio/speech', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ input, voice })
+  });
+  if (!res.ok) throw new Error(`speech failed: ${res.status}`);
+  return res.blob();
+}
+
 export async function listConversations(
   q?: string,
   archived = false,

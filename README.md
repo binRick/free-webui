@@ -385,7 +385,7 @@ We're aiming at the 95% workflow people actually want from open-webui — not st
 - ✅ **Edit + regenerate messages** — in-place edit on any user message truncates everything after and re-streams; regenerate replays the last assistant turn. Proper branching is a follow-up.
 - ✅ **Per-chat parameters** — model, temperature, top-p, system prompt, stop sequences via a settings drawer + `PATCH /api/conversations/{id}`.
 - ✅ **Mobile / responsive layout + dark/light themes** — CSS-var theming (system / light / dark, persisted), shiki dual-theme highlighting, sidebar slides over content on narrow viewports.
-- **"Continue" affordance** — deferred: no clean cross-provider API for true continuation (most upstreams don't support an assistant-prefix mode); revisit per-provider later.
+- ✅ **"Continue" affordance** — a trailing assistant reply that stopped early (e.g. cut off by `max_tokens`) can be continued: the partial reply is replayed as history with a continuation instruction and the new text is appended onto the same message. Portable across OpenAI-compatible upstreams (no provider-specific assistant-prefix API needed).
 
 ### Tier 2 — the things people pick open-webui *for*
 

@@ -35,8 +35,9 @@ authoritative status):
   and in-composer commands — `/` insert a saved prompt, `@` switch model, `#`
   attach a knowledge collection — with keyboard navigation.
 - **Per-message actions**: regenerate **any** assistant turn (not just the
-  trailing one; branches the thread, prior reply kept as a variant) and delete
-  a message (truncates the thread from there); ♻/🗑 buttons per message.
+  trailing one; branches the thread, prior reply kept as a variant), delete
+  a message (truncates the thread from there), and **continue** a trailing reply
+  that stopped early (appends to the same message); ♻/🗑/↪ buttons per message.
 - **Object/media store**: base64 image payloads (generated + vision uploads)
   are externalized to a `files` blob table and served via `/api/files/{id}`
   instead of bloating every message row; re-inlined for upstream vision replay

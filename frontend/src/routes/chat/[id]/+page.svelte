@@ -11,6 +11,7 @@
     deleteMemory,
     deletePreset,
     deletePrompt,
+    continueMessage,
     deleteMessage,
     editMessage,
     exportConversationUrl,
@@ -739,6 +740,17 @@
     await runStream((opts) => regenerateMessage(currentId, msg.id!, model, opts));
   }
 
+  // Continue (extend) the trailing assistant reply that stopped early. The
+  // streamed text is appended onto the same message — appendDelta already
+  // targets the trailing message, which is the one being continued.
+  async function continueAt(i: number) {
+    if (streaming) return;
+    const msg = messages[i];
+    if (msg.role !== 'assistant' || msg.id == null || i !== messages.length - 1) return;
+    followups = [];
+    await runStream((opts) => continueMessage(currentId, msg.id!, model, opts));
+  }
+
   // Delete a message and everything after it (truncate the thread here).
   async function deleteAt(i: number) {
     if (streaming) return;
@@ -1208,6 +1220,9 @@
             {/if}
             {#if msg.role === 'assistant' && msg.id != null && msg.content}
               <button class="action" title="regenerate this reply" onclick={() => regenAt(i)}>regenerate</button>
+            {/if}
+            {#if msg.role === 'assistant' && msg.id != null && msg.content && i === messages.length - 1}
+              <button class="action" title="continue this reply" onclick={() => continueAt(i)}>↪ continue</button>
             {/if}
             {#if msg.role === 'assistant' && msg.id != null && msg.content}
               <button

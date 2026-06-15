@@ -295,6 +295,7 @@ async def _stream_and_persist(
     conn: Connection | None = None,
     gen: dict[str, Any] | None = None,
     sources: list[dict] | None = None,
+    continue_message_id: int | None = None,
 ) -> AsyncIterator[bytes]:
     """Stream a chat completion. If tools_enabled, runs a tool loop until
     the upstream finishes with a non-tool finish reason, surfacing each
@@ -488,26 +489,36 @@ async def _stream_and_persist(
                 )
                 text = await run_outlet(plugins, text, octx)
             if text or generated_images:
-                if generated_images:
-                    # Persist as a multimodal message so the generated image(s)
-                    # survive a reload, rendered by the same image-part path as
-                    # user-uploaded images.
-                    parts: list[dict] = []
-                    if text:
-                        parts.append({"type": "text", "text": text})
-                    for url in generated_images:
-                        ref = await store_data_url(db, user_id or 0, cid, url)
-                        parts.append({"type": "image_url", "image_url": {"url": ref}})
-                    stored = _encode_content(parts)
-                else:
-                    stored = text
                 ts = int(time.time())
-                await db.execute(
-                    "INSERT INTO messages (conversation_id, role, content, parent_id, sources, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
-                    (cid, "assistant", stored, parent_message_id,
-                     json.dumps(sources) if sources else None, ts),
-                )
+                if continue_message_id is not None:
+                    # "Continue generation": append the new text onto the
+                    # existing (text-only) assistant message rather than starting
+                    # a fresh one. tools are off for continue, so no images here.
+                    await db.execute(
+                        "UPDATE messages SET content = content || ? WHERE id = ?",
+                        (text, continue_message_id),
+                    )
+                else:
+                    if generated_images:
+                        # Persist as a multimodal message so the generated
+                        # image(s) survive a reload, rendered by the same
+                        # image-part path as user-uploaded images.
+                        parts: list[dict] = []
+                        if text:
+                            parts.append({"type": "text", "text": text})
+                        for url in generated_images:
+                            ref = await store_data_url(db, user_id or 0, cid, url)
+                            parts.append({"type": "image_url", "image_url": {"url": ref}})
+                        stored = _encode_content(parts)
+                    else:
+                        stored = text
+                    await db.execute(
+                        "INSERT INTO messages "
+                        "(conversation_id, role, content, parent_id, sources, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?)",
+                        (cid, "assistant", stored, parent_message_id,
+                         json.dumps(sources) if sources else None, ts),
+                    )
                 await db.execute(
                     "UPDATE conversations SET updated_at = ? WHERE id = ?", (ts, cid)
                 )
@@ -962,6 +973,68 @@ async def regenerate_message(
     )
     await gc_orphan_files(db, cid)
     return await _regenerate_assistant(request, db, http, cid, conv, user, msg_id, body.model)
+
+
+_CONTINUE_INSTRUCTION = (
+    "Continue your previous message. Resume from exactly where it ended and do "
+    "not repeat any of it — output only the additional text."
+)
+
+
+@router.post("/{cid}/messages/{msg_id}/continue")
+async def continue_message(
+    cid: str, msg_id: int, body: RegenerateBody, request: Request,
+    user: dict = Depends(current_user),
+) -> StreamingResponse:
+    """Continue (extend) the trailing assistant reply that stopped early — e.g.
+    cut off by max_tokens. The streamed text is appended onto the existing
+    message rather than starting a new turn.
+
+    Portable across OpenAI-compatible upstreams: the partial reply is replayed as
+    history and a continuation instruction is appended, so any provider can pick
+    up where it left off (no provider-specific assistant-prefix API required)."""
+    db = _db(request)
+    await _owned(db, cid, user["id"])
+    http = _http(request)
+    conv = await _conv_settings(db, cid)
+    await _guard_model(db, user, body.model, conv["model"])
+
+    cur = await db.execute(
+        "SELECT id, role, content FROM messages WHERE conversation_id = ? AND active = 1 "
+        "ORDER BY id DESC LIMIT 1",
+        (cid,),
+    )
+    last = await cur.fetchone()
+    if not last or last[0] != msg_id or last[1] != "assistant":
+        raise HTTPException(
+            status_code=400, detail="can only continue the latest assistant message"
+        )
+    if not isinstance(_decode_content(last[2]), str) or not last[2].strip():
+        raise HTTPException(
+            status_code=400, detail="cannot continue a non-text or empty message"
+        )
+
+    chosen_model = await _maybe_update_model(db, cid, body.model, conv["model"])
+    await db.commit()
+    # History already ends with the partial assistant reply; nudge the model to
+    # extend it. tools/web/RAG are intentionally off — continue is plain prose.
+    history = await _load_history(db, cid)
+    upstream = _build_upstream_messages(
+        conv["system_prompt"], None, history,
+        [{"role": "user", "content": _CONTINUE_INSTRUCTION}],
+    )
+    conn = await resolve_connection(request, db, chosen_model)
+    return StreamingResponse(
+        _stream_and_persist(
+            db, http, cid, upstream, chosen_model,
+            conv["temperature"], conv["top_p"], conv["stop"],
+            tools_enabled=False, user_id=user["id"],
+            plugins=getattr(request.app.state, "plugins", None),
+            conn=conn, gen=conv, continue_message_id=msg_id,
+        ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 async def _regenerate_assistant(

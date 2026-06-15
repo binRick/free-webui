@@ -114,3 +114,64 @@ async def test_regenerate_unknown_message_404(client):
     await _consume(client, "POST", f"/api/conversations/{cid}/messages", {"content": "hi"})
     r = await client.post(f"/api/conversations/{cid}/messages/55555/regenerate", json={})
     assert r.status_code == 404
+
+
+# ---- continue generation ----
+
+async def test_continue_appends_to_trailing_assistant(client, upstream):
+    from tests.conftest import content_chunk, finish, sse
+
+    await _signup(client)
+    cid = await _new(client)
+    # first reply ends mid-thought
+    upstream.queue_chat(sse(content_chunk("The capital of France"), finish("length")))
+    await _consume(client, "POST", f"/api/conversations/{cid}/messages", {"content": "capital?"})
+    msgs = await _msgs(client, cid)
+    assistant_id = msgs[1]["id"]
+    assert msgs[1]["content"] == "The capital of France"
+
+    # continue → the streamed text is appended onto the SAME message
+    upstream.queue_chat(sse(content_chunk(" is Paris."), finish("stop")))
+    await _consume(client, "POST", f"/api/conversations/{cid}/messages/{assistant_id}/continue")
+
+    msgs = await _msgs(client, cid)
+    # still exactly one assistant message, now extended
+    assert [m["role"] for m in msgs] == ["user", "assistant"]
+    assert msgs[1]["id"] == assistant_id
+    assert msgs[1]["content"] == "The capital of France is Paris."
+
+
+async def test_continue_replays_partial_and_instruction_upstream(client, upstream):
+    from tests.conftest import content_chunk, finish, sse
+
+    await _signup(client)
+    cid = await _new(client)
+    upstream.queue_chat(sse(content_chunk("partial answer"), finish("length")))
+    await _consume(client, "POST", f"/api/conversations/{cid}/messages", {"content": "q"})
+    aid = (await _msgs(client, cid))[1]["id"]
+
+    upstream.queue_chat(sse(content_chunk(" continued"), finish("stop")))
+    await _consume(client, "POST", f"/api/conversations/{cid}/messages/{aid}/continue")
+
+    # the continue request replayed the partial assistant reply + a continue nudge
+    last = upstream.chat_calls[-1]["messages"]
+    assert last[-2]["role"] == "assistant" and last[-2]["content"] == "partial answer"
+    assert last[-1]["role"] == "user" and "Continue" in last[-1]["content"]
+
+
+async def test_continue_only_trailing_assistant(client):
+    await _signup(client)
+    cid = await _new(client)
+    await _consume(client, "POST", f"/api/conversations/{cid}/messages", {"content": "one"})
+    await _consume(client, "POST", f"/api/conversations/{cid}/messages", {"content": "two"})
+    msgs = await _msgs(client, cid)
+    first_assistant = msgs[1]["id"]
+    user_msg = msgs[0]["id"]
+    # not the trailing turn
+    assert (
+        await client.post(f"/api/conversations/{cid}/messages/{first_assistant}/continue", json={})
+    ).status_code == 400
+    # not an assistant message
+    assert (
+        await client.post(f"/api/conversations/{cid}/messages/{user_msg}/continue", json={})
+    ).status_code == 400

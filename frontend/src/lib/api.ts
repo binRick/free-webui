@@ -1132,6 +1132,24 @@ export async function regenerateMessage(
   await consumeStream(res, opts);
 }
 
+export async function continueMessage(
+  conversationId: string,
+  messageId: number,
+  model: string | null,
+  opts: StreamOpts
+): Promise<void> {
+  const res = await apiFetch(
+    `/api/conversations/${conversationId}/messages/${messageId}/continue`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model }),
+      signal: opts.signal
+    }
+  );
+  await consumeStream(res, opts);
+}
+
 export async function deleteMessage(conversationId: string, messageId: number): Promise<void> {
   await apiFetch(`/api/conversations/${conversationId}/messages/${messageId}`, { method: 'DELETE' });
 }

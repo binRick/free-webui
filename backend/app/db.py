@@ -174,6 +174,19 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
     updated_at INTEGER NOT NULL
 );
 
+-- OpenAPI tool servers: a URL to an OpenAPI (JSON) spec whose operations become
+-- callable tools (a second external-tools mechanism alongside MCP).
+CREATE TABLE IF NOT EXISTS openapi_servers (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    url        TEXT NOT NULL,
+    headers    TEXT,
+    enabled    INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
 -- Additional OpenAI-compatible upstreams. The env-configured upstream is always
 -- present as implicit connection id 0; these are extra connections an admin adds.
 CREATE TABLE IF NOT EXISTS connections (
@@ -324,6 +337,7 @@ CREATE INDEX IF NOT EXISTS idx_presets_user ON presets(user_id, updated_at DESC)
 CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id);
 CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_mcp_servers_user ON mcp_servers(user_id, enabled);
+CREATE INDEX IF NOT EXISTS idx_openapi_servers_user ON openapi_servers(user_id, enabled);
 CREATE INDEX IF NOT EXISTS idx_messages_active ON messages(conversation_id, active, id);
 CREATE INDEX IF NOT EXISTS idx_feedback_message ON message_feedback(message_id);
 CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id);

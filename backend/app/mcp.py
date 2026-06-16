@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from .auth import current_user
 from .netguard import BlockedURLError, check_url
+from .openapi_tools import compose_openapi_tools, run_openapi_tool
 from .tools import ToolContext, builtin_tool_specs
 from .tools import run_tool_async as run_builtin_async
 
@@ -238,20 +239,20 @@ async def list_enabled_servers(
 
 async def compose_tool_specs(
     db: aiosqlite.Connection, user_id: int
-) -> tuple[list[dict], dict[str, tuple[int, str]]]:
+) -> tuple[list[dict], dict[str, tuple]]:
     """Return (openai_tool_specs, dispatch_table).
 
-    dispatch_table maps the namespaced tool name back to the (server_id,
-    original_tool_name) so the executor can route the call. Built-in tools
-    use server_id=0 and their unprefixed name.
+    dispatch_table maps the namespaced tool name to a routing tuple
+    ``(kind, server_id, payload)``: ``("builtin", 0, name)``,
+    ``("mcp", server_id, original_tool_name)``, or
+    ``("openapi", server_id, operation_meta)``.
     """
     builtins = builtin_tool_specs()
     specs: list[dict] = list(builtins)
-    dispatch: dict[str, tuple[int, str]] = {}
-    # Built-ins
+    dispatch: dict[str, tuple] = {}
     for spec in builtins:
         name = spec["function"]["name"]
-        dispatch[name] = (0, name)
+        dispatch[name] = ("builtin", 0, name)
 
     servers = await list_enabled_servers(db, user_id)
     for s in servers:
@@ -275,27 +276,34 @@ async def compose_tool_specs(
                     },
                 }
             )
-            dispatch[namespaced] = (s["id"], orig_name)
+            dispatch[namespaced] = ("mcp", s["id"], orig_name)
+
+    # OpenAPI tool servers (a second external-tools source).
+    oa_specs, oa_dispatch = await compose_openapi_tools(db, user_id)
+    specs.extend(oa_specs)
+    dispatch.update(oa_dispatch)
     return specs, dispatch
 
 
 async def run_tool(
     db: aiosqlite.Connection,
     user_id: int,
-    dispatch: dict[str, tuple[int, str]],
+    dispatch: dict[str, tuple],
     name: str,
     args: dict[str, Any],
     ctx: ToolContext | None = None,
 ) -> str:
-    """Execute a tool by dispatched name. Built-ins (server_id=0) run
-    locally; MCP tools fan out to the right server via tools/call."""
+    """Execute a tool by dispatched name, routing to its source backend."""
     target = dispatch.get(name)
     if target is None:
         return f"error: unknown tool {name!r}"
-    server_id, real_name = target
-    if server_id == 0:
-        return await run_builtin_async(real_name, args, ctx)
+    kind, server_id, payload = target
+    if kind == "builtin":
+        return await run_builtin_async(payload, args, ctx)
+    if kind == "openapi":
+        return await run_openapi_tool(db, user_id, server_id, payload, args)
 
+    # MCP
     cur = await db.execute(
         "SELECT url, headers FROM mcp_servers WHERE id = ? AND user_id = ?",
         (server_id, user_id),
@@ -309,7 +317,7 @@ async def run_tool(
             url,
             json.loads(headers_raw) if headers_raw else None,
             "tools/call",
-            {"name": real_name, "arguments": args},
+            {"name": payload, "arguments": args},
         )
     except (httpx.HTTPError, RuntimeError) as e:
         return f"error: {e}"

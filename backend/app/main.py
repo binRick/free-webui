@@ -32,6 +32,7 @@ from .db import open_db
 from .files import router as files_router
 from .folders import router as folders_router
 from .notes import router as notes_router
+from .openapi_tools import router as openapi_tools_router
 from .documents import router as documents_router
 from .images import router as images_router
 from .mcp import router as mcp_router
@@ -241,6 +242,7 @@ app.include_router(memories_router)
 app.include_router(openai_compat_router)
 app.include_router(anthropic_compat_router)
 app.include_router(mcp_router)
+app.include_router(openapi_tools_router)
 app.include_router(images_router)
 app.include_router(code_router)
 app.include_router(audio_router)

@@ -35,6 +35,10 @@ authoritative status):
   editable in place (`PUT /api/presets/{id}`). Cross-user collection access is
   filtered out on both save and attach.
 - **Notes**: a per-user markdown notebook workspace (`/notes`) with live preview.
+- **OpenAPI tool servers**: register a URL to an OpenAPI (3.x/JSON) spec; its
+  operations become callable tools alongside built-ins + MCP — the tool dispatch
+  is now a generic 3-source router, and every spec fetch + operation call is
+  SSRF-guarded. Managed at `/account/openapi`.
 - **Server-side voice**: STT/TTS proxies (`/api/audio/transcriptions`,
   `/api/audio/speech`) to any OpenAI-compatible audio backend; the mic records a
   clip and transcribes server-side, speak plays synthesized audio — both fall

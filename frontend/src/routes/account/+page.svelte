@@ -58,6 +58,7 @@
   <a class="back" href="/">← back to chat</a>
   <h1>account · api keys</h1>
   <a class="tabs" href="/account/mcp">MCP servers →</a>
+  <a class="tabs" href="/account/openapi">OpenAPI tools →</a>
 </header>
 
 <main>

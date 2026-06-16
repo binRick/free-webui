@@ -640,6 +640,52 @@ export async function probeMcpServer(
   return res.json();
 }
 
+// OpenAPI tool servers share the McpServer shape (id/name/url/headers/enabled).
+export type OpenApiServer = McpServer;
+
+export async function listOpenApiServers(): Promise<OpenApiServer[]> {
+  const res = await apiFetch('/api/openapi_servers');
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function createOpenApiServer(body: {
+  name: string;
+  url: string;
+  headers?: Record<string, string> | null;
+}): Promise<OpenApiServer> {
+  const res = await apiFetch('/api/openapi_servers', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}));
+    throw new Error(b.detail ?? `create failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function patchOpenApiServer(
+  id: number,
+  patch: Partial<{ name: string; url: string; headers: Record<string, string> | null; enabled: boolean }>
+): Promise<OpenApiServer> {
+  const res = await apiFetch(`/api/openapi_servers/${id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(patch)
+  });
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}));
+    throw new Error(b.detail ?? `patch failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteOpenApiServer(id: number): Promise<void> {
+  await apiFetch(`/api/openapi_servers/${id}`, { method: 'DELETE' });
+}
+
 export interface AdminUser {
   id: number;
   username: string;

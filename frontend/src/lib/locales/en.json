@@ -14,6 +14,7 @@
   "sidebar.newChat": "+ new chat",
   "sidebar.temporaryChat": "👻 temporary chat",
   "sidebar.compareModels": "⚖ compare models",
+  "sidebar.arena": "⚔ arena",
   "sidebar.searchPlaceholder": "search chats…",
   "sidebar.archived": "🗄 archived",
   "sidebar.backToChats": "← back to chats",
@@ -33,6 +34,7 @@
   "nav.channels": "💬 channels",
   "nav.notes": "📝 notes",
   "nav.knowledge": "📚 kb",
+  "nav.leaderboard": "🏆 leaderboard",
 
   "login.username": "username",
   "login.password": "password",

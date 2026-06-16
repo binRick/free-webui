@@ -215,6 +215,7 @@
   <a href="/" class="new" data-sveltekit-reload onclick={openChat}>{t('sidebar.newChat')}</a>
   <a href="/temporary" class="temp-link" onclick={openChat}>{t('sidebar.temporaryChat')}</a>
   <a href="/compare" class="temp-link" onclick={openChat}>{t('sidebar.compareModels')}</a>
+  <a href="/arena" class="temp-link" onclick={openChat}>{t('sidebar.arena')}</a>
   <div class="search">
     <input
       type="search"
@@ -290,6 +291,7 @@
         <a class="admin-link" href="/channels" title="real-time channels">{t('nav.channels')}</a>
         <a class="admin-link" href="/notes" title="notes">{t('nav.notes')}</a>
         <a class="admin-link" href="/collections" title="knowledge bases">{t('nav.knowledge')}</a>
+        <a class="admin-link" href="/evaluations" title="model leaderboard">{t('nav.leaderboard')}</a>
         {#if auth.user.role === 'admin'}
           <a class="admin-link" href="/admin/analytics" title="usage analytics">📊 analytics</a>
           <a class="admin-link" href="/admin/banners" title="broadcast banners">📢 banners</a>

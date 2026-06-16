@@ -106,12 +106,14 @@ async def analytics(
         for i in range(days - 1, -1, -1)
     ]
 
-    # Top models by assistant-message volume (a message's model = its
-    # conversation's model; NULL -> "(default)").
+    # Top models by assistant-message volume. Prefer the model recorded on the
+    # message itself (accurate even when a conversation switched models); fall
+    # back to the conversation's model for legacy rows, then "(default)".
     cur = await db.execute(
-        "SELECT COALESCE(c.model, '(default)') AS model, COUNT(*) AS n "
+        "SELECT COALESCE(m.model, c.model, '(default)') AS model, COUNT(*) AS n "
         "FROM messages m JOIN conversations c ON c.id = m.conversation_id "
-        "WHERE m.active = 1 AND m.role = 'assistant' GROUP BY model ORDER BY n DESC LIMIT 10"
+        "WHERE m.active = 1 AND m.role = 'assistant' "
+        "GROUP BY COALESCE(m.model, c.model, '(default)') ORDER BY n DESC LIMIT 10"
     )
     messages_per_model = [
         ModelCount(model=r[0], count=int(r[1])) for r in await cur.fetchall()

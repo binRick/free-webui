@@ -321,6 +321,19 @@ CREATE TABLE IF NOT EXISTS banners (
     created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
     created_at  INTEGER NOT NULL
 );
+
+-- Model arena: a blind A/B vote between two models on the same prompt. ELO
+-- rankings are computed on read by replaying votes in (created_at, id) order,
+-- so there is no derived rating state to keep consistent.
+CREATE TABLE IF NOT EXISTS arena_votes (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    model_a    TEXT NOT NULL,
+    model_b    TEXT NOT NULL,
+    winner     TEXT NOT NULL,  -- 'a' | 'b' | 'tie' | 'both_bad'
+    prompt     TEXT,           -- short snippet of the prompt, for the admin view
+    created_at INTEGER NOT NULL
+);
 """
 
 # Indexes are created AFTER _ensure_columns so an index on a migrated column
@@ -357,6 +370,8 @@ CREATE INDEX IF NOT EXISTS idx_notes_user ON notes(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_preset_collections_preset ON preset_collections(preset_id);
 CREATE INDEX IF NOT EXISTS idx_channels_created ON channels(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_channel_messages_channel ON channel_messages(channel_id, id);
+CREATE INDEX IF NOT EXISTS idx_arena_votes_created ON arena_votes(created_at, id);
+CREATE INDEX IF NOT EXISTS idx_messages_model ON messages(model);
 """
 
 _MIGRATIONS: tuple[tuple[str, str, str], ...] = (
@@ -377,6 +392,8 @@ _MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("messages", "parent_id", "INTEGER"),
     ("messages", "active", "INTEGER NOT NULL DEFAULT 1"),
     ("messages", "sources", "TEXT"),
+    # The model that produced an assistant message, for the evaluation leaderboard.
+    ("messages", "model", "TEXT"),
     ("users", "token_version", "INTEGER NOT NULL DEFAULT 0"),
     ("users", "oidc_sub", "TEXT"),
     ("presets", "description", "TEXT"),

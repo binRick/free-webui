@@ -1371,3 +1371,39 @@ export async function continueMessage(
 export async function deleteMessage(conversationId: string, messageId: number): Promise<void> {
   await apiFetch(`/api/conversations/${conversationId}/messages/${messageId}`, { method: 'DELETE' });
 }
+
+// ---- Evaluations: leaderboard + arena ----
+
+export interface LeaderboardRow {
+  model: string;
+  up: number;
+  down: number;
+  feedback_count: number;
+  rating: number; // Wilson lower bound, 0..1
+  elo: number;
+  arena_games: number;
+  wins: number;
+  losses: number;
+  ties: number;
+}
+
+export type ArenaWinner = 'a' | 'b' | 'tie' | 'both_bad';
+
+export async function getLeaderboard(): Promise<LeaderboardRow[]> {
+  const res = await apiFetch('/api/evaluations/leaderboard');
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function arenaVote(
+  modelA: string,
+  modelB: string,
+  winner: ArenaWinner,
+  prompt?: string
+): Promise<void> {
+  await apiFetch('/api/evaluations/arena/vote', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model_a: modelA, model_b: modelB, winner, prompt })
+  });
+}

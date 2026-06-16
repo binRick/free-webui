@@ -123,6 +123,7 @@ while deliberately staying a lean two-tier app. Roughly:
 | Tools | function-calling loop, **MCP**, **OpenAPI tool servers**, code interpreter, image generation, custom assistants, plugins/pipelines |
 | Models | **multiple upstream connections**, Ollama model management, per-model access control, per-chat params |
 | Multi-user / admin | argon2 auth, **OIDC/SSO**, groups + RBAC, audit log, feedback log, **usage analytics**, **broadcast banners** |
+| Evaluation | **arena** (blind A/B vote → ELO), feedback-driven **leaderboard** (Wilson-scored) |
 | Collaboration | **real-time channels** (WebSocket), **notes**, public share links, **multi-model compare** |
 | Voice | server-side STT/TTS proxy + browser Web Speech fallback |
 | API | OpenAI-compatible `/v1`, **Anthropic `/v1/messages` proxy**, per-user API keys |
@@ -143,7 +144,6 @@ while deliberately staying a lean two-tier app. Roughly:
 
 **Missing** ❌ (open-webui has these; free-webui does not yet)
 
-- **Evaluation suite** — arena/leaderboard, model A/B evaluations.
 - **Enterprise auth** — LDAP / SCIM.
 - **Voice/video call mode** (hands-free conversational UI).
 - **S3/object storage** for media (blobs live in the DB today).
@@ -484,7 +484,7 @@ We're aiming at the 95% workflow people actually want from open-webui — not st
 - ✅ **Code interpreter** — built-in `run_python(code)` tool (selected by `FREE_WEBUI_CODE_INTERPRETER`). The `docker` backend is a real sandbox (no network, read-only rootfs, non-root, dropped caps, mem/cpu/pid limits); a `subprocess` fallback adds timeouts + rlimits + a stripped env for trusted single-user use (not a security boundary). Code runs in a throwaway per-call workdir; raster images it writes (e.g. matplotlib plots) are surfaced + persisted via the same path as image generation. Gated on config.
 - ✅ **Pipelines / plugin framework** — operator-installed `*.py` plugins in `FREE_WEBUI_PLUGINS_DIR`, each with async `inlet(body, ctx)` / `outlet(text, ctx)` hooks ordered by module-level `PRIORITY`. Trusted, in-process middleware (the deliberate inverse of the sandboxed code interpreter) that rewrites the outbound request and/or the persisted reply. Every hook runs on a deep copy under a timeout with passthrough-on-failure, so a broken plugin never breaks a turn; inlet edits survive the whole tool loop. Read-only admin listing at `GET /api/plugins`. Gated on config. (v2+ deferred: per-chunk `stream` hook, plugin-as-model `pipe`, typed admin/user valves, hot-reload.)
 
-Skippable / not planned: evaluation / leaderboard, channels / spaces, LDAP / SAML, full i18n.
+Skippable / not planned: LDAP / SAML, full i18n.
 
 ### Constraint
 

@@ -69,6 +69,14 @@ authoritative status):
   delivery (message broadcast, presence count, typing indicators) on top of REST
   CRUD + paginated history; an in-process broadcast hub, cookie-authenticated
   sockets, with REST→socket fallback and auto-reconnect.
+- **Evaluation suite**: a model **arena** (`/arena`) runs blind A/B battles —
+  two anonymised models answer one prompt, you vote a winner/tie/both-bad, and
+  identities are revealed after the vote — plus a **leaderboard**
+  (`/evaluations`) that ranks models by arena **ELO** (replayed deterministically
+  from the vote log) and by a Wilson-scored 👍/👎 feedback rate. Assistant
+  messages now record the model that produced them (`messages.model`), which the
+  leaderboard and usage analytics both use. Arena votes are access-gated to
+  models the voter may actually use; the raw vote log is admin-only.
 - **i18n foundation**: a dependency-free reactive `t()` + per-locale JSON
   catalogs (**en/es/fr/de**) with an in-app language switcher; sidebar + login
   wired, the rest of the UI adopting `t()` incrementally.

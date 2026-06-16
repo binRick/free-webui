@@ -516,10 +516,11 @@ async def _stream_and_persist(
                         stored = text
                     await db.execute(
                         "INSERT INTO messages "
-                        "(conversation_id, role, content, parent_id, sources, created_at) "
-                        "VALUES (?, ?, ?, ?, ?, ?)",
+                        "(conversation_id, role, content, parent_id, sources, model, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
                         (cid, "assistant", stored, parent_message_id,
-                         json.dumps(sources) if sources else None, ts),
+                         json.dumps(sources) if sources else None,
+                         body.get("model", model), ts),
                     )
                 await db.execute(
                     "UPDATE conversations SET updated_at = ? WHERE id = ?", (ts, cid)

@@ -865,6 +865,21 @@ export async function listFeedback(rating?: number): Promise<FeedbackRow[]> {
   return res.json();
 }
 
+export interface Analytics {
+  totals: Record<string, number>;
+  feedback: { up: number; down: number };
+  active_users_7d: number;
+  new_users_7d: number;
+  messages_per_day: { date: string; count: number }[];
+  messages_per_model: { model: string; count: number }[];
+}
+
+export async function getAnalytics(days = 30): Promise<Analytics> {
+  const res = await apiFetch(`/api/admin/analytics?days=${days}`);
+  if (!res.ok) throw new Error(`analytics failed: ${res.status}`);
+  return res.json();
+}
+
 export interface PluginRecord {
   name: string;
   priority: number;

@@ -266,6 +266,7 @@
         <a class="admin-link" href="/notes" title="notes">📝 notes</a>
         <a class="admin-link" href="/collections" title="knowledge bases">📚 kb</a>
         {#if auth.user.role === 'admin'}
+          <a class="admin-link" href="/admin/analytics" title="usage analytics">📊 analytics</a>
           <a class="admin-link" href="/admin/users" title="manage users">👥 users</a>
           <a class="admin-link" href="/admin/access" title="groups & model access">🔒 access</a>
           <a class="admin-link" href="/admin/audit" title="admin audit log">📜 audit</a>

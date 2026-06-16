@@ -1,0 +1,60 @@
+"""Admin usage analytics aggregates."""
+
+
+async def _signup(client):
+    await client.post("/api/auth/setup", json={"username": "alice", "password": "hunter22hunter"})
+
+
+async def _send(client, cid, text):
+    async with client.stream(
+        "POST", f"/api/conversations/{cid}/messages", json={"content": text}
+    ) as r:
+        assert r.status_code == 200, await r.aread()
+        async for _ in r.aiter_bytes():
+            pass
+
+
+async def test_analytics_aggregates(client):
+    await _signup(client)  # alice (admin) -> 1 user
+    cid = (await client.post("/api/conversations", json={"model": None})).json()["id"]
+    await _send(client, cid, "hello")  # user + assistant
+    await _send(client, cid, "again")  # user + assistant  => 4 messages
+
+    msgs = (await client.get(f"/api/conversations/{cid}")).json()["messages"]
+    assistant = [m for m in msgs if m["role"] == "assistant"][-1]
+    await client.put(
+        f"/api/conversations/{cid}/messages/{assistant['id']}/feedback", json={"rating": 1}
+    )
+    await client.post("/api/channels", json={"name": "general"})
+
+    a = (await client.get("/api/admin/analytics")).json()
+    assert a["totals"] == {"users": 1, "conversations": 1, "messages": 4, "channels": 1}
+    assert a["feedback"] == {"up": 1, "down": 0}
+    assert a["active_users_7d"] == 1
+    assert a["new_users_7d"] == 1
+    assert len(a["messages_per_day"]) == 30  # default window, zero-filled
+    assert sum(d["count"] for d in a["messages_per_day"]) == 4  # all sent today
+    # the conversation's model is NULL -> bucketed as "(default)"; 2 assistant msgs
+    models = {m["model"]: m["count"] for m in a["messages_per_model"]}
+    assert models == {"(default)": 2}
+
+
+async def test_analytics_days_window(client):
+    await _signup(client)
+    assert len((await client.get("/api/admin/analytics?days=7")).json()["messages_per_day"]) == 7
+    assert (await client.get("/api/admin/analytics?days=0")).status_code == 422
+    assert (await client.get("/api/admin/analytics?days=999")).status_code == 422
+
+
+async def test_analytics_admin_only(client):
+    await _signup(client)
+    await client.post(
+        "/api/admin/users", json={"username": "bob", "password": "passpass", "role": "user"}
+    )
+    await client.post("/api/auth/logout")
+    await client.post("/api/auth/login", json={"username": "bob", "password": "passpass"})
+    assert (await client.get("/api/admin/analytics")).status_code == 403
+
+
+async def test_analytics_requires_auth(client):
+    assert (await client.get("/api/admin/analytics")).status_code == 401

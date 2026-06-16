@@ -16,7 +16,9 @@ authoritative status):
   `cookie_secure`/HSTS flags, request-id middleware.
 - **Auth/RBAC**: server-side session revocation (`token_version`,
   logout-everywhere), **OIDC/SSO** (no extra dep), user **groups + per-model
-  access control**, admin **audit log** and **feedback log**.
+  access control**, admin **audit log**, **feedback log**, and **usage analytics**
+  dashboard (`/admin/analytics` — totals, messages/day, top models, 👍/👎, active
+  users; aggregated from existing tables, no new dep).
 - **Chat UX**: sidebar search + date grouping + rename + **pin/archive**,
   **non-destructive regenerate with variant navigation**, copy + 👍/👎 per
   message, **LLM auto-titling**, extra generation params

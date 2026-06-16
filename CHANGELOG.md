@@ -41,6 +41,13 @@ authoritative status):
   editable in place (`PUT /api/presets/{id}`). Cross-user collection access is
   filtered out on both save and attach.
 - **Notes**: a per-user markdown notebook workspace (`/notes`) with live preview.
+- **Account data lifecycle**: a self-service **data export** (`GET /api/account/export`
+  bundles the caller's conversations, messages, prompts, notes, memories, presets,
+  collections, folders, feedback, and API-key metadata — never any secret/hash —
+  into one JSON download) and **account deletion** (`DELETE /api/account`,
+  password-re-authenticated; cascades away all the user's data, reclaims their S3
+  objects, clears the session; the last admin can't delete themselves). Wired into
+  the `/account` page.
 - **OpenAPI tool servers**: register a URL to an OpenAPI (3.x/JSON) spec; its
   operations become callable tools alongside built-ins + MCP — the tool dispatch
   is now a generic 3-source router, and every spec fetch + operation call is

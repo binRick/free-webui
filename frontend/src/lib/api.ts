@@ -1083,6 +1083,26 @@ export async function revokeApiKey(id: number): Promise<void> {
   await apiFetch(`/api/api_keys/${id}`, { method: 'DELETE' });
 }
 
+// ---- self-service account ----
+
+export const ACCOUNT_EXPORT_URL = '/api/account/export';
+
+// Permanently delete the caller's own account (password re-auth). Returns true
+// on success, or an error message string (e.g. wrong password / only admin).
+export async function deleteAccount(password: string): Promise<true | string> {
+  const res = await apiFetch('/api/account', {
+    method: 'DELETE',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ password })
+  });
+  if (res.ok) return true;
+  try {
+    return (await res.json()).detail ?? `failed (${res.status})`;
+  } catch {
+    return `failed (${res.status})`;
+  }
+}
+
 export interface Preset {
   id: number;
   name: string;

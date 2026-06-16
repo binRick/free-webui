@@ -6,6 +6,8 @@
     listApiKeys,
     mintApiKey,
     revokeApiKey,
+    deleteAccount,
+    ACCOUNT_EXPORT_URL,
     type ApiKey
   } from '$lib/api';
 
@@ -14,6 +16,25 @@
   let busy = $state(false);
   let mintedRaw = $state<string | null>(null);
   let mintedName = $state<string>('');
+
+  let deletePw = $state('');
+  let deleteBusy = $state(false);
+  let deleteErr = $state('');
+
+  async function removeAccount() {
+    if (deleteBusy || !deletePw) return;
+    if (!confirm('Permanently delete your account and ALL your data? This cannot be undone.')) return;
+    deleteBusy = true;
+    deleteErr = '';
+    const res = await deleteAccount(deletePw);
+    deleteBusy = false;
+    if (res === true) {
+      auth.user = null;
+      await goto('/login', { replaceState: true });
+    } else {
+      deleteErr = res;
+    }
+  }
 
   onMount(async () => {
     if (!auth.loaded) await auth.refresh();
@@ -115,6 +136,30 @@
     <h2>sessions</h2>
     <p class="muted">Sign out of every device. Other sessions are revoked on their next request.</p>
     <button class="danger" onclick={() => auth.logoutEverywhere()}>log out everywhere</button>
+  </section>
+
+  <section class="card">
+    <h2>your data</h2>
+    <p class="muted">Download everything in your account — conversations, prompts, notes, memories,
+      collections and more — as a single JSON file.</p>
+    <a class="action" href={ACCOUNT_EXPORT_URL} download>↓ export my data (JSON)</a>
+  </section>
+
+  <section class="card">
+    <h2>delete account</h2>
+    <p class="muted">Permanently delete your account and all associated data. This cannot be undone.</p>
+    <div class="del-row">
+      <input
+        type="password"
+        placeholder="confirm your password"
+        bind:value={deletePw}
+        autocomplete="current-password"
+      />
+      <button class="danger" disabled={deleteBusy || !deletePw} onclick={removeAccount}>
+        {deleteBusy ? 'deleting…' : 'delete my account'}
+      </button>
+    </div>
+    {#if deleteErr}<p class="del-err">{deleteErr}</p>{/if}
   </section>
 
   <section class="card">
@@ -229,6 +274,14 @@
     cursor: pointer;
   }
   .danger:hover { background: color-mix(in srgb, var(--danger) 22%, transparent); }
+  .danger:disabled { opacity: 0.5; cursor: default; }
+  .del-row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+  .del-row input {
+    flex: 1; min-width: 12rem; padding: 0.45rem 0.7rem; font: inherit;
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+  }
+  .del-err { color: var(--danger); font-size: 0.85rem; margin: 0.5rem 0 0; }
   pre {
     background: var(--bg);
     padding: 0.75rem 1rem;

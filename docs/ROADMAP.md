@@ -84,10 +84,14 @@ Whisper/TTS backend; browser Web Speech fallback).
 
 ## Phase 5 — Big architectural bets (XL, optional)
 
-Postgres + horizontal scaling (the single-process single-SQLite-connection
-design is the blocker) → Helm chart → ~~real-time channels~~ ✅ landed
-(WebSocket rooms with an **in-process** broadcast hub — multi-process scaling
-still needs an external pub/sub like Redis) → full i18n + RTL.
+**Postgres + horizontal scaling** — scoped in detail in
+[`docs/SCALING.md`](./SCALING.md): the auth/session layer already scales
+(stateless cookies + DB revocation); the work is SQL-dialect portability (raw
+SQL over `aiosqlite` → a thin dialect abstraction + asyncpg) and externalizing a
+few in-process singletons (the channel hub → Redis pub/sub, login limiter, OIDC
+lock, migration coordination). Phased so **Postgres-at-1-replica ships first**,
+then N stateless replicas. → Helm chart → ~~real-time channels~~ ✅ landed
+(WebSocket rooms with an **in-process** broadcast hub) → full i18n + RTL.
 Pursue only if the product targets teams/enterprise.
 
 ---

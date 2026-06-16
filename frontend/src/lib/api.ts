@@ -880,6 +880,39 @@ export async function getAnalytics(days = 30): Promise<Analytics> {
   return res.json();
 }
 
+export type BannerType = 'info' | 'warning' | 'error' | 'success';
+export interface Banner {
+  id: number;
+  content: string;
+  type: BannerType;
+  dismissible: boolean;
+  created_at: number;
+}
+
+export async function listBanners(): Promise<Banner[]> {
+  const res = await apiFetch('/api/banners');
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function createBanner(
+  content: string,
+  type: BannerType,
+  dismissible: boolean
+): Promise<Banner> {
+  const res = await apiFetch('/api/admin/banners', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ content, type, dismissible })
+  });
+  if (!res.ok) throw new Error(`create banner failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteBanner(id: number): Promise<void> {
+  await apiFetch(`/api/admin/banners/${id}`, { method: 'DELETE' });
+}
+
 export interface PluginRecord {
   name: string;
   priority: number;

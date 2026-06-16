@@ -24,6 +24,7 @@ from .collections import router as collections_router
 from .config import settings
 from .admin_analytics import router as admin_analytics_router
 from .audio import router as audio_router
+from .banners import router as banners_router
 from .channels import router as channels_router
 from .temporary_chat import router as temporary_chat_router
 from .conversations import router as conversations_router
@@ -233,6 +234,7 @@ app.include_router(admin_connections_router)
 app.include_router(audit_router)
 app.include_router(admin_feedback_router)
 app.include_router(admin_analytics_router)
+app.include_router(banners_router)
 app.include_router(web_search_router)
 app.include_router(api_keys_router)
 app.include_router(memories_router)

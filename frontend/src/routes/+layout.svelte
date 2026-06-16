@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
+  import BannerBar from '$lib/BannerBar.svelte';
   import Sidebar from '$lib/Sidebar.svelte';
   import Toasts from '$lib/Toasts.svelte';
   import { auth } from '$lib/auth.svelte';
@@ -42,6 +43,9 @@
     {/if}
   {/if}
   <section class="main">
+    {#if !isPublic}
+      <BannerBar />
+    {/if}
     {@render children()}
   </section>
 </div>

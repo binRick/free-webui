@@ -298,6 +298,16 @@ CREATE TABLE IF NOT EXISTS channel_messages (
     content    TEXT NOT NULL,
     created_at INTEGER NOT NULL
 );
+
+-- Admin-broadcast banners shown to every user (maintenance notices, etc.).
+CREATE TABLE IF NOT EXISTS banners (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    content     TEXT NOT NULL,
+    type        TEXT NOT NULL DEFAULT 'info',  -- info | warning | error | success
+    dismissible INTEGER NOT NULL DEFAULT 1,
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  INTEGER NOT NULL
+);
 """
 
 # Indexes are created AFTER _ensure_columns so an index on a migrated column

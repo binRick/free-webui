@@ -17,7 +17,7 @@ from .connections import merged_model_ids
 from .anthropic_compat import router as anthropic_compat_router
 from .api_keys import router as api_keys_router
 from .audit import router as audit_router
-from .auth import current_user
+from .auth import configure_rate_limiter, current_user
 from .auth import router as auth_router
 from .code_exec import router as code_router
 from .collections import router as collections_router
@@ -184,10 +184,14 @@ async def lifespan(app: FastAPI):
     # as a process singleton the file helpers read.
     app.state.object_store = make_object_store()
     configure_store(app.state.object_store)
-    # Cross-replica channels: upgrade the in-process hub to Redis pub/sub when
-    # configured (no-op default keeps the single-process fan-out).
+    # Redis (optional): cross-replica channel pub/sub + a global login throttle.
+    app.state.redis = None
     if settings.redis_url:
+        import redis.asyncio as aioredis  # lazy: only when Redis is configured
+
         await channel_hub.use_redis(settings.redis_url)
+        app.state.redis = aioredis.from_url(settings.redis_url)
+        configure_rate_limiter(app.state.redis)
     try:
         yield
     finally:
@@ -197,6 +201,9 @@ async def lifespan(app: FastAPI):
         if app.state.object_store is not None:
             await app.state.object_store.aclose()
         configure_store(None)
+        configure_rate_limiter(None)
+        if app.state.redis is not None:
+            await app.state.redis.aclose()
 
 
 app = FastAPI(title="free-webui", version="0.1.0", lifespan=lifespan)

@@ -89,3 +89,43 @@ async def test_login_rate_limit(client, monkeypatch):
     assert codes[:3] == [401, 401, 401]  # first N attempts allowed (and rejected)
     assert codes[3] == 429  # then throttled
     assert codes[4] == 429
+
+
+async def test_login_rate_limit_redis_is_shared(client, monkeypatch):
+    """With a Redis store the throttle is GLOBAL: the count lives in Redis, so it
+    survives wiping this replica's in-process state — i.e. it holds across
+    replicas. Gated on a real Redis (FREE_WEBUI_TEST_REDIS)."""
+    import os
+
+    import pytest
+
+    if not os.getenv("FREE_WEBUI_TEST_REDIS"):
+        pytest.skip("set FREE_WEBUI_TEST_REDIS + a Redis")
+
+    import redis.asyncio as aioredis
+
+    from app import auth
+
+    url = os.getenv("FREE_WEBUI_TEST_REDIS_URL", "redis://localhost:56379/0")
+    rclient = aioredis.from_url(url)
+    await rclient.flushdb()
+    monkeypatch.setattr(auth.settings, "login_rate_limit", 3)
+    monkeypatch.setattr(auth.settings, "login_rate_window_seconds", 60.0)
+    auth.configure_rate_limiter(rclient)
+    auth._login_attempts.clear()
+    try:
+        await _signup(client)
+        codes = []
+        for _ in range(4):
+            r = await client.post("/api/auth/login", json={"username": "alice", "password": "nope"})
+            codes.append(r.status_code)
+        assert codes == [401, 401, 401, 429]
+
+        # Simulate a DIFFERENT replica: wipe local state. The throttle must still
+        # fire because the counter is in Redis, not this process's memory.
+        auth._login_attempts.clear()
+        r = await client.post("/api/auth/login", json={"username": "alice", "password": "nope"})
+        assert r.status_code == 429
+    finally:
+        auth.configure_rate_limiter(None)
+        await rclient.aclose()

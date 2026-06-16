@@ -90,6 +90,11 @@ authoritative status):
   delivery (message broadcast, presence count, typing indicators) on top of REST
   CRUD + paginated history; an in-process broadcast hub, cookie-authenticated
   sockets, with REST→socket fallback and auto-reconnect.
+- **Global login throttle** (when `FREE_WEBUI_REDIS_URL` is set): the login
+  rate-limiter uses a shared Redis `INCR`+`EXPIRE` counter, so the limit holds
+  across replicas instead of being N× looser per worker; falls back to the
+  in-process window when Redis is absent or unreachable (logins never lock out on
+  a Redis hiccup). Closes scaling blocker B2.
 - **Cross-replica channels** (opt-in via `FREE_WEBUI_REDIS_URL`): the channel hub
   fans frames out through a pluggable transport — in-process by default, or
   **Redis pub/sub** so N stateless replicas share channel traffic (each replica's

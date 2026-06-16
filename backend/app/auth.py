@@ -141,15 +141,20 @@ def _set_cookie(response: Response, token: str) -> None:
 # enough to blunt credential stuffing on a single instance.
 _login_attempts: dict[str, list[float]] = {}
 
+# Optional shared store for the limiter (a redis.asyncio client), configured at
+# startup when FREE_WEBUI_REDIS_URL is set. With it the throttle is GLOBAL across
+# replicas (a fixed-window INCR+EXPIRE counter); without it, the per-worker
+# in-process sliding window below — enough for a single instance.
+_rate_redis = None
 
-def _check_login_rate(request: Request, username: str) -> None:
-    limit = settings.login_rate_limit
-    if limit <= 0:
-        return
-    window = settings.login_rate_window_seconds
+
+def configure_rate_limiter(redis_client) -> None:
+    global _rate_redis
+    _rate_redis = redis_client
+
+
+def _check_login_rate_local(key: str, limit: int, window: float) -> None:
     now = time.time()
-    ip = request.client.host if request.client else "?"
-    key = f"{ip}\x00{username}"
     recent = [t for t in _login_attempts.get(key, []) if now - t < window]
     if len(recent) >= limit:
         _login_attempts[key] = recent
@@ -158,6 +163,33 @@ def _check_login_rate(request: Request, username: str) -> None:
         )
     recent.append(now)
     _login_attempts[key] = recent
+
+
+async def _check_login_rate(request: Request, username: str) -> None:
+    limit = settings.login_rate_limit
+    if limit <= 0:
+        return
+    window = settings.login_rate_window_seconds
+    ip = request.client.host if request.client else "?"
+    key = f"{ip}\x00{username}"
+    if _rate_redis is not None:
+        try:
+            rkey = f"fw:loginrate:{key}"
+            n = await _rate_redis.incr(rkey)
+            if n == 1:
+                await _rate_redis.expire(rkey, int(window) or 1)
+            if n > limit:
+                raise HTTPException(
+                    status_code=429, detail="too many login attempts; please wait and retry"
+                )
+            return
+        except HTTPException:
+            raise
+        except Exception:
+            # Redis hiccup must never lock everyone out — fall back to the local
+            # window so logins keep working (best-effort throttle).
+            pass
+    _check_login_rate_local(key, limit, window)
 
 
 @router.get("/status", response_model=AuthStatus)
@@ -207,7 +239,7 @@ async def setup_endpoint(body: SetupBody, request: Request, response: Response) 
 
 @router.post("/login", response_model=UserOut)
 async def login_endpoint(body: LoginBody, request: Request, response: Response) -> UserOut:
-    _check_login_rate(request, body.username)
+    await _check_login_rate(request, body.username)
     db = _db(request)
     cur = await db.execute(
         "SELECT id, password_hash, role, token_version FROM users WHERE username = ?",

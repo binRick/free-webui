@@ -5,6 +5,35 @@ text length % 7), so retrieval has a stable ranking and we can assert that
 the retrieved excerpts get prepended to the upstream payload.
 """
 import json
+import math
+
+
+def test_rank_chunks_orders_by_cosine_and_truncates():
+    from app.rag import _rank_chunks, cosine, pack
+
+    q = [1.0, 0.0, 0.0]
+    rows = [
+        ("near", pack([0.9, 0.1, 0.0]), "a.txt"),
+        ("orthogonal", pack([0.0, 1.0, 0.0]), "b.txt"),
+        ("aligned", pack([2.0, 0.0, 0.0]), "c.txt"),  # same direction as q -> best
+    ]
+    ranked = _rank_chunks(q, rows, top_k=2)
+    assert [fn for _s, fn, _t in ranked] == ["c.txt", "a.txt"]  # top-2 by cosine
+    # scores match the reference cosine implementation
+    assert math.isclose(ranked[0][0], cosine(q, [2.0, 0.0, 0.0]), rel_tol=1e-5)
+    assert math.isclose(ranked[1][0], cosine(q, [0.9, 0.1, 0.0]), rel_tol=1e-5)
+
+
+def test_rank_chunks_skips_dimension_mismatch():
+    from app.rag import _rank_chunks, pack
+
+    q = [1.0, 0.0]
+    rows = [
+        ("wrong-dim", pack([1.0, 0.0, 0.0]), "x.txt"),  # 3-d vs 2-d query -> skipped
+        ("ok", pack([1.0, 0.0]), "y.txt"),
+    ]
+    ranked = _rank_chunks(q, rows, top_k=5)
+    assert [fn for _s, fn, _t in ranked] == ["y.txt"]
 
 
 async def _signup(client):

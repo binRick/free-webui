@@ -7,6 +7,7 @@ import struct
 
 import aiosqlite
 import httpx
+import numpy as np
 from fastapi import HTTPException
 
 from .config import settings
@@ -96,6 +97,41 @@ def cosine(a: list[float], b: list[float]) -> float:
     if na == 0.0 or nb == 0.0:
         return 0.0
     return dot / (na * nb)
+
+
+def _rank_chunks(
+    query_vec: list[float], rows: list, top_k: int
+) -> list[tuple[float, str, str]]:
+    """Vectorized cosine top-k over candidate chunks.
+
+    `rows` are ``(text, embedding_blob, filename)``. Returns
+    ``(score, filename, text)`` sorted by score descending. numpy turns the
+    former per-chunk Python loop into one matrix-vector product, so retrieval
+    stays fast as the corpus grows. Only embeddings whose dimension matches the
+    query (same embedding model) are scored.
+    """
+    q = np.asarray(query_vec, dtype=np.float32)
+    qn = float(np.linalg.norm(q))
+    if qn == 0.0:
+        return []
+    width = q.shape[0] * 4  # bytes per float32 embedding of the query's dimension
+    keep: list[int] = []
+    mats: list[np.ndarray] = []
+    for i, (_text, blob, _fn) in enumerate(rows):
+        if len(blob) == width:
+            keep.append(i)
+            mats.append(np.frombuffer(blob, dtype="<f4"))
+    if not mats:
+        return []
+    matrix = np.vstack(mats)  # (k, dim)
+    norms = np.linalg.norm(matrix, axis=1)
+    norms[norms == 0.0] = 1.0
+    sims = (matrix @ q) / (norms * qn)  # cosine similarity per chunk
+    k = min(top_k, sims.shape[0])
+    # argpartition for the top-k, then order just those by score.
+    part = np.argpartition(-sims, k - 1)[:k]
+    order = part[np.argsort(-sims[part])]
+    return [(float(sims[j]), rows[keep[j]][2], rows[keep[j]][0]) for j in order]
 
 
 # ---------- upstream embeddings ----------
@@ -189,13 +225,7 @@ async def retrieve_context(
 
     [query_vec] = await embed_texts(http, [query])
 
-    scored: list[tuple[float, str, str]] = []
-    for text, blob, filename in rows:
-        v = unpack(blob)
-        scored.append((cosine(query_vec, v), filename, text))
-
-    scored.sort(key=lambda x: x[0], reverse=True)
-    top = scored[:top_k]
+    top = _rank_chunks(query_vec, rows, top_k)
     if not top or top[0][0] <= 0.0:
         return None, []
 

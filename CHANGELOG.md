@@ -22,6 +22,9 @@ authoritative status):
   message, **LLM auto-titling**, extra generation params
   (`max_tokens`/penalties/seed).
 - **Knowledge bases**: reusable document **collections** attachable to any chat.
+- **Faster RAG**: numpy-vectorized retrieval (`_rank_chunks`) replaces the
+  per-chunk Python cosine loop with a single matrix-vector product — ~18× faster
+  on 50k chunks with identical top-k (first runtime dependency added: `numpy`).
 - **Custom assistants**: presets graduate into full assistants — model + persona
   (system prompt) + behavior (tools/web/params) + **bundled knowledge
   collections**; applying one configures the chat and attaches its knowledge;

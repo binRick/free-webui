@@ -17,8 +17,22 @@
     type ConversationSummary,
     type Folder
   } from './api';
+  import { i18n, LOCALES, t } from './i18n.svelte';
   import { sidebar } from './sidebarState.svelte';
   import { theme, type ThemeMode } from './theme.svelte';
+
+  // Map the (English) date-bucket / pinned labels to translation keys.
+  const GROUP_KEYS: Record<string, string> = {
+    Today: 'dateGroup.today',
+    Yesterday: 'dateGroup.yesterday',
+    'Previous 7 days': 'dateGroup.previous7',
+    'Previous 30 days': 'dateGroup.previous30',
+    Older: 'dateGroup.older',
+    '📌 Pinned': 'sidebar.pinned'
+  };
+  function groupLabel(label: string): string {
+    return GROUP_KEYS[label] ? t(GROUP_KEYS[label]) : label;
+  }
 
   onMount(async () => {
     await convs.refresh();
@@ -180,6 +194,17 @@
 <aside class:open={sidebar.open}>
   <header>
     <a href="/" class="brand" onclick={openChat}>free-webui</a>
+    <select
+      class="lang"
+      aria-label={t('settings.language')}
+      title={t('settings.language')}
+      value={i18n.locale}
+      onchange={(e) => i18n.set(e.currentTarget.value)}
+    >
+      {#each LOCALES as l (l.code)}
+        <option value={l.code}>{l.code.toUpperCase()}</option>
+      {/each}
+    </select>
     <button
       class="theme-toggle"
       aria-label="cycle theme"
@@ -187,20 +212,20 @@
       onclick={() => theme.cycle()}
     >{THEME_LABEL[theme.mode]}</button>
   </header>
-  <a href="/" class="new" data-sveltekit-reload onclick={openChat}>+ new chat</a>
-  <a href="/temporary" class="temp-link" onclick={openChat} title="a chat that's never saved">👻 temporary chat</a>
-  <a href="/compare" class="temp-link" onclick={openChat} title="send one prompt to several models">⚖ compare models</a>
+  <a href="/" class="new" data-sveltekit-reload onclick={openChat}>{t('sidebar.newChat')}</a>
+  <a href="/temporary" class="temp-link" onclick={openChat}>{t('sidebar.temporaryChat')}</a>
+  <a href="/compare" class="temp-link" onclick={openChat}>{t('sidebar.compareModels')}</a>
   <div class="search">
     <input
       type="search"
-      placeholder="search chats…"
+      placeholder={t('sidebar.searchPlaceholder')}
       bind:value={query}
       oninput={onSearch}
       aria-label="search conversations"
     />
   </div>
   <div class="folder-bar">
-    <button class="folder-chip" class:on={folderFilter === null} onclick={() => selectFolder(null)}>all</button>
+    <button class="folder-chip" class:on={folderFilter === null} onclick={() => selectFolder(null)}>{t('sidebar.allTags')}</button>
     {#each folders as f (f.id)}
       <span class="folder-group" class:on={folderFilter === f.id}>
         <button class="folder-chip" class:on={folderFilter === f.id} onclick={() => selectFolder(f.id)} title={f.name}>📁 {f.name}</button>
@@ -218,14 +243,14 @@
     </div>
   {:else if allTags.length}
     <div class="tag-bar">
-      {#each allTags as t (t)}
-        <button class="tag-chip" onclick={() => selectTag(t)}>{t}</button>
+      {#each allTags as tag (tag)}
+        <button class="tag-chip" onclick={() => selectTag(tag)}>{tag}</button>
       {/each}
     </div>
   {/if}
   <nav>
     {#each grouped as group (group.label)}
-      <div class="group-label">{group.label}</div>
+      <div class="group-label">{groupLabel(group.label)}</div>
       {#each group.items as c (c.id)}
         <div class="row" class:active={page.params.id === c.id}>
           {#if renamingId === c.id}
@@ -251,20 +276,20 @@
         </div>
       {/each}
     {:else}
-      <div class="empty">{query.trim() ? 'no matches' : showArchived ? 'no archived chats' : 'no chats yet'}</div>
+      <div class="empty">{query.trim() ? t('sidebar.noMatches') : showArchived ? t('sidebar.noArchived') : t('sidebar.noChats')}</div>
     {/each}
     <button class="archived-toggle" onclick={toggleArchivedView}>
-      {showArchived ? '← back to chats' : '🗄 archived'}
+      {showArchived ? t('sidebar.backToChats') : t('sidebar.archived')}
     </button>
   </nav>
   {#if auth.user}
     <footer>
       <span class="user" title={auth.user.role}>{auth.user.username}</span>
       <div class="footer-actions">
-        <a class="admin-link" href="/account" title="api keys">🔑 api</a>
-        <a class="admin-link" href="/channels" title="real-time channels">💬 channels</a>
-        <a class="admin-link" href="/notes" title="notes">📝 notes</a>
-        <a class="admin-link" href="/collections" title="knowledge bases">📚 kb</a>
+        <a class="admin-link" href="/account" title="api keys">{t('nav.apiKeys')}</a>
+        <a class="admin-link" href="/channels" title="real-time channels">{t('nav.channels')}</a>
+        <a class="admin-link" href="/notes" title="notes">{t('nav.notes')}</a>
+        <a class="admin-link" href="/collections" title="knowledge bases">{t('nav.knowledge')}</a>
         {#if auth.user.role === 'admin'}
           <a class="admin-link" href="/admin/analytics" title="usage analytics">📊 analytics</a>
           <a class="admin-link" href="/admin/banners" title="broadcast banners">📢 banners</a>
@@ -276,7 +301,7 @@
           <a class="admin-link" href="/admin/connections" title="upstream connections">🔌 conns</a>
           <a class="admin-link" href="/admin/plugins" title="loaded plugins">🧩 plugins</a>
         {/if}
-        <button class="logout" onclick={() => auth.logout()}>log out</button>
+        <button class="logout" onclick={() => auth.logout()}>{t('common.logout')}</button>
       </div>
     </footer>
   {/if}
@@ -305,6 +330,17 @@
     font-family: ui-monospace, SFMono-Regular, monospace;
     font-weight: 600;
     text-decoration: none;
+    flex: 1;
+  }
+  .lang {
+    background: var(--bg-elev);
+    color: var(--text-dim);
+    border: 1px solid var(--border-soft);
+    border-radius: 4px;
+    padding: 0.15rem 0.25rem;
+    font: inherit;
+    font-size: 0.7rem;
+    cursor: pointer;
   }
   .theme-toggle {
     background: var(--bg-elev);

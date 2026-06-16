@@ -69,6 +69,9 @@ authoritative status):
   delivery (message broadcast, presence count, typing indicators) on top of REST
   CRUD + paginated history; an in-process broadcast hub, cookie-authenticated
   sockets, with REST→socket fallback and auto-reconnect.
+- **i18n foundation**: a dependency-free reactive `t()` + per-locale JSON
+  catalogs (**en/es/fr/de**) with an in-app language switcher; sidebar + login
+  wired, the rest of the UI adopting `t()` incrementally.
 - **Resilience**: a central `apiFetch` wrapper redirects to `/login?next=…`
   (with a toast) when a session expires mid-use instead of silently breaking the
   UI; reusable toast store + container; **clone conversation**.

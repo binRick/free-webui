@@ -1,0 +1,49 @@
+{
+  "common.send": "senden",
+  "common.stop": "stopp",
+  "common.save": "speichern",
+  "common.cancel": "abbrechen",
+  "common.delete": "löschen",
+  "common.rename": "umbenennen",
+  "common.clone": "klonen",
+  "common.search": "suchen",
+  "common.loading": "lädt…",
+  "common.close": "schließen",
+  "common.logout": "abmelden",
+
+  "sidebar.newChat": "+ neuer Chat",
+  "sidebar.temporaryChat": "👻 temporärer Chat",
+  "sidebar.compareModels": "⚖ Modelle vergleichen",
+  "sidebar.searchPlaceholder": "Chats durchsuchen…",
+  "sidebar.archived": "🗄 archiviert",
+  "sidebar.backToChats": "← zurück zu den Chats",
+  "sidebar.noChats": "noch keine Chats",
+  "sidebar.noArchived": "keine archivierten Chats",
+  "sidebar.noMatches": "keine Treffer",
+  "sidebar.pinned": "📌 Angeheftet",
+  "sidebar.allTags": "alle",
+
+  "dateGroup.today": "Heute",
+  "dateGroup.yesterday": "Gestern",
+  "dateGroup.previous7": "Letzte 7 Tage",
+  "dateGroup.previous30": "Letzte 30 Tage",
+  "dateGroup.older": "Älter",
+
+  "nav.apiKeys": "🔑 api",
+  "nav.channels": "💬 Kanäle",
+  "nav.notes": "📝 Notizen",
+  "nav.knowledge": "📚 Wissen",
+
+  "login.username": "Benutzername",
+  "login.password": "Passwort",
+  "login.signIn": "anmelden",
+  "login.signingIn": "anmeldung…",
+
+  "composer.placeholder": "Nachricht…  (/ Prompts · @ Modelle · # Wissen)",
+  "composer.regenerate": "neu generieren",
+  "composer.continue": "↪ fortsetzen",
+  "composer.copy": "kopieren",
+  "composer.copied": "✓ kopiert",
+
+  "settings.language": "Sprache"
+}

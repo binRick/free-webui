@@ -6,6 +6,7 @@
   import Sidebar from '$lib/Sidebar.svelte';
   import Toasts from '$lib/Toasts.svelte';
   import { auth } from '$lib/auth.svelte';
+  import { i18n } from '$lib/i18n.svelte';
   import { sidebar } from '$lib/sidebarState.svelte';
   import { theme } from '$lib/theme.svelte';
 
@@ -20,6 +21,7 @@
 
   onMount(async () => {
     theme.init();
+    i18n.init();
     // Register the PWA service worker; ignore failures (e.g. http with no TLS).
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/service-worker.js').catch(() => {});

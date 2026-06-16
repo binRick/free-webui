@@ -1,0 +1,49 @@
+{
+  "common.send": "envoyer",
+  "common.stop": "arrêter",
+  "common.save": "enregistrer",
+  "common.cancel": "annuler",
+  "common.delete": "supprimer",
+  "common.rename": "renommer",
+  "common.clone": "cloner",
+  "common.search": "rechercher",
+  "common.loading": "chargement…",
+  "common.close": "fermer",
+  "common.logout": "se déconnecter",
+
+  "sidebar.newChat": "+ nouveau chat",
+  "sidebar.temporaryChat": "👻 chat temporaire",
+  "sidebar.compareModels": "⚖ comparer les modèles",
+  "sidebar.searchPlaceholder": "rechercher des chats…",
+  "sidebar.archived": "🗄 archivés",
+  "sidebar.backToChats": "← retour aux chats",
+  "sidebar.noChats": "aucun chat pour l’instant",
+  "sidebar.noArchived": "aucun chat archivé",
+  "sidebar.noMatches": "aucun résultat",
+  "sidebar.pinned": "📌 Épinglés",
+  "sidebar.allTags": "tous",
+
+  "dateGroup.today": "Aujourd’hui",
+  "dateGroup.yesterday": "Hier",
+  "dateGroup.previous7": "7 derniers jours",
+  "dateGroup.previous30": "30 derniers jours",
+  "dateGroup.older": "Plus anciens",
+
+  "nav.apiKeys": "🔑 api",
+  "nav.channels": "💬 canaux",
+  "nav.notes": "📝 notes",
+  "nav.knowledge": "📚 base de connaissances",
+
+  "login.username": "nom d’utilisateur",
+  "login.password": "mot de passe",
+  "login.signIn": "se connecter",
+  "login.signingIn": "connexion…",
+
+  "composer.placeholder": "message…  (/ prompts · @ modèles · # connaissances)",
+  "composer.regenerate": "régénérer",
+  "composer.continue": "↪ continuer",
+  "composer.copy": "copier",
+  "composer.copied": "✓ copié",
+
+  "settings.language": "langue"
+}

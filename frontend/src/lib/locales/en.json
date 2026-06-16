@@ -1,0 +1,49 @@
+{
+  "common.send": "send",
+  "common.stop": "stop",
+  "common.save": "save",
+  "common.cancel": "cancel",
+  "common.delete": "delete",
+  "common.rename": "rename",
+  "common.clone": "clone",
+  "common.search": "search",
+  "common.loading": "loading…",
+  "common.close": "close",
+  "common.logout": "log out",
+
+  "sidebar.newChat": "+ new chat",
+  "sidebar.temporaryChat": "👻 temporary chat",
+  "sidebar.compareModels": "⚖ compare models",
+  "sidebar.searchPlaceholder": "search chats…",
+  "sidebar.archived": "🗄 archived",
+  "sidebar.backToChats": "← back to chats",
+  "sidebar.noChats": "no chats yet",
+  "sidebar.noArchived": "no archived chats",
+  "sidebar.noMatches": "no matches",
+  "sidebar.pinned": "📌 Pinned",
+  "sidebar.allTags": "all",
+
+  "dateGroup.today": "Today",
+  "dateGroup.yesterday": "Yesterday",
+  "dateGroup.previous7": "Previous 7 days",
+  "dateGroup.previous30": "Previous 30 days",
+  "dateGroup.older": "Older",
+
+  "nav.apiKeys": "🔑 api",
+  "nav.channels": "💬 channels",
+  "nav.notes": "📝 notes",
+  "nav.knowledge": "📚 kb",
+
+  "login.username": "username",
+  "login.password": "password",
+  "login.signIn": "sign in",
+  "login.signingIn": "signing in…",
+
+  "composer.placeholder": "message…  (/ prompts · @ models · # knowledge)",
+  "composer.regenerate": "regenerate",
+  "composer.continue": "↪ continue",
+  "composer.copy": "copy",
+  "composer.copied": "✓ copied",
+
+  "settings.language": "language"
+}

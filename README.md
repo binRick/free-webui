@@ -136,10 +136,13 @@ while deliberately staying a lean two-tier app. Roughly:
   single-process per replica (the channel hub, rate limiters, etc. are in-process);
   N stateless replicas need the Phase-2 work in `docs/SCALING.md` (Redis pub/sub,
   per-request connection pool).
+- **i18n** — a dependency-free foundation is in place (reactive `t()` + JSON
+  catalogs, **en/es/fr/de**, in-app language switcher); UI-string coverage is
+  partial (sidebar + login wired, the rest adopting `t()` incrementally).
+  open-webui ships dozens of fully-translated languages.
 
 **Missing** ❌ (open-webui has these; free-webui does not yet)
 
-- **i18n** — open-webui ships dozens of UI languages; free-webui is English-only.
 - **Evaluation suite** — arena/leaderboard, model A/B evaluations.
 - **Enterprise auth** — LDAP / SCIM.
 - **Voice/video call mode** (hands-free conversational UI).

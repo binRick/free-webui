@@ -49,6 +49,13 @@ authoritative status):
   `/api/audio/speech`) to any OpenAI-compatible audio backend; the mic records a
   clip and transcribes server-side, speak plays synthesized audio — both fall
   back to the browser Web Speech API when unconfigured.
+- **Voice/video call mode** (`/call`): a hands-free conversational loop —
+  listen (STT) → think (streamed model) → speak (TTS) → listen — with WebAudio
+  RMS **voice-activity detection** for natural turn-taking (Web Speech endpointing
+  as the fallback), a live transcript, mute, and an optional **camera** that
+  attaches a frame to each turn for vision models. The temporary-chat endpoint
+  now accepts multimodal user content (text + inline `data:` images, bounded;
+  remote image URLs refused so it can't be coerced into an SSRF fetch agent).
 - **Organization**: per-conversation **tags** (sidebar tag-filter chips +
   drawer editor) and **folders** (single-home, sidebar filter + drawer move),
   on top of search/pin/archive.

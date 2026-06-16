@@ -1198,8 +1198,10 @@ export async function listModels(): Promise<string[]> {
 }
 
 // Stateless, never-persisted completion: the caller passes the whole transcript.
+// Content may be plain text or multimodal parts (text + inline data: images,
+// used by the voice/video call mode for vision input).
 export async function temporaryChat(
-  messages: { role: string; content: string }[],
+  messages: { role: string; content: string | ContentPart[] }[],
   model: string | null,
   opts: StreamOpts
 ): Promise<void> {

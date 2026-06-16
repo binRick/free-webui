@@ -216,6 +216,7 @@
   <a href="/temporary" class="temp-link" onclick={openChat}>{t('sidebar.temporaryChat')}</a>
   <a href="/compare" class="temp-link" onclick={openChat}>{t('sidebar.compareModels')}</a>
   <a href="/arena" class="temp-link" onclick={openChat}>{t('sidebar.arena')}</a>
+  <a href="/call" class="temp-link" onclick={openChat}>{t('sidebar.call')}</a>
   <div class="search">
     <input
       type="search"

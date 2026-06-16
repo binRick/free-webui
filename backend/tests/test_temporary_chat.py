@@ -81,6 +81,54 @@ async def test_temporary_chat_validates(client):
     assert r.status_code == 422
 
 
+async def test_temporary_chat_forwards_vision_image(client, upstream):
+    """A user turn with a data: image part (call-mode vision) reaches upstream
+    intact as multimodal content."""
+    await _signup(client)
+    upstream.queue_chat(sse(content_chunk("i see it"), finish("stop")))
+    data_url = "data:image/jpeg;base64,/9j/4AAQSkZJR0=="
+    await _consume(
+        client,
+        "/api/chat/temporary",
+        {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "what is this?"},
+                        {"type": "image_url", "image_url": {"url": data_url}},
+                    ],
+                }
+            ],
+        },
+    )
+    sent = upstream.chat_calls[-1]["messages"][-1]
+    assert sent["role"] == "user" and isinstance(sent["content"], list)
+    kinds = [p["type"] for p in sent["content"]]
+    assert kinds == ["text", "image_url"]
+    assert sent["content"][1]["image_url"]["url"] == data_url
+
+
+async def test_temporary_chat_rejects_remote_image_url(client):
+    """Only data: image URLs are allowed — a remote URL must not turn the
+    upstream into an SSRF fetch agent."""
+    await _signup(client)
+    r = await client.post(
+        "/api/chat/temporary",
+        json={
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": "http://169.254.169.254/latest"}}
+                    ],
+                }
+            ]
+        },
+    )
+    assert r.status_code == 422
+
+
 async def test_temporary_chat_enforces_model_access(client, upstream):
     await _signup(client)  # alice is admin
     me = (await client.get("/api/auth/me")).json()

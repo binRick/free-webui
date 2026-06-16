@@ -68,24 +68,30 @@ If `open-webui` is the kitchen-sink reference, `free-webui` aims to be the lean,
 ## Status
 
 **v0.1 — a full self-host chat platform.** Built on a SvelteKit SPA + FastAPI
-backend + SQLite, with a 260+-test backend suite and CI. What works today:
+backend, running on **SQLite (zero-config default) or Postgres**, with a
+320+-test backend suite that runs against **both** backends in CI. What works today:
 
 - **Chat** — streaming against any OpenAI-compatible upstream (Ollama, vLLM, LM
   Studio, llama.cpp, OpenAI); persistence; sidebar with search, date grouping,
   rename, **pin/archive**, **tags + folders**; **searchable model picker**;
-  in-composer **`/` prompts · `@` models · `#` knowledge** commands; markdown
-  (shiki/KaTeX/mermaid); edit + **regenerate any turn** + **delete** with
-  non-destructive variant navigation (`◀ n/m ▶`); **clone**; per-chat params incl.
-  `max_tokens`/penalties/seed; **LLM auto-titling**; copy + 👍/👎 per message.
+  in-composer **`/` prompts · `@` models · `#` knowledge** commands +
+  **`{{variable}}` prompt inputs**; markdown (shiki/KaTeX/mermaid); edit +
+  **regenerate any turn** + **delete** + **continue** with non-destructive
+  variant navigation (`◀ n/m ▶`); **clone**; **temporary (unsaved) chat** and a
+  **compare-models** view; per-chat params incl. `max_tokens`/penalties/seed;
+  **LLM auto-titling**; copy + 👍/👎 per message.
 - **Knowledge** — per-chat RAG uploads **and reusable knowledge-base collections**
   attachable to any conversation; SearXNG web search; multimodal image input; a
   blob **object store** (generated/uploaded images served via `/api/files/{id}`
   instead of base64-in-DB); a per-user markdown **notes** workspace.
-- **Tools** — function-calling loop with built-ins, MCP servers, image generation
-  (OpenAI/A1111/ComfyUI), a sandboxed `run_python` code interpreter, and plugins.
+- **Tools** — function-calling loop with built-ins, **MCP servers**, **OpenAPI
+  tool servers**, image generation (OpenAI/A1111/ComfyUI), a sandboxed
+  `run_python` code interpreter, custom assistants (presets bundling
+  model+persona+tools+knowledge), and a plugin/pipeline framework.
 - **Multi-user** — argon2 auth, **OIDC/SSO**, server-side session revocation,
-  user **groups + per-model access control**, admin user management + **audit log**
-  + **feedback log**; mid-session expiry redirects to login instead of breaking.
+  user **groups + per-model access control**, admin user management, **audit
+  log**, **feedback log**, a **usage-analytics dashboard**, and **broadcast
+  banners**; mid-session expiry redirects to login instead of breaking.
 - **Connectivity** — **multiple upstream connections** (per-model routing); an
   own OpenAI-compatible `/v1` surface (chat/models/embeddings) **and an Anthropic
   `/v1/messages` proxy** (Claude Code / the Anthropic SDK can target free-webui);
@@ -95,12 +101,55 @@ backend + SQLite, with a 260+-test backend suite and CI. What works today:
   over WebSocket: live messages, presence, typing); memories; prompt/preset
   libraries; server or browser voice; PWA.
 
-Security-sensitive features (auth/access/connections/OIDC) and the object store
-were each shipped with adversarial multi-agent review. See
-[`docs/ROADMAP.md`](./docs/ROADMAP.md) for what's done vs. planned.
+Security-sensitive features (auth/access/connections/OIDC, the object store, the
+Postgres backend, channels, OpenAPI tools) were each shipped with adversarial
+multi-agent review. See [`docs/ROADMAP.md`](./docs/ROADMAP.md) for what's done vs.
+planned and [`docs/SCALING.md`](./docs/SCALING.md) for the Postgres/scaling work.
 
-Still deferred / non-goals: inline-citation hovercards, real-time channels,
-evaluation/leaderboard, LDAP/SCIM, full i18n.
+## Compared to open-webui
+
+free-webui is a clean-room, MIT-licensed reimplementation. It targets parity on
+the **product** — the day-to-day chat, knowledge, tools, and multi-user surface —
+while deliberately staying a lean two-tier app. Roughly:
+
+**At parity** ✅
+
+| Area | free-webui |
+| --- | --- |
+| Chat core | streaming, markdown (code/KaTeX/mermaid), edit, **regenerate any turn**, **continue**, branching/variants, copy, 👍/👎, auto-titling, follow-ups |
+| Organization | search, date grouping, pin/archive, **tags**, **folders**, **clone**, **temporary chat** |
+| Composer | searchable model picker, `/`·`@`·`#` commands, **prompt variables** with custom input |
+| Knowledge / RAG | per-chat uploads, reusable **collections**, web search, **citations** (numpy-vectorized retrieval) |
+| Tools | function-calling loop, **MCP**, **OpenAPI tool servers**, code interpreter, image generation, custom assistants, plugins/pipelines |
+| Models | **multiple upstream connections**, Ollama model management, per-model access control, per-chat params |
+| Multi-user / admin | argon2 auth, **OIDC/SSO**, groups + RBAC, audit log, feedback log, **usage analytics**, **broadcast banners** |
+| Collaboration | **real-time channels** (WebSocket), **notes**, public share links, **multi-model compare** |
+| Voice | server-side STT/TTS proxy + browser Web Speech fallback |
+| API | OpenAI-compatible `/v1`, **Anthropic `/v1/messages` proxy**, per-user API keys |
+| Deployment | **SQLite or Postgres** (full suite green on both) |
+
+**Partial / weaker** ⚠️
+
+- **RAG retrieval** — numpy-vectorized cosine (fast, scales to ~100k chunks) but
+  no ANN index or BM25 hybrid yet (would add `sqlite-vec`).
+- **Horizontal scaling** — Postgres is supported, but the app is still
+  single-process per replica (the channel hub, rate limiters, etc. are in-process);
+  N stateless replicas need the Phase-2 work in `docs/SCALING.md` (Redis pub/sub,
+  per-request connection pool).
+
+**Missing** ❌ (open-webui has these; free-webui does not yet)
+
+- **i18n** — open-webui ships dozens of UI languages; free-webui is English-only.
+- **Evaluation suite** — arena/leaderboard, model A/B evaluations.
+- **Enterprise auth** — LDAP / SCIM.
+- **Voice/video call mode** (hands-free conversational UI).
+- **S3/object storage** for media (blobs live in the DB today).
+- Assorted polish: inline-citation hovercards, fine-grained per-feature
+  permission matrix, custom CSS/theming beyond light/dark.
+
+Net: strong parity for everyday single- / small-team self-hosting (now including
+Postgres); the meaningful remaining distance is **i18n breadth**, the
+**evaluation suite**, and **multi-replica horizontal scaling**.
 
 ---
 

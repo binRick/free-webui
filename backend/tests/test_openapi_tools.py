@@ -6,6 +6,19 @@ async def _signup(client):
     await client.post("/api/auth/setup", json={"username": "alice", "password": "hunter22hunter"})
 
 
+def _patched_client(handler):
+    """A drop-in httpx.AsyncClient subclass whose requests route through a mock
+    transport — so openapi_tools' inline httpx clients hit our handler."""
+    Orig = httpx.AsyncClient
+
+    class Patched(Orig):
+        def __init__(self, *a, **k):
+            k.setdefault("transport", httpx.MockTransport(handler))
+            super().__init__(*a, **k)
+
+    return Patched
+
+
 # ---- CRUD ----
 
 async def test_openapi_server_crud(client):
@@ -122,14 +135,7 @@ async def test_openapi_compose_and_dispatch(client, monkeypatch):
             return httpx.Response(200, json={"tempC": 18})
         return httpx.Response(404)
 
-    Orig = httpx.AsyncClient
-
-    class Patched(Orig):
-        def __init__(self, *a, **k):
-            k.setdefault("transport", httpx.MockTransport(handler))
-            super().__init__(*a, **k)
-
-    monkeypatch.setattr(httpx, "AsyncClient", Patched)
+    monkeypatch.setattr(httpx, "AsyncClient", _patched_client(handler))
 
     from app.main import app
     from app.mcp import compose_tool_specs, run_tool
@@ -142,6 +148,46 @@ async def test_openapi_compose_and_dispatch(client, monkeypatch):
     result = await run_tool(db, me, dispatch, f"openapi_{sid}_getWeather", {"city": "Brooklyn"})
     assert "18" in result  # the operation response body is returned
     assert op_calls and op_calls[0].get("city") == "Brooklyn"  # query param forwarded
+
+
+async def test_openapi_spec_size_cap(client, monkeypatch):
+    """A spec larger than the byte cap (gzip-bomb / huge body DoS) is rejected,
+    so the server is skipped during composition rather than buffered."""
+    import json as _json
+
+    from app import openapi_tools
+
+    monkeypatch.setattr(openapi_tools, "_MAX_SPEC_BYTES", 50)
+    await _signup(client)
+    me = (await client.get("/api/auth/me")).json()["id"]
+    await client.post(
+        "/api/openapi_servers", json={"name": "big", "url": "http://tools.test/openapi.json"}
+    )
+    big = {"paths": {"/x": {"get": {"operationId": "x" + "y" * 300}}}}  # > 50 bytes
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=_json.dumps(big).encode())
+
+    monkeypatch.setattr(httpx, "AsyncClient", _patched_client(handler))
+    from app.main import app
+    from app.mcp import compose_tool_specs
+
+    specs, _ = await compose_tool_specs(app.state.db, me)
+    assert not any(s["function"]["name"].startswith("openapi_") for s in specs)
+
+
+async def test_openapi_per_user_server_cap(client, monkeypatch):
+    from app import openapi_tools
+
+    monkeypatch.setattr(openapi_tools, "_MAX_SERVERS", 2)
+    await _signup(client)
+    for i in range(2):
+        assert (
+            await client.post("/api/openapi_servers", json={"name": f"s{i}", "url": "http://t/spec"})
+        ).status_code == 200
+    assert (
+        await client.post("/api/openapi_servers", json={"name": "s3", "url": "http://t/spec"})
+    ).status_code == 409
 
 
 async def test_openapi_unknown_or_removed_server(client, monkeypatch):

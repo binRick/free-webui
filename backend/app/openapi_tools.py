@@ -7,6 +7,7 @@ the request is built from the operation (path/query/header/body params) and sent
 to the resolved endpoint. Every outbound URL (spec fetch + each operation call)
 is SSRF-guarded.
 """
+import json
 import re
 import time
 from typing import Any
@@ -27,6 +28,8 @@ router = APIRouter(
 OPENAPI_PREFIX = "openapi_"
 _TIMEOUT = 30.0
 _MAX_RESULT = 8000
+_MAX_SPEC_BYTES = 5 * 1024 * 1024  # cap the spec fetch (a public host could gzip-bomb it)
+_MAX_SERVERS = 50  # per-user cap on configured servers (bounds the per-turn fan-out)
 
 
 # ---- models ----
@@ -86,6 +89,11 @@ async def create_server(body: ServerIn, request: Request, user: dict = Depends(c
     import json
 
     db = _db(request)
+    cur = await db.execute(
+        "SELECT COUNT(*) FROM openapi_servers WHERE user_id = ?", (user["id"],)
+    )
+    if (await cur.fetchone())[0] >= _MAX_SERVERS:
+        raise HTTPException(status_code=409, detail=f"too many servers (max {_MAX_SERVERS})")
     now = int(time.time())
     sid = await db.insert(
         "INSERT INTO openapi_servers (user_id, name, url, headers, enabled, created_at, updated_at) "
@@ -236,12 +244,19 @@ async def list_enabled_servers(db: aiosqlite.Connection, user_id: int) -> list[d
 
 async def _fetch_spec(url: str, headers: dict | None) -> dict:
     await check_url(url)
+    # Stream with a hard byte cap so a malicious/huge spec (incl. a gzip bomb —
+    # aiter_bytes yields DECOMPRESSED bytes) can't exhaust memory.
     async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-        r = await c.get(url, headers=headers or {})
-    if r.status_code >= 400:
-        raise RuntimeError(f"openapi spec http {r.status_code}")
+        async with c.stream("GET", url, headers=headers or {}) as r:
+            if r.status_code >= 400:
+                raise RuntimeError(f"openapi spec http {r.status_code}")
+            buf = bytearray()
+            async for chunk in r.aiter_bytes():
+                buf += chunk
+                if len(buf) > _MAX_SPEC_BYTES:
+                    raise RuntimeError("openapi spec too large")
     try:
-        return r.json()
+        return json.loads(bytes(buf))
     except ValueError:
         raise RuntimeError("openapi spec was not JSON")
 
@@ -293,7 +308,15 @@ async def run_openapi_tool(
             kwargs: dict[str, Any] = {"params": query, "headers": headers}
             if body and op["method"] in ("post", "put", "patch"):
                 kwargs["json"] = body
-            r = await c.request(op["method"].upper(), url, **kwargs)
+            # Stream + cap the result (we only return _MAX_RESULT chars anyway).
+            async with c.stream(op["method"].upper(), url, **kwargs) as r:
+                status = r.status_code
+                buf = bytearray()
+                async for chunk in r.aiter_bytes():
+                    buf += chunk
+                    if len(buf) >= _MAX_RESULT:
+                        break
     except (httpx.HTTPError, RuntimeError) as e:
         return f"error: {e}"
-    return f"HTTP {r.status_code}\n{r.text[:_MAX_RESULT]}"
+    text = bytes(buf[:_MAX_RESULT]).decode("utf-8", errors="replace")
+    return f"HTTP {status}\n{text}"

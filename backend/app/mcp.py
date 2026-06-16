@@ -25,6 +25,7 @@ router = APIRouter(
 
 MCP_PREFIX = "mcp_"
 _MAX_RPC_TIMEOUT = 30.0
+_MAX_RPC_BYTES = 5 * 1024 * 1024  # cap the response body (a server could gzip-bomb it)
 
 
 class ServerIn(BaseModel):
@@ -176,11 +177,17 @@ async def _rpc(url: str, headers: dict[str, str] | None, method: str, params: di
     if headers:
         merged.update(headers)
     async with httpx.AsyncClient(timeout=_MAX_RPC_TIMEOUT, headers=merged) as c:
-        r = await c.post(url, json=payload)
-    if r.status_code >= 400:
-        raise RuntimeError(f"mcp http {r.status_code}: {r.text[:200]}")
+        async with c.stream("POST", url, json=payload) as r:
+            status = r.status_code
+            buf = bytearray()
+            async for chunk in r.aiter_bytes():
+                buf += chunk
+                if len(buf) > _MAX_RPC_BYTES:
+                    raise RuntimeError("mcp response too large")
+    if status >= 400:
+        raise RuntimeError(f"mcp http {status}: {bytes(buf[:200]).decode(errors='replace')}")
     try:
-        body = r.json()
+        body = json.loads(bytes(buf))
     except ValueError:
         raise RuntimeError("mcp returned non-JSON body")
     if "error" in body:

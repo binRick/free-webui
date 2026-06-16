@@ -77,6 +77,36 @@ async def test_hub_isolates_channels_and_drops_dead():
     assert await h.count("c1") == 1
 
 
+async def test_slow_socket_does_not_block_others(monkeypatch):
+    """A backpressured (slow-but-open) socket must time out and be dropped
+    without stalling the fan-out for everyone else — critical under Redis, where
+    one shared subscriber task drains every channel."""
+    import asyncio
+    import time
+
+    import app.channels as channels_mod
+    from app.channels import ChannelHub
+
+    monkeypatch.setattr(channels_mod, "_SEND_TIMEOUT", 0.1)
+    h = ChannelHub()
+
+    class SlowWS:
+        async def send_json(self, m):
+            await asyncio.sleep(5)  # never completes within the timeout
+
+    fast = FakeWS()
+    await h.connect("c1", SlowWS())
+    await h.connect("c1", fast)
+
+    start = time.monotonic()
+    await h.broadcast("c1", {"type": "message", "content": "hi"})
+    elapsed = time.monotonic() - start
+
+    assert fast.sent == [{"type": "message", "content": "hi"}]  # fast client served
+    assert elapsed < 1.0  # did NOT wait 5s for the slow socket (timed out at 0.1s)
+    assert await h.count("c1") == 1  # slow socket dropped; fast remains
+
+
 # ---- REST ----
 
 async def _signup(client, username="alice", password="hunter22hunter"):

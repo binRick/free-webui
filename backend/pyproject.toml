@@ -25,6 +25,9 @@ test = [
 postgres = [
     "asyncpg>=0.29",
 ]
+redis = [
+    "redis>=5.0",
+]
 
 [build-system]
 requires = ["hatchling"]

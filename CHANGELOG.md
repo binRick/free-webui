@@ -90,6 +90,15 @@ authoritative status):
   delivery (message broadcast, presence count, typing indicators) on top of REST
   CRUD + paginated history; an in-process broadcast hub, cookie-authenticated
   sockets, with REST→socket fallback and auto-reconnect.
+- **Cross-replica channels** (opt-in via `FREE_WEBUI_REDIS_URL`): the channel hub
+  fans frames out through a pluggable transport — in-process by default, or
+  **Redis pub/sub** so N stateless replicas share channel traffic (each replica's
+  subscriber delivers to its local sockets; the publisher delivers via its own
+  subscription, so there's exactly one delivery path). `redis` is an optional,
+  lazily-imported dependency. Closes the first horizontal-scaling blocker in
+  `docs/SCALING.md`; validated against a real Redis (two-instance fan-out + a
+  REST-post→Redis→socket round-trip). Presence count / per-user WS cap stay
+  per-replica for now.
 - **Evaluation suite**: a model **arena** (`/arena`) runs blind A/B battles —
   two anonymised models answer one prompt, you vote a winner/tie/both-bad, and
   identities are revealed after the vote — plus a **leaderboard**
@@ -127,6 +136,12 @@ authoritative status):
   inline amplification on replay/share (per-payload byte budget); orphaned blob
   reclamation (GC on message truncation + FK CASCADE on conversation delete);
   self-contained clones (copy their own blobs).
+- Redis channel broadcaster (adversarial review): the subscriber now **self-heals**
+  on a dropped Redis connection (supervised reconnect with bounded backoff +
+  logging, instead of dying silently and going dark); per-socket sends run
+  **concurrently with a deadline** so one backpressured client can't head-of-line
+  stall the shared subscriber and freeze delivery for every channel; `aclose()`
+  no longer swallows shutdown cancellation; `use_redis()` is idempotent.
 - S3 object store (adversarial review): cross-tenant blob exfil via **clone**
   (`clone_file_refs` now conversation-scoped like the replay path — a forged ref
   to another conversation's blob is no longer re-owned by the cloner); SigV4

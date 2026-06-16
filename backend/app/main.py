@@ -25,6 +25,7 @@ from .config import settings
 from .admin_analytics import router as admin_analytics_router
 from .audio import router as audio_router
 from .banners import router as banners_router
+from .channels import hub as channel_hub
 from .channels import router as channels_router
 from .evaluations import router as evaluations_router
 from .temporary_chat import router as temporary_chat_router
@@ -183,9 +184,14 @@ async def lifespan(app: FastAPI):
     # as a process singleton the file helpers read.
     app.state.object_store = make_object_store()
     configure_store(app.state.object_store)
+    # Cross-replica channels: upgrade the in-process hub to Redis pub/sub when
+    # configured (no-op default keeps the single-process fan-out).
+    if settings.redis_url:
+        await channel_hub.use_redis(settings.redis_url)
     try:
         yield
     finally:
+        await channel_hub.aclose()
         await app.state.http.aclose()
         await app.state.db.close()
         if app.state.object_store is not None:

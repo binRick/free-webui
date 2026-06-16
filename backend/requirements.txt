@@ -10,6 +10,7 @@ python-multipart>=0.0.20
 pypdf>=5.0
 numpy>=1.26
 asyncpg>=0.29  # optional Postgres backend (imported lazily, only for postgresql:// URLs)
+redis>=5.0  # optional: cross-replica channels via pub/sub (lazy, only when FREE_WEBUI_REDIS_URL set)
 
 # Test-only deps
 pytest>=8.3

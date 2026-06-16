@@ -135,10 +135,10 @@ while deliberately staying a lean two-tier app. Roughly:
   (BM25 keyword) retrieval fused with Reciprocal Rank Fusion, so exact-term
   matches (names, IDs, code symbols) surface alongside semantic ones. Still a
   brute-force scan — no ANN index yet (would add `sqlite-vec` for >100k chunks).
-- **Horizontal scaling** — Postgres is supported, but the app is still
-  single-process per replica (the channel hub, rate limiters, etc. are in-process);
-  N stateless replicas need the Phase-2 work in `docs/SCALING.md` (Redis pub/sub,
-  per-request connection pool).
+- **Horizontal scaling** — Postgres is supported and real-time **channels now
+  fan out across replicas via Redis pub/sub** (`FREE_WEBUI_REDIS_URL`); the
+  remaining in-process bits (login limiter, per-user WS cap / presence count) and
+  the per-request connection pool are the rest of Phase-2 in `docs/SCALING.md`.
 - **i18n** — a dependency-free foundation is in place (reactive `t()` + JSON
   catalogs, **en/es/fr/de**, in-app language switcher); UI-string coverage is
   partial (sidebar + login wired, the rest adopting `t()` incrementally).

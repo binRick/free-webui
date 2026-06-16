@@ -5,8 +5,9 @@ CRUD + history + posting (persist then broadcast); a per-channel WebSocket pushe
 live ``message``/``typing``/``presence`` frames and also accepts inbound
 ``message``/``typing`` for true real-time posting.
 
-The broadcast hub is in-process (a module-level singleton). That fits the
-single-process design; horizontal scaling would need an external pub/sub (Redis).
+The broadcast hub fans frames out through a pluggable transport: in-process by
+default (a module-level singleton, zero-config), or Redis pub/sub across replicas
+when ``FREE_WEBUI_REDIS_URL`` is set (see :mod:`app.broadcaster`).
 """
 
 import asyncio
@@ -28,6 +29,7 @@ from fastapi import (
 from pydantic import BaseModel, Field
 
 from .auth import SESSION_COOKIE, current_user, read_session
+from .broadcaster import LocalBroadcaster, RedisBroadcaster
 from .config import settings
 
 router = APIRouter(prefix="/api/channels", tags=["channels"])
@@ -37,6 +39,10 @@ _MAX_CONTENT = 4000
 # writes / broadcasts a single socket can drive.
 _FRAME_RATE_MAX = 20
 _FRAME_RATE_WINDOW = 10.0
+# Per-socket send deadline. A backpressured (slow-but-open) client must not stall
+# the fan-out — under Redis there is ONE subscriber task draining all channels,
+# so a single hung send would freeze delivery everywhere. Time out → treat dead.
+_SEND_TIMEOUT = 10.0
 
 
 class ChannelHub:
@@ -46,6 +52,9 @@ class ChannelHub:
         self._channels: dict[str, set[WebSocket]] = {}
         self._user_counts: dict[int, int] = {}
         self._lock = asyncio.Lock()
+        # Fan-out transport. Defaults to in-process; swapped for Redis at startup
+        # when configured. deliver_local is what actually writes to local sockets.
+        self._broadcaster = LocalBroadcaster(self._deliver_local)
 
     async def try_reserve(self, user_id: int, cap: int) -> bool:
         """Reserve a connection slot for a user, capping concurrent sockets."""
@@ -80,18 +89,47 @@ class ChannelHub:
             return len(self._channels.get(channel_id, ()))
 
     async def broadcast(self, channel_id: str, message: dict) -> None:
+        """Publish a frame to all subscribers of a channel, across replicas when
+        Redis is configured. Delegates to the transport, which calls back into
+        :meth:`_deliver_local` on each replica."""
+        await self._broadcaster.publish(channel_id, message)
+
+    async def _deliver_local(self, channel_id: str, message: dict) -> None:
         # Snapshot under the lock, send outside it so a slow/dead socket can't
-        # block the whole fan-out or deadlock against (dis)connect.
+        # block the whole fan-out or deadlock against (dis)connect. Sends run
+        # CONCURRENTLY with a per-socket deadline so one backpressured client
+        # can't serialize-stall the others (or, under Redis, the shared
+        # subscriber that drains every channel).
         async with self._lock:
             conns = list(self._channels.get(channel_id, ()))
-        dead: list[WebSocket] = []
-        for ws in conns:
+        if not conns:
+            return
+
+        async def _send(ws: WebSocket) -> WebSocket | None:
             try:
-                await ws.send_json(message)
+                await asyncio.wait_for(ws.send_json(message), timeout=_SEND_TIMEOUT)
+                return None
             except Exception:
-                dead.append(ws)
-        for ws in dead:
-            await self.disconnect(channel_id, ws)
+                return ws  # errored or timed out → treat as dead
+
+        results = await asyncio.gather(*(_send(ws) for ws in conns))
+        for ws in results:
+            if ws is not None:
+                await self.disconnect(channel_id, ws)
+
+    async def use_redis(self, url: str) -> None:
+        """Upgrade the transport to Redis pub/sub (called at startup when
+        ``FREE_WEBUI_REDIS_URL`` is set). Idempotent: tears down any prior
+        transport before swapping, so a repeat call can't orphan a subscriber
+        task or leak Redis connections."""
+        old = self._broadcaster
+        broadcaster = RedisBroadcaster(url, self._deliver_local)
+        await broadcaster.start()
+        self._broadcaster = broadcaster
+        await old.aclose()
+
+    async def aclose(self) -> None:
+        await self._broadcaster.aclose()
 
 
 hub = ChannelHub()

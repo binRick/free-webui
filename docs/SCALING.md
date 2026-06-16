@@ -5,7 +5,21 @@
 `FREE_WEBUI_DATABASE_URL=postgresql://…` and the app runs on Postgres instead of
 SQLite. The **entire test suite passes on both backends** (a `backend-test-postgres`
 CI job runs it against a Postgres service via `FREE_WEBUI_TEST_DATABASE_URL`).
-SQLite remains the zero-config default. Remaining: Phase 2 (N stateless replicas
+SQLite remains the zero-config default.
+
+**Phase 2 (started): cross-replica real-time channels — landed.** The first
+in-process-state blocker (B1) is closed: the `ChannelHub` now fans frames out
+through a pluggable transport (`app/broadcaster.py`). Set `FREE_WEBUI_REDIS_URL`
+and every channel `message`/`typing`/`presence` frame is published to Redis
+pub/sub and delivered to local sockets on **every** replica's subscriber, so the
+workspace chat no longer fragments per-replica. `redis` is an optional, lazily
+imported dependency; unset → the in-process hub (single-replica) as before.
+Validated against a real Redis (two-instance fan-out + a REST-post→Redis→socket
+round-trip). *Still per-replica (a documented follow-up):* the numeric presence
+`online` count and the per-user WS connection cap (B10) — a globally-accurate
+version needs shared Redis counters with liveness TTLs.
+
+Remaining: the rest of Phase 2 (login limiter B2, OIDC first-admin lock B3, etc.
 — §3/§5) and the connection-pool/per-request-transaction refinement (the Postgres
 backend currently uses one lock-serialized connection per replica, the same
 concurrency profile as the shared SQLite connection).
@@ -80,7 +94,7 @@ or **silently diverges** (rate limits N× looser) across replicas.
 
 | # | Singleton | Where | What breaks with 2+ replicas | Fix | Effort |
 | --- | --- | --- | --- | --- | --- |
-| B1 | **`ChannelHub`** real-time broadcast | `channels.py:42-97` (`hub = ChannelHub()`) | A channel message/presence/typing only reaches clients on the **same replica** — the workspace chat silently fragments. | **Redis pub/sub** (best for high-rate ephemeral frames): publish each frame to `channel:{id}`; every replica subscribes and fans out to *its* local sockets. (Or Postgres `LISTEN/NOTIFY`.) | L |
+| B1 | **`ChannelHub`** real-time broadcast ✅ **done** | `channels.py` + `broadcaster.py` | A channel message/presence/typing only reaches clients on the **same replica** — the workspace chat silently fragments. | **Redis pub/sub** (landed): each frame is published to `freewebui:channel:{id}`; every replica's subscriber fans out to *its* local sockets. Set `FREE_WEBUI_REDIS_URL`. | L |
 | B2 | **Login rate-limiter** | `auth.py:142` (`_login_attempts` dict) | Effective limit is **N× looser**; resets on any replica restart. | Redis `INCR` + `EXPIRE` window (canonical distributed throttle) — one global counter. | S |
 | B3 | **OIDC first-user→admin provision lock** | `oidc.py:35` (`_provision_lock`) | Process-local `asyncio.Lock` no longer serializes the privilege decision across replicas (race on who becomes first admin). | Postgres `pg_advisory_xact_lock(<const>)` around the count+insert. | M |
 | B4 | **Lifespan schema/migration on every boot** | `main.py:161-182` | N replicas run ad-hoc DDL concurrently against one Postgres → races. | Gate migrations behind `pg_advisory_lock` so exactly one replica applies them (or move to out-of-band migrations — §4). | M |

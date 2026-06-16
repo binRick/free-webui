@@ -95,6 +95,11 @@ class Settings(BaseSettings):
     s3_force_path_style: bool = True  # MinIO/Ceph need path-style; AWS allows it
     s3_prefix: str = ""  # optional key prefix, e.g. "media/"
 
+    # Redis pub/sub for cross-replica real-time channels. Set to a redis:// URL to
+    # let N stateless app replicas share channel traffic; empty -> single-process
+    # in-process fan-out (the zero-config default). See docs/SCALING.md.
+    redis_url: str = ""
+
     # Web search: SearXNG-compatible endpoint (returns JSON when ?format=json).
     # Leave empty to disable globally.
     searxng_url: str = ""

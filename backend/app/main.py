@@ -30,7 +30,9 @@ from .evaluations import router as evaluations_router
 from .temporary_chat import router as temporary_chat_router
 from .conversations import router as conversations_router
 from .db import open_db
+from .files import configure_store
 from .files import router as files_router
+from .objectstore import make_object_store
 from .folders import router as folders_router
 from .notes import router as notes_router
 from .openapi_tools import router as openapi_tools_router
@@ -177,11 +179,18 @@ async def lifespan(app: FastAPI):
     )
     app.state.db = await open_db(settings.database_url or settings.db_path)
     app.state.plugins = load_plugins(settings.plugins_dir)
+    # Optional S3 object store for media blobs (None -> DB storage). Configured
+    # as a process singleton the file helpers read.
+    app.state.object_store = make_object_store()
+    configure_store(app.state.object_store)
     try:
         yield
     finally:
         await app.state.http.aclose()
         await app.state.db.close()
+        if app.state.object_store is not None:
+            await app.state.object_store.aclose()
+        configure_store(None)
 
 
 app = FastAPI(title="free-webui", version="0.1.0", lifespan=lifespan)

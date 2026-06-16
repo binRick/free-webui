@@ -19,9 +19,11 @@ from .connections import Connection, conn_headers, conn_url, config_connection, 
 from .files import (
     _INLINE_BUDGET,
     clone_file_refs,
+    collect_conversation_objects,
     expand_file_refs,
     externalize_parts,
     gc_orphan_files,
+    purge_objects,
     store_data_url,
 )
 from .mcp import compose_tool_specs, run_tool as run_dispatch
@@ -651,7 +653,7 @@ async def clone_conversation(
     for role, content, sources, created in await cur.fetchall():
         # Give the clone its own copies of any referenced blobs so it is
         # self-contained (deleting the original can't break the clone's images).
-        content = await clone_file_refs(db, user["id"], new_id, content)
+        content = await clone_file_refs(db, user["id"], new_id, cid, content)
         await db.execute(
             "INSERT INTO messages (conversation_id, role, content, sources, active, created_at) "
             "VALUES (?, ?, ?, ?, 1, ?)",
@@ -775,8 +777,13 @@ async def delete_conversation(
 ):
     db = _db(request)
     await _owned(db, cid, user["id"])
+    # Enumerate S3 objects BEFORE the cascade clears the index rows, then delete
+    # them only AFTER the row delete commits (the cascade can't reach S3; purging
+    # post-commit means a rollback strands an object, never breaks a live row).
+    stale = await collect_conversation_objects(db, cid)
     await db.execute("DELETE FROM conversations WHERE id = ?", (cid,))
     await db.commit()
+    await purge_objects(stale)
 
 
 def _safe_filename(name: str) -> str:
@@ -974,7 +981,12 @@ async def regenerate_message(
     await db.execute(
         "DELETE FROM messages WHERE conversation_id = ? AND id > ?", (cid, tip_id)
     )
-    await gc_orphan_files(db, cid)
+    stale = await gc_orphan_files(db, cid)
+    # Commit the truncation before purging S3 objects (and before the streamed
+    # regenerate persists its own reply), so a deleted object is always durably
+    # unreferenced first.
+    await db.commit()
+    await purge_objects(stale)
     return await _regenerate_assistant(request, db, http, cid, conv, user, msg_id, body.model)
 
 
@@ -1119,10 +1131,11 @@ async def edit_message(
     await db.execute(
         "DELETE FROM messages WHERE conversation_id = ? AND id > ?", (cid, msg_id)
     )
-    await gc_orphan_files(db, cid)
+    stale = await gc_orphan_files(db, cid)
     await _maybe_update_title(db, cid, conv["title"], _content_preview(body.content))
     chosen_model = await _maybe_update_model(db, cid, body.model, conv["model"])
     await db.commit()
+    await purge_objects(stale)
 
     history = await _load_history(db, cid)
     query_text = _content_text(body.content)
@@ -1160,11 +1173,12 @@ async def delete_message(
     await db.execute(
         "DELETE FROM messages WHERE conversation_id = ? AND id >= ?", (cid, msg_id)
     )
-    await gc_orphan_files(db, cid)
+    stale = await gc_orphan_files(db, cid)
     await db.execute(
         "UPDATE conversations SET updated_at = ? WHERE id = ?", (int(time.time()), cid)
     )
     await db.commit()
+    await purge_objects(stale)
     return {"ok": True}
 
 

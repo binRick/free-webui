@@ -258,8 +258,9 @@ CREATE TABLE IF NOT EXISTS files (
     user_id         INTEGER REFERENCES users(id) ON DELETE SET NULL,
     conversation_id TEXT REFERENCES conversations(id) ON DELETE CASCADE,
     mime            TEXT NOT NULL,
-    data            BLOB NOT NULL,
+    data            BLOB NOT NULL,        -- the bytes (DB storage) or empty when storage='s3'
     size            INTEGER NOT NULL,
+    storage         TEXT NOT NULL DEFAULT 'db',  -- 'db' | 's3'
     created_at      INTEGER NOT NULL
 );
 
@@ -394,6 +395,8 @@ _MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("messages", "sources", "TEXT"),
     # The model that produced an assistant message, for the evaluation leaderboard.
     ("messages", "model", "TEXT"),
+    # Where a file's bytes live: 'db' (files.data) or 's3' (object store).
+    ("files", "storage", "TEXT NOT NULL DEFAULT 'db'"),
     ("users", "token_version", "INTEGER NOT NULL DEFAULT 0"),
     ("users", "oidc_sub", "TEXT"),
     ("presets", "description", "TEXT"),

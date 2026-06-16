@@ -84,6 +84,17 @@ class Settings(BaseSettings):
     # IDs, code symbols) that pure embeddings miss. Set false for vector-only.
     rag_hybrid: bool = True
 
+    # S3-compatible object store for media blobs. Set s3_bucket to externalize
+    # file bytes (generated/uploaded images) out of the DB into S3/MinIO/Ceph/etc.
+    # Empty bucket -> blobs stay in the files.data column (zero-config default).
+    s3_bucket: str = ""
+    s3_endpoint_url: str = ""  # e.g. https://s3.us-east-1.amazonaws.com or http://minio:9000
+    s3_region: str = "us-east-1"
+    s3_access_key_id: str = ""
+    s3_secret_access_key: str = ""
+    s3_force_path_style: bool = True  # MinIO/Ceph need path-style; AWS allows it
+    s3_prefix: str = ""  # optional key prefix, e.g. "media/"
+
     # Web search: SearXNG-compatible endpoint (returns JSON when ?format=json).
     # Leave empty to disable globally.
     searxng_url: str = ""

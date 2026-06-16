@@ -74,6 +74,14 @@ authoritative status):
   are externalized to a `files` blob table and served via `/api/files/{id}`
   instead of bloating every message row; re-inlined for upstream vision replay
   and public-share rendering.
+- **S3/object storage** (opt-in via `FREE_WEBUI_S3_BUCKET`): file bytes can live
+  in an S3-compatible bucket (AWS S3, **MinIO**, Ceph, Backblaze B2) instead of
+  the DB — the `files` row stays the canonical index (access control, GC) with
+  `storage='s3'`. AWS **SigV4** signing is pure-standard-library (no new
+  dependency), validated against AWS's documented test vector and a real MinIO
+  round-trip. Access control still precedes any object fetch; conversation
+  delete and GC remove the S3 objects the FK cascade can't reach. SQLite/DB
+  storage stays the zero-config default.
 - **Connectivity**: **multiple upstream connections** with per-model routing;
   hardened OpenAI `/v1` surface (+`/v1/embeddings`); **Anthropic `/v1/messages`
   proxy**.
@@ -119,6 +127,13 @@ authoritative status):
   inline amplification on replay/share (per-payload byte budget); orphaned blob
   reclamation (GC on message truncation + FK CASCADE on conversation delete);
   self-contained clones (copy their own blobs).
+- S3 object store (adversarial review): cross-tenant blob exfil via **clone**
+  (`clone_file_refs` now conversation-scoped like the replay path — a forged ref
+  to another conversation's blob is no longer re-owned by the cloner); SigV4
+  `SignatureDoesNotMatch` when the endpoint carried an explicit default port
+  (signed Host now matches the wire Host); user-deletion S3-object leak; S3
+  deletes deferred to **after** the DB commit so a rollback can't strand a live
+  row over a deleted object; `ensure_bucket` `LocationConstraint` for non-us-east-1.
 - Variant-tree corruption: regenerating after navigating to an older variant no
   longer forks the parent chain into two simultaneously-active replies; variant
   switching is restricted to the latest turn.

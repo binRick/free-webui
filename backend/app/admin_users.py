@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from .audit import record
 from .auth import current_user, hash_password, require_admin
+from .files import collect_user_objects, purge_objects
 
 router = APIRouter(
     prefix="/api/admin/users",
@@ -127,6 +128,11 @@ async def delete_user(
             raise HTTPException(
                 status_code=400, detail="cannot delete the only remaining admin"
             )
+    # Reclaim the user's S3-backed objects: the users->conversations->files
+    # cascade clears the index rows but can't reach S3, so enumerate first and
+    # purge after the delete commits (no-op when S3 is off).
+    stale = await collect_user_objects(db, uid)
     await db.execute("DELETE FROM users WHERE id = ?", (uid,))
     await db.commit()
+    await purge_objects(stale)
     await record(db, me, "user.delete", f"uid={uid}")

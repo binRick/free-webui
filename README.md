@@ -127,7 +127,7 @@ while deliberately staying a lean two-tier app. Roughly:
 | Collaboration | **real-time channels** (WebSocket), **notes**, public share links, **multi-model compare** |
 | Voice | server-side STT/TTS proxy + browser Web Speech fallback, **hands-free voice/video call mode** (VAD turn-taking, optional camera→vision) |
 | API | OpenAI-compatible `/v1`, **Anthropic `/v1/messages` proxy**, per-user API keys |
-| Deployment | **SQLite or Postgres** (full suite green on both) |
+| Deployment | **SQLite or Postgres** (full suite green on both), optional **S3/MinIO** media storage |
 
 **Partial / weaker** ⚠️
 
@@ -147,7 +147,6 @@ while deliberately staying a lean two-tier app. Roughly:
 **Missing** ❌ (open-webui has these; free-webui does not yet)
 
 - **Enterprise auth** — LDAP / SCIM.
-- **S3/object storage** for media (blobs live in the DB today).
 - Assorted polish: inline-citation hovercards, fine-grained per-feature
   permission matrix, custom CSS/theming beyond light/dark.
 

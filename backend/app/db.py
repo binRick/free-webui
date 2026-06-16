@@ -2,6 +2,8 @@ from pathlib import Path
 
 import aiosqlite
 
+from .database import Database
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -368,7 +370,7 @@ async def _ensure_columns(conn: aiosqlite.Connection) -> None:
     await conn.commit()
 
 
-async def open_db(path: str) -> aiosqlite.Connection:
+async def open_db(path: str) -> Database:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     conn = await aiosqlite.connect(path)
     await conn.execute("PRAGMA foreign_keys = ON")
@@ -383,4 +385,5 @@ async def open_db(path: str) -> aiosqlite.Connection:
     await _ensure_columns(conn)
     await conn.executescript(INDEXES)
     await conn.commit()
-    return conn
+    # Hand the rest of the app a backend-agnostic boundary, not a raw connection.
+    return Database(conn, dialect="sqlite")

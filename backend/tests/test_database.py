@@ -30,6 +30,30 @@ async def test_fetch_helpers():
     await db.close()
 
 
+def test_integrity_errors_cover_both_backends():
+    """`except INTEGRITY_ERRORS` must catch a UNIQUE/FK violation on either
+    backend — on Postgres asyncpg raises a non-sqlite exception that the old
+    `except aiosqlite.IntegrityError` silently missed (turning OIDC race
+    recovery into a 500)."""
+    import sqlite3
+
+    from app.database import INTEGRITY_ERRORS
+
+    try:
+        raise sqlite3.IntegrityError("dup")
+    except INTEGRITY_ERRORS:
+        pass  # SQLite path caught
+
+    try:
+        import asyncpg
+    except ImportError:
+        return
+    try:
+        raise asyncpg.exceptions.UniqueViolationError("dup")
+    except INTEGRITY_ERRORS:
+        pass  # Postgres path now caught too
+
+
 async def test_passthrough_and_proxy():
     db = await _mem_db()
     assert db.dialect == "sqlite"

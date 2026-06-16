@@ -175,9 +175,16 @@ metrics/observability; Alembic (D3).
 - **Behavioral drift between backends** — mitigated by the dual-backend CI matrix
   (the same 311-test suite must pass on both). This is the single most important
   safety net and should land *with* the asyncpg backend, not after.
-- **Transaction semantics** — moving from one serialized WAL connection to a pool
-  changes write concurrency; audit the multi-statement commit points (e.g. the
-  channel persist→broadcast, the variant/regenerate truncations) for atomicity.
+- **Transaction semantics** — the Postgres backend currently runs **autocommit**
+  (one lock-serialized connection), so multi-statement write sequences are not
+  atomic: an adversarial review confirmed that `set_conversation_collections` /
+  `_set_preset_collections` (DELETE-then-INSERT) and the edit/delete/regenerate
+  truncation (DELETE + `gc_orphan_files` + UPDATE) can leave partial state if a
+  statement fails mid-sequence — destructive-then-non-atomic. (SQLite's shared
+  connection has a smaller version of the same window.) **The fix is the
+  per-request connection pool + an explicit transaction per request** (the
+  Phase-1.5 refinement) — wrap each handler's writes in one transaction that
+  `commit()` commits. Until then these sequences are best-effort on Postgres.
 - **Migration coordination** — never run ad-hoc DDL from N replicas (B4).
 - **No SQLite regression** — the zero-config SQLite path must stay byte-for-byte
   behaviorally identical; every phase keeps it as the default.

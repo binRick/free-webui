@@ -22,6 +22,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from .auth import _secret, _set_cookie, hash_password, issue_session
 from .config import oidc_enabled, settings
+from .database import INTEGRITY_ERRORS
 
 router = APIRouter(prefix="/api/auth/oidc", tags=["auth"])
 
@@ -124,7 +125,7 @@ async def _find_or_create_user(db: aiosqlite.Connection, sub: str, claims: dict)
             try:
                 await db.execute("UPDATE users SET oidc_sub = ? WHERE id = ?", (sub, existing[0]))
                 await db.commit()
-            except aiosqlite.IntegrityError:
+            except INTEGRITY_ERRORS:
                 await db.rollback()
             return {"id": existing[0], "username": existing[1], "role": existing[2], "token_version": existing[3]}
 
@@ -163,7 +164,7 @@ async def _find_or_create_user(db: aiosqlite.Connection, sub: str, claims: dict)
                 (uname, hash_password(secrets.token_urlsafe(32)), role, sub, now),
             )
             await db.commit()
-        except aiosqlite.IntegrityError:
+        except INTEGRITY_ERRORS:
             await db.rollback()
             found = await _user_by_sub(db, sub)
             if found:

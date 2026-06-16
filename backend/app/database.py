@@ -23,11 +23,27 @@ from __future__ import annotations
 
 import asyncio
 import re
+import sqlite3
 from typing import Any
 
 import aiosqlite
 
 Row = Any  # tuple-like row (positional indexing), for both backends
+
+# Backend-neutral integrity-violation exception types (UNIQUE / FK / check), so
+# `except INTEGRITY_ERRORS` recovers identically on both backends. aiosqlite's
+# IntegrityError IS sqlite3.IntegrityError; asyncpg raises (a subclass of)
+# IntegrityConstraintViolationError, which is NOT a sqlite3 exception.
+INTEGRITY_ERRORS: tuple = (sqlite3.IntegrityError,)
+try:  # asyncpg is optional (only installed for the Postgres backend)
+    import asyncpg as _asyncpg
+
+    INTEGRITY_ERRORS = (
+        sqlite3.IntegrityError,
+        _asyncpg.exceptions.IntegrityConstraintViolationError,
+    )
+except ImportError:
+    pass
 
 
 # ---- query / DDL adaptation -------------------------------------------------

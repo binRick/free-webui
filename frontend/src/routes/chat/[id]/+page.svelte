@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import { page } from '$app/state';
+  import { t } from '$lib/i18n.svelte';
   import {
     activateVariant,
     autotitle,
@@ -1281,11 +1282,11 @@
         {#if !streaming && editingIndex === null}
           <div class="actions">
             {#if msg.role === 'user' && msg.id != null}
-              <button class="action" onclick={() => startEdit(i)}>edit</button>
+              <button class="action" onclick={() => startEdit(i)}>{t('common.edit')}</button>
             {/if}
             {#if messagePlainText(msg.content)}
               <button class="action" title="copy message" onclick={() => copyMessage(i, msg.content)}>
-                {copiedIdx === i ? '✓ copied' : 'copy'}
+                {copiedIdx === i ? t('composer.copied') : t('composer.copy')}
               </button>
             {/if}
             {#if msg.role === 'assistant' && i === messages.length - 1 && variantNav}
@@ -1306,10 +1307,10 @@
               </span>
             {/if}
             {#if msg.role === 'assistant' && msg.id != null && msg.content}
-              <button class="action" title="regenerate this reply" onclick={() => regenAt(i)}>regenerate</button>
+              <button class="action" title="regenerate this reply" onclick={() => regenAt(i)}>{t('composer.regenerate')}</button>
             {/if}
             {#if msg.role === 'assistant' && msg.id != null && msg.content && i === messages.length - 1}
-              <button class="action" title="continue this reply" onclick={() => continueAt(i)}>↪ continue</button>
+              <button class="action" title="continue this reply" onclick={() => continueAt(i)}>{t('composer.continue')}</button>
             {/if}
             {#if msg.role === 'assistant' && msg.id != null && msg.content}
               <button
@@ -1462,7 +1463,7 @@
     >🎤</button>
     <textarea
       bind:this={composer}
-      placeholder="message…  (/ prompts · @ models · # knowledge)"
+      placeholder={t('composer.placeholder')}
       bind:value={input}
       onkeydown={onKey}
       oninput={syncCommand}

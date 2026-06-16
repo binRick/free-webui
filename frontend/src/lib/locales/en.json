@@ -5,6 +5,7 @@
   "common.cancel": "cancel",
   "common.delete": "delete",
   "common.rename": "rename",
+  "common.edit": "edit",
   "common.clone": "clone",
   "common.search": "search",
   "common.loading": "loading…",

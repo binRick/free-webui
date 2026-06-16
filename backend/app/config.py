@@ -15,6 +15,9 @@ class Settings(BaseSettings):
 
     # SQLite file path. Created on first run.
     db_path: str = "data/free-webui.db"
+    # Optional Postgres backend: set to a postgresql:// URL to use Postgres
+    # (asyncpg) instead of the default SQLite file. Takes precedence over db_path.
+    database_url: str = ""
 
     # Session cookie signing key. If empty, a persistent random key is
     # generated and stored next to the DB.

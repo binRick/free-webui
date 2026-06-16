@@ -178,13 +178,26 @@ async def client(upstream: FakeUpstream) -> AsyncIterator[httpx.AsyncClient]:
     for mod in [m for m in list(sys.modules) if m == "app" or m.startswith("app.")]:
         del sys.modules[mod]
     config = importlib.import_module("app.config")
-    config.settings.db_path = str(tmp / "test.db")
     config.settings.secret_key = "test-secret-for-unit-tests"
     config.settings.secret_key_path = str(tmp / "secret.key")
     # Relax egress/throttle policy by default so feature tests are unaffected;
     # dedicated security tests opt these back on via monkeypatch.
     config.settings.ssrf_protection = False
     config.settings.login_rate_limit = 0
+
+    # Run the whole suite against Postgres by setting FREE_WEBUI_TEST_DATABASE_URL;
+    # otherwise an isolated temp SQLite file (the default). For Postgres we reset
+    # the schema each test for isolation.
+    pg_url = os.environ.get("FREE_WEBUI_TEST_DATABASE_URL")
+    if pg_url:
+        import asyncpg  # noqa: WPS433
+
+        admin = await asyncpg.connect(pg_url)
+        await admin.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
+        await admin.close()
+        config.settings.db_path = pg_url
+    else:
+        config.settings.db_path = str(tmp / "test.db")
 
     from app.db import open_db  # noqa: WPS433
     from app.main import app  # noqa: WPS433

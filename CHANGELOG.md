@@ -68,8 +68,13 @@ authoritative status):
   UI; reusable toast store + container; **clone conversation**.
 
 ### Engineering
-- Programmable upstream test fixture; **235+ backend tests**; ruff lint;
-  GitHub Actions CI (lint + pytest matrix + frontend check).
+- **Postgres backend** (opt-in via `FREE_WEBUI_DATABASE_URL=postgresql://…`):
+  a backend-agnostic `Database` boundary with SQLite (aiosqlite, default) and
+  Postgres (asyncpg) implementations. The **full test suite passes on both**,
+  guarded by a dedicated Postgres CI job. SQLite stays the zero-config default;
+  see `docs/SCALING.md`.
+- Programmable upstream test fixture; **310+ backend tests** (run on SQLite +
+  Postgres); ruff lint; GitHub Actions CI (lint + pytest matrix + frontend check).
 - Security-sensitive features shipped with adversarial multi-agent review.
 - Governance: `SECURITY.md`, `CONTRIBUTING.md` (clean-room attestation), PR
   template; planning docs under `docs/`.

@@ -1,6 +1,16 @@
 # Scaling: Postgres + horizontal replicas
 
-**Status: scoping.** This document inventories every blocker between today's
+**Status: Phase 1 (Postgres support) — landed.** The `Database` boundary
+(`app/database.py`) now has a working **asyncpg backend**: set
+`FREE_WEBUI_DATABASE_URL=postgresql://…` and the app runs on Postgres instead of
+SQLite. The **entire test suite passes on both backends** (a `backend-test-postgres`
+CI job runs it against a Postgres service via `FREE_WEBUI_TEST_DATABASE_URL`).
+SQLite remains the zero-config default. Remaining: Phase 2 (N stateless replicas
+— §3/§5) and the connection-pool/per-request-transaction refinement (the Postgres
+backend currently uses one lock-serialized connection per replica, the same
+concurrency profile as the shared SQLite connection).
+
+This document inventories every blocker between today's
 single-process / single-SQLite design and a deployment that (a) runs against
 **Postgres** and (b) runs **N stateless replicas** behind a load balancer, then
 proposes a phased plan and a concrete first increment. It is informed by an

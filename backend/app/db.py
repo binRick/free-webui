@@ -2,7 +2,7 @@ from pathlib import Path
 
 import aiosqlite
 
-from .database import Database
+from .database import Database, PostgresDatabase, is_postgres_url, to_pg_ddl
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -361,29 +361,49 @@ _MIGRATIONS: tuple[tuple[str, str, str], ...] = (
 )
 
 
-async def _ensure_columns(conn: aiosqlite.Connection) -> None:
+async def _ensure_columns(db: Database) -> None:
     for table, column, decl in _MIGRATIONS:
-        cur = await conn.execute(f"PRAGMA table_info({table})")
-        existing = {row[1] for row in await cur.fetchall()}
+        if db.dialect == "postgres":
+            rows = await db.fetch_all(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = ?",
+                (table,),
+            )
+            existing = {r[0] for r in rows}
+        else:
+            cur = await db.execute(f"PRAGMA table_info({table})")
+            existing = {row[1] for row in await cur.fetchall()}
         if column not in existing:
-            await conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
-    await conn.commit()
+            col_decl = to_pg_ddl(decl) if db.dialect == "postgres" else decl
+            await db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_decl}")
+    await db.commit()
 
 
-async def open_db(path: str) -> Database:
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    conn = await aiosqlite.connect(path)
-    await conn.execute("PRAGMA foreign_keys = ON")
-    await conn.execute("PRAGMA journal_mode = WAL")
-    # Wait up to 5s for a competing writer instead of failing instantly with
-    # "database is locked" (single shared connection + WAL under concurrency).
-    await conn.execute("PRAGMA busy_timeout = 5000")
-    await conn.executescript(SCHEMA)
-    await conn.commit()
+async def open_db(target: str) -> Database:
+    """Open the database. ``target`` is a filesystem path (SQLite, default) or a
+    ``postgresql://`` URL (Postgres via asyncpg). Returns a backend-agnostic
+    ``Database`` with the schema bootstrapped."""
+    if is_postgres_url(target):
+        import asyncpg  # optional dependency, only needed for the Postgres backend
+
+        conn = await asyncpg.connect(target)
+        db: Database = PostgresDatabase(conn)
+        schema, indexes = to_pg_ddl(SCHEMA), to_pg_ddl(INDEXES)
+    else:
+        Path(target).parent.mkdir(parents=True, exist_ok=True)
+        conn = await aiosqlite.connect(target)
+        await conn.execute("PRAGMA foreign_keys = ON")
+        await conn.execute("PRAGMA journal_mode = WAL")
+        # Wait up to 5s for a competing writer instead of failing instantly with
+        # "database is locked" (single shared connection + WAL under concurrency).
+        await conn.execute("PRAGMA busy_timeout = 5000")
+        db = Database(conn, dialect="sqlite")
+        schema, indexes = SCHEMA, INDEXES
+
+    await db.executescript(schema)
+    await db.commit()
     # Add any columns missing from a legacy DB BEFORE creating indexes that
     # reference them.
-    await _ensure_columns(conn)
-    await conn.executescript(INDEXES)
-    await conn.commit()
-    # Hand the rest of the app a backend-agnostic boundary, not a raw connection.
-    return Database(conn, dialect="sqlite")
+    await _ensure_columns(db)
+    await db.executescript(indexes)
+    await db.commit()
+    return db

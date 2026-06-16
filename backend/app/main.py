@@ -172,7 +172,7 @@ async def lifespan(app: FastAPI):
             pool=10.0,
         ),
     )
-    app.state.db = await open_db(settings.db_path)
+    app.state.db = await open_db(settings.database_url or settings.db_path)
     app.state.plugins = load_plugins(settings.plugins_dir)
     try:
         yield

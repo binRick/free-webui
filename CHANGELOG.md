@@ -29,6 +29,12 @@ authoritative status):
 - **Faster RAG**: numpy-vectorized retrieval (`_rank_chunks`) replaces the
   per-chunk Python cosine loop with a single matrix-vector product — ~18× faster
   on 50k chunks with identical top-k (first runtime dependency added: `numpy`).
+- **Hybrid RAG retrieval**: dense embedding cosine and sparse **BM25** keyword
+  scores are fused with **Reciprocal Rank Fusion**, so exact-term matches
+  (names, IDs, error codes, code symbols) that pure embeddings miss are
+  retrieved alongside semantic neighbours. Scale-free fusion (no score
+  normalisation); BM25 is pure-Python (no new dependency). Toggle with
+  `FREE_WEBUI_RAG_HYBRID=false` for vector-only.
 - **Custom assistants**: presets graduate into full assistants — model + persona
   (system prompt) + behavior (tools/web/params) + **bundled knowledge
   collections**; applying one configures the chat and attaches its knowledge;

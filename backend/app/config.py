@@ -79,6 +79,10 @@ class Settings(BaseSettings):
     chunk_overlap: int = 200
     rag_top_k: int = 5
     rag_max_upload_bytes: int = 20 * 1024 * 1024  # 20 MB
+    # Hybrid retrieval: fuse dense (embedding cosine) and sparse (BM25 keyword)
+    # rankings via Reciprocal Rank Fusion. Catches exact-term matches (names,
+    # IDs, code symbols) that pure embeddings miss. Set false for vector-only.
+    rag_hybrid: bool = True
 
     # Web search: SearXNG-compatible endpoint (returns JSON when ?format=json).
     # Leave empty to disable globally.

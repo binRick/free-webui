@@ -119,7 +119,7 @@ while deliberately staying a lean two-tier app. Roughly:
 | Chat core | streaming, markdown (code/KaTeX/mermaid), edit, **regenerate any turn**, **continue**, branching/variants, copy, 👍/👎, auto-titling, follow-ups |
 | Organization | search, date grouping, pin/archive, **tags**, **folders**, **clone**, **temporary chat** |
 | Composer | searchable model picker, `/`·`@`·`#` commands, **prompt variables** with custom input |
-| Knowledge / RAG | per-chat uploads, reusable **collections**, web search, **citations** (numpy-vectorized retrieval) |
+| Knowledge / RAG | per-chat uploads, reusable **collections**, web search, **citations**, **hybrid dense+BM25 retrieval** (RRF) |
 | Tools | function-calling loop, **MCP**, **OpenAPI tool servers**, code interpreter, image generation, custom assistants, plugins/pipelines |
 | Models | **multiple upstream connections**, Ollama model management, per-model access control, per-chat params |
 | Multi-user / admin | argon2 auth, **OIDC/SSO**, groups + RBAC, audit log, feedback log, **usage analytics**, **broadcast banners** |
@@ -131,8 +131,10 @@ while deliberately staying a lean two-tier app. Roughly:
 
 **Partial / weaker** ⚠️
 
-- **RAG retrieval** — numpy-vectorized cosine (fast, scales to ~100k chunks) but
-  no ANN index or BM25 hybrid yet (would add `sqlite-vec`).
+- **RAG retrieval** — **hybrid** dense (numpy-vectorized cosine) + sparse
+  (BM25 keyword) retrieval fused with Reciprocal Rank Fusion, so exact-term
+  matches (names, IDs, code symbols) surface alongside semantic ones. Still a
+  brute-force scan — no ANN index yet (would add `sqlite-vec` for >100k chunks).
 - **Horizontal scaling** — Postgres is supported, but the app is still
   single-process per replica (the channel hub, rate limiters, etc. are in-process);
   N stateless replicas need the Phase-2 work in `docs/SCALING.md` (Redis pub/sub,

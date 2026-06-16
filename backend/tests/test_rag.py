@@ -36,6 +36,49 @@ def test_rank_chunks_skips_dimension_mismatch():
     assert [fn for _s, fn, _t in ranked] == ["y.txt"]
 
 
+def test_bm25_ranks_keyword_overlap_first():
+    from app.rag import _bm25_scores
+
+    docs = [
+        "the quick brown fox jumps over the lazy dog",
+        "penguins huddle together to stay warm in antarctica",
+        "a fox is a small carnivorous mammal",
+    ]
+    scores = _bm25_scores("fox", docs)
+    # both fox docs score > 0, the penguin doc scores 0
+    assert scores[0] > 0 and scores[2] > 0 and scores[1] == 0.0
+    # the shorter fox doc (higher term density) outranks the longer one
+    assert scores[2] > scores[0]
+    # no query-term overlap -> all zero
+    assert _bm25_scores("helicopter", docs) == [0.0, 0.0, 0.0]
+
+
+def test_hybrid_surfaces_keyword_only_match():
+    """A chunk that an embedding misses (orthogonal vector) but that contains the
+    exact query term is still retrieved once BM25 is fused in."""
+    from app.rag import _hybrid_rank, pack
+
+    q_vec = [1.0, 0.0, 0.0]
+    rows = [
+        ("semantic neighbour", pack([0.9, 0.1, 0.0]), "vec.txt"),       # strong cosine
+        ("error code E1234 means disk full", pack([0.0, 1.0, 0.0]), "kw.txt"),  # cosine 0
+    ]
+    # dense-only: the orthogonal keyword chunk is invisible
+    dense = _hybrid_rank("E1234", q_vec, rows, top_k=5, use_bm25=False)
+    assert [fn for _s, fn, _t in dense] == ["vec.txt"]
+    # hybrid: the exact-term chunk surfaces alongside the semantic one
+    hybrid = _hybrid_rank("E1234", q_vec, rows, top_k=5, use_bm25=True)
+    assert set(fn for _s, fn, _t in hybrid) == {"vec.txt", "kw.txt"}
+
+
+def test_hybrid_returns_empty_when_nothing_matches():
+    from app.rag import _hybrid_rank, pack
+
+    rows = [("unrelated text", pack([0.0, 1.0]), "a.txt")]
+    # query vec orthogonal (cosine 0) and no shared keyword -> nothing
+    assert _hybrid_rank("zzz", [1.0, 0.0], rows, top_k=5, use_bm25=True) == []
+
+
 async def _signup(client):
     await client.post(
         "/api/auth/setup", json={"username": "alice", "password": "hunter22hunter"}

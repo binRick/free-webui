@@ -1103,6 +1103,21 @@ export async function listModels(): Promise<string[]> {
   return (json.data ?? []).map((m: { id: string }) => m.id);
 }
 
+// Stateless, never-persisted completion: the caller passes the whole transcript.
+export async function temporaryChat(
+  messages: { role: string; content: string }[],
+  model: string | null,
+  opts: StreamOpts
+): Promise<void> {
+  const res = await apiFetch('/api/chat/temporary', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ messages, model }),
+    signal: opts.signal
+  });
+  await consumeStream(res, opts);
+}
+
 export type ContentPart =
   | { type: 'text'; text: string }
   | { type: 'image_url'; image_url: { url: string } };

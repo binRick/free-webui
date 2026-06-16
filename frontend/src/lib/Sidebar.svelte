@@ -188,6 +188,7 @@
     >{THEME_LABEL[theme.mode]}</button>
   </header>
   <a href="/" class="new" data-sveltekit-reload onclick={openChat}>+ new chat</a>
+  <a href="/temporary" class="temp-link" onclick={openChat} title="a chat that's never saved">👻 temporary chat</a>
   <div class="search">
     <input
       type="search"
@@ -327,6 +328,16 @@
     font-size: 0.9rem;
   }
   .new:hover { background: var(--bg-hover); }
+  .temp-link {
+    display: block;
+    margin: 0 0.75rem 0.5rem;
+    padding: 0.3rem 0.75rem;
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 0.8rem;
+    text-align: center;
+  }
+  .temp-link:hover { color: var(--text); }
   .search {
     padding: 0 0.75rem 0.5rem;
   }

@@ -35,6 +35,8 @@ authoritative status):
 - **Organization**: per-conversation **tags** (sidebar tag-filter chips +
   drawer editor) and **folders** (single-home, sidebar filter + drawer move),
   on top of search/pin/archive.
+- **Temporary chat**: a stateless `/api/chat/temporary` endpoint + `/temporary`
+  page — a throwaway conversation that is never written to the database.
 - **Composer UX**: **searchable model picker** (scales to many merged models)
   and in-composer commands — `/` insert a saved prompt, `@` switch model, `#`
   attach a knowledge collection — with keyboard navigation.

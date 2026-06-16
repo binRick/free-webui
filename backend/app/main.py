@@ -24,6 +24,7 @@ from .collections import router as collections_router
 from .config import settings
 from .audio import router as audio_router
 from .channels import router as channels_router
+from .temporary_chat import router as temporary_chat_router
 from .conversations import router as conversations_router
 from .db import open_db
 from .files import router as files_router
@@ -240,6 +241,7 @@ app.include_router(images_router)
 app.include_router(code_router)
 app.include_router(audio_router)
 app.include_router(channels_router)
+app.include_router(temporary_chat_router)
 app.include_router(plugins_router)
 
 

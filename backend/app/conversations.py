@@ -296,6 +296,7 @@ async def _stream_and_persist(
     gen: dict[str, Any] | None = None,
     sources: list[dict] | None = None,
     continue_message_id: int | None = None,
+    persist: bool = True,
 ) -> AsyncIterator[bytes]:
     """Stream a chat completion. If tools_enabled, runs a tool loop until
     the upstream finishes with a non-tool finish reason, surfacing each
@@ -480,8 +481,9 @@ async def _stream_and_persist(
         # An upstream error or empty completion must not let an outlet fabricate
         # a phantom assistant message out of empty text (e.g. a footer/banner
         # outlet turning "" into non-empty), and the outlet should observe only
-        # real model output.
-        if text or generated_images:
+        # real model output. `persist=False` (temporary chat) streams without any
+        # DB writes at all.
+        if persist and (text or generated_images):
             if plugins:
                 octx = PluginContext(
                     db=db, http=http, user_id=user_id, conversation_id=cid,

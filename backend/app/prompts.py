@@ -58,13 +58,13 @@ async def create_prompt(
 ):
     db = _db(request)
     now = int(time.time())
-    cur = await db.execute(
+    pid = await db.insert(
         "INSERT INTO prompts (user_id, title, content, created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?)",
         (user["id"], body.title, body.content, now, now),
     )
     return PromptOut(
-        id=cur.lastrowid,
+        id=pid,
         title=body.title,
         content=body.content,
         created_at=now,

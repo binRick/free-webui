@@ -86,12 +86,12 @@ async def list_collections(request: Request, user: dict = Depends(current_user))
 async def create_collection(body: CollectionIn, request: Request, user: dict = Depends(current_user)):
     db = _db(request)
     now = int(time.time())
-    cur = await db.execute(
+    coll_id = await db.insert(
         "INSERT INTO collections (user_id, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
         (user["id"], body.name, now, now),
     )
     await db.commit()
-    return CollectionOut(id=cur.lastrowid, name=body.name, document_count=0, created_at=now, updated_at=now)
+    return CollectionOut(id=coll_id, name=body.name, document_count=0, created_at=now, updated_at=now)
 
 
 @router.delete("/collections/{coll_id}", status_code=204)
@@ -133,7 +133,7 @@ async def upload_collection_document(
 
     chunks, embeddings = await prepare_document(_http(request), file.filename or "upload", file.content_type, data)
     now = int(time.time())
-    cur = await db.execute(
+    doc_id = await db.insert(
         """
         INSERT INTO collection_documents
         (collection_id, filename, mime, bytes, chunk_count, embedding_model, created_at)
@@ -141,7 +141,6 @@ async def upload_collection_document(
         """,
         (coll_id, file.filename or "upload", file.content_type, len(data), len(chunks), settings.embedding_model, now),
     )
-    doc_id = cur.lastrowid
     await db.executemany(
         "INSERT INTO collection_chunks (document_id, seq, text, embedding) VALUES (?, ?, ?, ?)",
         [(doc_id, i, c, pack(v)) for i, (c, v) in enumerate(zip(chunks, embeddings))],

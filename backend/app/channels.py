@@ -149,14 +149,14 @@ async def _persist_message(
     db: aiosqlite.Connection, channel_id: str, user: dict, content: str
 ) -> dict:
     ts = int(time.time())
-    cur = await db.execute(
+    msg_id = await db.insert(
         "INSERT INTO channel_messages (channel_id, user_id, username, content, created_at) "
         "VALUES (?, ?, ?, ?, ?)",
         (channel_id, user["id"], user["username"], content, ts),
     )
     await db.commit()
     return {
-        "id": cur.lastrowid,
+        "id": msg_id,
         "channel_id": channel_id,
         "user_id": user["id"],
         "username": user["username"],

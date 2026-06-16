@@ -140,7 +140,7 @@ async def create_preset(
     db = _db(request)
     now = int(time.time())
     stop_str = json.dumps(body.stop) if body.stop else None
-    cur = await db.execute(
+    pid = await db.insert(
         """
         INSERT INTO presets
         (user_id, name, model, system_prompt, temperature, top_p, stop,
@@ -153,7 +153,6 @@ async def create_preset(
             int(body.tools_enabled), int(body.web_search), now, now,
         ),
     )
-    pid = cur.lastrowid
     owned = await _owned_collection_ids(db, user["id"], body.collection_ids)
     await _set_preset_collections(db, pid, owned)
     await db.commit()

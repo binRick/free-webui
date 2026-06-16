@@ -74,7 +74,7 @@ async def mint_key(
     key_prefix = raw_key[: len(KEY_PREFIX) + 6] + "…"
     key_hash = _hash_key(raw_key)
     now = int(time.time())
-    cur = await db.execute(
+    key_id = await db.insert(
         """
         INSERT INTO api_keys
         (user_id, name, key_prefix, key_hash, last_used_at, created_at)
@@ -84,7 +84,7 @@ async def mint_key(
     )
     await db.commit()
     return KeyMinted(
-        id=cur.lastrowid,
+        id=key_id,
         name=body.name,
         key_prefix=key_prefix,
         last_used_at=None,

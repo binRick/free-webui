@@ -85,7 +85,7 @@ async def upload_document(
     chunks, embeddings = await prepare_document(http, file.filename or "upload", file.content_type, data)
 
     now = int(time.time())
-    cur = await db.execute(
+    doc_id = await db.insert(
         """
         INSERT INTO documents
         (conversation_id, filename, mime, bytes, chunk_count, embedding_model, created_at)
@@ -101,7 +101,6 @@ async def upload_document(
             now,
         ),
     )
-    doc_id = cur.lastrowid
 
     await db.executemany(
         "INSERT INTO chunks (document_id, seq, text, embedding) VALUES (?, ?, ?, ?)",

@@ -86,7 +86,7 @@ async def create_server(
     db = _db(request)
     now = int(time.time())
     headers_json = json.dumps(body.headers) if body.headers else None
-    cur = await db.execute(
+    sid = await db.insert(
         """
         INSERT INTO mcp_servers (user_id, name, url, headers, enabled, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -95,7 +95,7 @@ async def create_server(
     )
     await db.commit()
     return ServerOut(
-        id=cur.lastrowid,
+        id=sid,
         name=body.name,
         url=body.url,
         headers=body.headers,

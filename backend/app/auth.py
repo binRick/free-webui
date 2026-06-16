@@ -191,11 +191,10 @@ async def setup_endpoint(body: SetupBody, request: Request, response: Response) 
     if await _user_count(db) > 0:
         raise HTTPException(status_code=409, detail="setup already completed")
     now = int(time.time())
-    cur = await db.execute(
+    uid = await db.insert(
         "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
         (body.username, hash_password(body.password), "admin", now),
     )
-    uid = cur.lastrowid
     # Claim any pre-existing orphan conversations (from before auth was added).
     await db.execute(
         "UPDATE conversations SET user_id = ? WHERE user_id IS NULL", (uid,)

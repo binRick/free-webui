@@ -56,12 +56,12 @@ async def create_folder(
     if not name:
         raise HTTPException(status_code=422, detail="name must not be empty")
     now = int(time.time())
-    cur = await db.execute(
+    fid = await db.insert(
         "INSERT INTO folders (user_id, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
         (user["id"], name, now, now),
     )
     await db.commit()
-    return FolderOut(id=cur.lastrowid, name=name, created_at=now, updated_at=now)
+    return FolderOut(id=fid, name=name, created_at=now, updated_at=now)
 
 
 @router.patch("/{folder_id}", response_model=FolderOut)

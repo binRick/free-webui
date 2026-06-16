@@ -57,14 +57,14 @@ async def create_user(body: CreateUserBody, request: Request, me: dict = Depends
     if await cur.fetchone():
         raise HTTPException(status_code=409, detail="username already exists")
     now = int(time.time())
-    cur = await db.execute(
+    new_id = await db.insert(
         "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
         (body.username, hash_password(body.password), body.role, now),
     )
     await db.commit()
     await record(db, me, "user.create", f"username={body.username} role={body.role}")
     return UserListed(
-        id=cur.lastrowid, username=body.username, role=body.role, created_at=now
+        id=new_id, username=body.username, role=body.role, created_at=now
     )
 
 

@@ -80,7 +80,7 @@ async def create_connection(body: ConnectionIn, request: Request, me: dict = Dep
     db = _db(request)
     now = int(time.time())
     headers_json = json.dumps(body.headers) if body.headers else None
-    cur = await db.execute(
+    new_id = await db.insert(
         """
         INSERT INTO connections (name, base_url, api_key, headers, enabled, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -89,7 +89,6 @@ async def create_connection(body: ConnectionIn, request: Request, me: dict = Dep
     )
     await db.commit()
     invalidate_model_map(request.app)
-    new_id = cur.lastrowid
     await record(db, me, "connection.create", f"name={body.name} base_url={body.base_url}")
     cur = await db.execute(f"{_SELECT} WHERE id = ?", (new_id,))
     return _row_to_out(await cur.fetchone())

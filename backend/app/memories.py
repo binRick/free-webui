@@ -50,12 +50,12 @@ async def create_memory(
 ):
     db = _db(request)
     now = int(time.time())
-    cur = await db.execute(
+    mid = await db.insert(
         "INSERT INTO memories (user_id, content, created_at, updated_at) VALUES (?, ?, ?, ?)",
         (user["id"], body.content, now, now),
     )
     await db.commit()
-    return MemoryOut(id=cur.lastrowid, content=body.content, created_at=now, updated_at=now)
+    return MemoryOut(id=mid, content=body.content, created_at=now, updated_at=now)
 
 
 @router.delete("/{mid}", status_code=204)

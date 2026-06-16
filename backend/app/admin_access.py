@@ -79,12 +79,12 @@ async def create_group(body: GroupIn, request: Request, me: dict = Depends(requi
     if await cur.fetchone():
         raise HTTPException(status_code=409, detail="group name already exists")
     now = int(time.time())
-    cur = await db.execute(
+    gid = await db.insert(
         "INSERT INTO groups (name, created_at) VALUES (?, ?)", (body.name, now)
     )
     await db.commit()
     await record(db, me, "group.create", f"name={body.name}")
-    return GroupOut(id=cur.lastrowid, name=body.name, member_count=0, created_at=now)
+    return GroupOut(id=gid, name=body.name, member_count=0, created_at=now)
 
 
 @router.delete("/groups/{gid}", status_code=204)

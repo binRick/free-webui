@@ -57,14 +57,14 @@ async def create_note(
 ):
     db = _db(request)
     now = int(time.time())
-    cur = await db.execute(
+    nid = await db.insert(
         "INSERT INTO notes (user_id, title, content, created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?)",
         (user["id"], body.title.strip(), body.content, now, now),
     )
     await db.commit()
     return NoteOut(
-        id=cur.lastrowid, title=body.title.strip(), content=body.content,
+        id=nid, title=body.title.strip(), content=body.content,
         created_at=now, updated_at=now,
     )
 

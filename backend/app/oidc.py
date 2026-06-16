@@ -157,7 +157,7 @@ async def _find_or_create_user(db: aiosqlite.Connection, sub: str, claims: dict)
         now = int(time.time())
         # OIDC users get a random, unguessable password hash (local login can't match).
         try:
-            cur = await db.execute(
+            new_id = await db.insert(
                 "INSERT INTO users (username, password_hash, role, oidc_sub, created_at) "
                 "VALUES (?, ?, ?, ?, ?)",
                 (uname, hash_password(secrets.token_urlsafe(32)), role, sub, now),
@@ -169,7 +169,7 @@ async def _find_or_create_user(db: aiosqlite.Connection, sub: str, claims: dict)
             if found:
                 return found
             raise
-        return {"id": cur.lastrowid, "username": uname, "role": role, "token_version": 0}
+        return {"id": new_id, "username": uname, "role": role, "token_version": 0}
 
 
 @router.get("/login")

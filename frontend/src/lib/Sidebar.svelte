@@ -189,6 +189,7 @@
   </header>
   <a href="/" class="new" data-sveltekit-reload onclick={openChat}>+ new chat</a>
   <a href="/temporary" class="temp-link" onclick={openChat} title="a chat that's never saved">👻 temporary chat</a>
+  <a href="/compare" class="temp-link" onclick={openChat} title="send one prompt to several models">⚖ compare models</a>
   <div class="search">
     <input
       type="search"

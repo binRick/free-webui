@@ -40,6 +40,8 @@ authoritative status):
   on top of search/pin/archive.
 - **Temporary chat**: a stateless `/api/chat/temporary` endpoint + `/temporary`
   page — a throwaway conversation that is never written to the database.
+- **Compare models**: a `/compare` page sends one prompt to up to 4 models in
+  parallel, side by side (reuses the temporary-chat endpoint; nothing saved).
 - **Composer UX**: **searchable model picker** (scales to many merged models)
   and in-composer commands — `/` insert a saved prompt, `@` switch model, `#`
   attach a knowledge collection — with keyboard navigation.

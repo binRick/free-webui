@@ -39,6 +39,27 @@ async def test_analytics_aggregates(client):
     assert models == {"(default)": 2}
 
 
+async def test_analytics_excludes_inactive_variants(client, upstream):
+    """Regenerate keeps the superseded reply as active=0; analytics counts only
+    the active (user-visible) messages."""
+    from tests.conftest import content_chunk, finish, sse
+
+    await _signup(client)
+    cid = (await client.post("/api/conversations", json={"model": None})).json()["id"]
+    await _send(client, cid, "hi")  # u1 + a1 (both active) -> 2 visible
+    upstream.queue_chat(sse(content_chunk("take two"), finish("stop")))
+    async with client.stream("POST", f"/api/conversations/{cid}/regenerate", json={}) as r:
+        assert r.status_code == 200
+        async for _ in r.aiter_bytes():
+            pass
+    # table now has u1(active), a1(active=0), a2(active=1) = 3 rows, 2 visible
+    a = (await client.get("/api/admin/analytics")).json()
+    assert a["totals"]["messages"] == 2  # the archived variant is excluded
+    models = {m["model"]: m["count"] for m in a["messages_per_model"]}
+    assert models == {"(default)": 1}  # one active assistant, not two
+    assert sum(d["count"] for d in a["messages_per_day"]) == 2
+
+
 async def test_analytics_days_window(client):
     await _signup(client)
     assert len((await client.get("/api/admin/analytics?days=7")).json()["messages_per_day"]) == 7

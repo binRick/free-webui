@@ -52,13 +52,25 @@ async def analytics(
 ) -> Analytics:
     db = _db(request)
     now = int(time.time())
-    since = now - days * _DAY
     week = now - 7 * _DAY
+    # The chart window starts at MIDNIGHT UTC of the earliest displayed day, so
+    # the SQL filter and the zero-filled key list cover exactly the same days
+    # (otherwise the oldest partial day is counted by SQL but dropped from the
+    # chart). Message counts filter active=1 to match what users actually see —
+    # superseded regenerate variants (active=0) are kept in the table but hidden.
+    today = datetime.datetime.fromtimestamp(now, datetime.timezone.utc).date()
+    start_date = today - datetime.timedelta(days=days - 1)
+    since = int(
+        datetime.datetime(
+            start_date.year, start_date.month, start_date.day,
+            tzinfo=datetime.timezone.utc,
+        ).timestamp()
+    )
 
     totals = {
         "users": await _scalar(db, "SELECT COUNT(*) FROM users"),
         "conversations": await _scalar(db, "SELECT COUNT(*) FROM conversations"),
-        "messages": await _scalar(db, "SELECT COUNT(*) FROM messages"),
+        "messages": await _scalar(db, "SELECT COUNT(*) FROM messages WHERE active = 1"),
         "channels": await _scalar(db, "SELECT COUNT(*) FROM channels"),
     }
 
@@ -70,7 +82,8 @@ async def analytics(
     active_users_7d = await _scalar(
         db,
         "SELECT COUNT(DISTINCT c.user_id) FROM messages m "
-        "JOIN conversations c ON c.id = m.conversation_id WHERE m.created_at >= ?",
+        "JOIN conversations c ON c.id = m.conversation_id "
+        "WHERE m.active = 1 AND m.created_at >= ?",
         (week,),
     )
     new_users_7d = await _scalar(
@@ -80,7 +93,7 @@ async def analytics(
     # Messages per (UTC) day, zero-filled across the requested window.
     cur = await db.execute(
         "SELECT strftime('%Y-%m-%d', created_at, 'unixepoch') AS d, COUNT(*) "
-        "FROM messages WHERE created_at >= ? GROUP BY d",
+        "FROM messages WHERE active = 1 AND created_at >= ? GROUP BY d",
         (since,),
     )
     by_day = {r[0]: int(r[1]) for r in await cur.fetchall()}
@@ -98,7 +111,7 @@ async def analytics(
     cur = await db.execute(
         "SELECT COALESCE(c.model, '(default)') AS model, COUNT(*) AS n "
         "FROM messages m JOIN conversations c ON c.id = m.conversation_id "
-        "WHERE m.role = 'assistant' GROUP BY model ORDER BY n DESC LIMIT 10"
+        "WHERE m.active = 1 AND m.role = 'assistant' GROUP BY model ORDER BY n DESC LIMIT 10"
     )
     messages_per_model = [
         ModelCount(model=r[0], count=int(r[1])) for r in await cur.fetchall()

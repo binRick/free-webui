@@ -1,7 +1,7 @@
 import json
 import time
 import uuid
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Awaitable, Callable
 
 import datetime
 import re
@@ -299,10 +299,17 @@ async def _stream_and_persist(
     sources: list[dict] | None = None,
     continue_message_id: int | None = None,
     persist: bool = True,
+    is_disconnected: Callable[[], Awaitable[bool]] | None = None,
 ) -> AsyncIterator[bytes]:
     """Stream a chat completion. If tools_enabled, runs a tool loop until
     the upstream finishes with a non-tool finish reason, surfacing each
     tool call to the client as an `event: tool_call` SSE frame.
+
+    If `is_disconnected` is supplied (the request's disconnect probe), the loop
+    stops pulling upstream tokens and stops the tool loop as soon as the client
+    goes away — so a closed browser tab can't keep burning upstream tokens or
+    running tools. Whatever was generated before the disconnect is still
+    persisted (matching the frontend's stop button, which keeps the partial).
     """
     msgs = list(upstream_messages)
     final_content: list[str] = []
@@ -356,9 +363,16 @@ async def _stream_and_persist(
             p["tool_choice"] = "auto"
         return p
 
+    async def _gone() -> bool:
+        return is_disconnected is not None and await is_disconnected()
+
     sources_sent = False
+    aborted = False
     try:
         for _ in range(max_tool_loops):
+            if await _gone():
+                aborted = True
+                break
             iter_content: list[str] = []
             tool_buf: dict[int, dict] = {}
             saw_done = False
@@ -421,10 +435,17 @@ async def _stream_and_persist(
                             if fn.get("arguments") is not None:
                                 rec["args"] += fn["arguments"]
 
+                    # Client gone? Stop reading the upstream stream now (the
+                    # `async with` closes the connection on the way out).
+                    if await _gone():
+                        aborted = True
+                        break
+
             final_content.extend(iter_content)
 
-            if not tool_buf:
-                # natural end of generation
+            if aborted or not tool_buf:
+                # natural end of generation, or the client disconnected — in
+                # either case don't start another tool round.
                 _ = saw_done
                 break
 
@@ -477,8 +498,11 @@ async def _stream_and_persist(
                     }
                 )
     finally:
-        yield b"data: [DONE]\n\n"
+        # Persist BEFORE the trailing [DONE]. On a client disconnect the socket
+        # is dead, so yielding [DONE] first would raise inside the ASGI send and
+        # abandon this generator before the write ran — losing the partial.
         text = "".join(final_content)
+        inserted = False  # did we write a new/continued assistant reply this turn?
         # Only run the outlet / persist when the turn actually produced output.
         # An upstream error or empty completion must not let an outlet fabricate
         # a phantom assistant message out of empty text (e.g. a footer/banner
@@ -528,6 +552,26 @@ async def _stream_and_persist(
                     "UPDATE conversations SET updated_at = ? WHERE id = ?", (ts, cid)
                 )
                 await db.commit()
+                inserted = True
+        if persist and not inserted and parent_message_id is not None:
+            # A regenerate that produced nothing — the client disconnected before
+            # the first token, or the upstream errored. _regenerate_assistant has
+            # already archived the prior reply (active=0), so without this the turn
+            # would be left with NO active assistant message and no in-UI way back
+            # (the trailing-regenerate guard 400s; the variant switcher only renders
+            # on a trailing assistant). Re-activate the archived tip to restore the
+            # prior reply, leaving the thread exactly as it was before regenerate.
+            ts = int(time.time())
+            await db.execute(
+                "UPDATE messages SET active = 1 WHERE id = ?", (parent_message_id,)
+            )
+            await db.execute(
+                "UPDATE conversations SET updated_at = ? WHERE id = ?", (ts, cid)
+            )
+            await db.commit()
+        # Best-effort end-of-stream marker. If the client already vanished this
+        # send is a no-op (or raises inside the ASGI layer, after the write).
+        yield b"data: [DONE]\n\n"
 
 
 @router.get("", response_model=list[ConversationSummary])
@@ -921,6 +965,7 @@ async def send_message(
             conn=conn,
             gen=conv,
             sources=sources,
+            is_disconnected=request.is_disconnected,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -1046,6 +1091,7 @@ async def continue_message(
             tools_enabled=False, user_id=user["id"],
             plugins=getattr(request.app.state, "plugins", None),
             conn=conn, gen=conv, continue_message_id=msg_id,
+            is_disconnected=request.is_disconnected,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -1094,6 +1140,7 @@ async def _regenerate_assistant(
             conn=conn,
             gen=conv,
             sources=sources,
+            is_disconnected=request.is_disconnected,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -1150,6 +1197,7 @@ async def edit_message(
             conn=conn,
             gen=conv,
             sources=sources,
+            is_disconnected=request.is_disconnected,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

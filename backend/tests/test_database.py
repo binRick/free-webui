@@ -54,6 +54,41 @@ def test_integrity_errors_cover_both_backends():
         pass  # Postgres path now caught too
 
 
+async def test_transaction_commits_on_success():
+    db = await _mem_db()
+    async with db.transaction():
+        await db.execute("INSERT INTO t (name) VALUES (?)", ("alice",))
+        await db.execute("INSERT INTO t (name) VALUES (?)", ("bob",))
+    # committed and durable after a rollback attempt (nothing to undo)
+    await db.rollback()
+    assert await db.fetch_val("SELECT COUNT(*) FROM t") == 2
+    await db.close()
+
+
+async def test_transaction_rolls_back_on_error():
+    db = await _mem_db()
+    await db.insert("INSERT INTO t (name) VALUES (?)", ("seed",))
+    await db.commit()
+
+    class Boom(Exception):
+        pass
+
+    try:
+        async with db.transaction():
+            await db.execute("INSERT INTO t (name) VALUES (?)", ("ghost",))
+            raise Boom()
+    except Boom:
+        pass
+
+    # The ghost insert was rolled back, so the row count is unchanged AND the
+    # pending write cannot leak into a later commit by another code path.
+    assert await db.fetch_val("SELECT COUNT(*) FROM t") == 1
+    await db.execute("INSERT INTO t (name) VALUES (?)", ("real",))
+    await db.commit()
+    assert [r[0] for r in await db.fetch_all("SELECT name FROM t ORDER BY id")] == ["seed", "real"]
+    await db.close()
+
+
 async def test_passthrough_and_proxy():
     db = await _mem_db()
     assert db.dialect == "sqlite"

@@ -939,14 +939,14 @@ async def send_message(
     history = await _load_history(db, cid)
 
     now = int(time.time())
-    stored_content = await externalize_parts(db, user["id"], cid, body.content)
-    await db.execute(
-        "INSERT INTO messages (conversation_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-        (cid, "user", _encode_content(stored_content), now),
-    )
-    await _maybe_update_title(db, cid, conv["title"], _content_preview(body.content))
-    chosen_model = await _maybe_update_model(db, cid, body.model, conv["model"])
-    await db.commit()
+    async with db.transaction():
+        stored_content = await externalize_parts(db, user["id"], cid, body.content)
+        await db.execute(
+            "INSERT INTO messages (conversation_id, role, content, created_at) VALUES (?, ?, ?, ?)",
+            (cid, "user", _encode_content(stored_content), now),
+        )
+        await _maybe_update_title(db, cid, conv["title"], _content_preview(body.content))
+        chosen_model = await _maybe_update_model(db, cid, body.model, conv["model"])
 
     query_text = _content_text(body.content)
     context, sources = await _gather_context(db, http, cid, query_text, conv, user["id"])
@@ -1023,14 +1023,16 @@ async def regenerate_message(
     # still works after the regenerate.
     chain = await _variant_chain(db, cid, msg_id)
     tip_id = chain[-1]["id"] if chain else msg_id
-    await db.execute(
-        "DELETE FROM messages WHERE conversation_id = ? AND id > ?", (cid, tip_id)
-    )
-    stale = await gc_orphan_files(db, cid)
-    # Commit the truncation before purging S3 objects (and before the streamed
-    # regenerate persists its own reply), so a deleted object is always durably
-    # unreferenced first.
-    await db.commit()
+    # Truncate + GC as one atomic unit (rolls back together on any failure,
+    # rather than leaking a half-applied delete onto the shared connection).
+    async with db.transaction():
+        await db.execute(
+            "DELETE FROM messages WHERE conversation_id = ? AND id > ?", (cid, tip_id)
+        )
+        stale = await gc_orphan_files(db, cid)
+    # Purge S3 objects only AFTER the truncation has durably committed (and
+    # before the streamed regenerate persists its own reply), so a deleted
+    # object is always durably unreferenced first.
     await purge_objects(stale)
     return await _regenerate_assistant(request, db, http, cid, conv, user, msg_id, body.model)
 
@@ -1114,13 +1116,13 @@ async def _regenerate_assistant(
     chain_ids = [v["id"] for v in chain] or [archived_id]
     tip_id = chain_ids[-1]
     placeholders = ",".join("?" * len(chain_ids))
-    await db.execute(
-        f"UPDATE messages SET active = 0 WHERE conversation_id = ? AND id IN ({placeholders})",
-        (cid, *chain_ids),
-    )
+    async with db.transaction():
+        await db.execute(
+            f"UPDATE messages SET active = 0 WHERE conversation_id = ? AND id IN ({placeholders})",
+            (cid, *chain_ids),
+        )
+        chosen_model = await _maybe_update_model(db, cid, body_model, conv["model"])
     archived_id = tip_id
-    chosen_model = await _maybe_update_model(db, cid, body_model, conv["model"])
-    await db.commit()
 
     history = await _load_history(db, cid)
     last_user_text = ""
@@ -1171,17 +1173,19 @@ async def edit_message(
     conv = await _conv_settings(db, cid)
     await _guard_model(db, user, body.model, conv["model"])
 
-    stored_content = await externalize_parts(db, user["id"], cid, body.content)
-    await db.execute(
-        "UPDATE messages SET content = ? WHERE id = ?", (_encode_content(stored_content), msg_id)
-    )
-    await db.execute(
-        "DELETE FROM messages WHERE conversation_id = ? AND id > ?", (cid, msg_id)
-    )
-    stale = await gc_orphan_files(db, cid)
-    await _maybe_update_title(db, cid, conv["title"], _content_preview(body.content))
-    chosen_model = await _maybe_update_model(db, cid, body.model, conv["model"])
-    await db.commit()
+    # Edit the user turn and truncate everything after it as one atomic unit, so
+    # a failure can't leave the message rewritten but the tail half-deleted.
+    async with db.transaction():
+        stored_content = await externalize_parts(db, user["id"], cid, body.content)
+        await db.execute(
+            "UPDATE messages SET content = ? WHERE id = ?", (_encode_content(stored_content), msg_id)
+        )
+        await db.execute(
+            "DELETE FROM messages WHERE conversation_id = ? AND id > ?", (cid, msg_id)
+        )
+        stale = await gc_orphan_files(db, cid)
+        await _maybe_update_title(db, cid, conv["title"], _content_preview(body.content))
+        chosen_model = await _maybe_update_model(db, cid, body.model, conv["model"])
     await purge_objects(stale)
 
     history = await _load_history(db, cid)
@@ -1218,14 +1222,14 @@ async def delete_message(
     )
     if not await cur.fetchone():
         raise HTTPException(status_code=404, detail="message not found")
-    await db.execute(
-        "DELETE FROM messages WHERE conversation_id = ? AND id >= ?", (cid, msg_id)
-    )
-    stale = await gc_orphan_files(db, cid)
-    await db.execute(
-        "UPDATE conversations SET updated_at = ? WHERE id = ?", (int(time.time()), cid)
-    )
-    await db.commit()
+    async with db.transaction():
+        await db.execute(
+            "DELETE FROM messages WHERE conversation_id = ? AND id >= ?", (cid, msg_id)
+        )
+        stale = await gc_orphan_files(db, cid)
+        await db.execute(
+            "UPDATE conversations SET updated_at = ? WHERE id = ?", (int(time.time()), cid)
+        )
     await purge_objects(stale)
     return {"ok": True}
 

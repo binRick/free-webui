@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import re
 import sqlite3
+from contextlib import asynccontextmanager
 from typing import Any
 
 import aiosqlite
@@ -105,6 +106,38 @@ def to_pg_ddl(sql: str) -> str:
 class _FetchMixin:
     async def execute(self, sql: str, params: "tuple | list" = ()):  # overridden
         raise NotImplementedError
+
+    async def commit(self) -> None:  # overridden by each backend
+        raise NotImplementedError
+
+    async def rollback(self) -> None:  # overridden by each backend
+        raise NotImplementedError
+
+    @asynccontextmanager
+    async def transaction(self):
+        """Atomic unit of work: commit on clean exit, roll back on any exception.
+
+        Multi-statement mutations (e.g. truncate-then-regenerate) must be all-or
+        -nothing. Without the rollback, a statement that raises midway leaves the
+        partial writes pending on the shared connection, and the NEXT request's
+        ``commit()`` would silently flush them — a cross-request corruption. Use::
+
+            async with db.transaction():
+                await db.execute(...)   # delete
+                await db.execute(...)   # insert
+
+        On SQLite (the single shared aiosqlite connection) this is a real BEGIN/
+        COMMIT/ROLLBACK. On the Postgres backend ``commit``/``rollback`` are the
+        documented autocommit no-ops (per-statement) until the connection-pool
+        refinement in docs/SCALING.md lands.
+        """
+        try:
+            yield self
+        except BaseException:
+            await self.rollback()
+            raise
+        else:
+            await self.commit()
 
     async def fetch_one(self, sql: str, params: "tuple | list" = ()) -> Row | None:
         cur = await self.execute(sql, params)

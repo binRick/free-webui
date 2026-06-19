@@ -36,6 +36,20 @@ class Settings(BaseSettings):
     login_rate_limit: int = 10
     login_rate_window_seconds: float = 60.0
 
+    # Context budgeting: bound what gets replayed upstream every turn instead of
+    # sending the entire conversation + every memory each time (unbounded growth
+    # -> runaway cost and eventual context-window overflow 400s). Generous
+    # ceilings so normal chats are untouched; tune down for small-context models.
+    #   max_context_messages — keep only the most recent N user/assistant turns
+    #     (the system prompt + injected RAG/web/memory context are always kept).
+    #   max_context_tokens   — additionally drop the oldest of those turns until
+    #     the replayed history fits ~this many tokens (rough chars/4 estimate).
+    #   max_memory_items     — cap how many persistent memories are injected
+    #     (most recent first). 0 on any of these = unlimited.
+    max_context_messages: int = 100
+    max_context_tokens: int = 0
+    max_memory_items: int = 100
+
     # Outbound SSRF guard for user-/operator-supplied URLs (MCP server URLs,
     # image-backend result URLs). When on, refuses link-local / multicast /
     # reserved / unspecified ranges always, and loopback + private (RFC1918/ULA)

@@ -263,6 +263,46 @@ async def _gather_context(
     return context, sources
 
 
+def _estimate_tokens(content: str | list[dict]) -> int:
+    """Rough token estimate (~chars/4) for history budgeting. Image parts count
+    as a small flat cost — their real bytes are bounded separately by the inline
+    image budget in _load_history."""
+    if isinstance(content, list):
+        total = 0
+        for p in content:
+            if p.get("type") == "text":
+                total += len(p.get("text", "")) // 4
+            else:
+                total += 8
+        return total
+    return len(content) // 4
+
+
+def _budget_history(history: list[dict]) -> list[dict]:
+    """Bound the replayed history so an ever-growing conversation doesn't ship
+    its whole transcript upstream every turn (runaway cost, eventual context
+    overflow). Keep the most recent turns: first by count (max_context_messages),
+    then drop the oldest of those until the estimate fits max_context_tokens. The
+    newest message is always kept; 0 disables either knob. The system prompt and
+    injected RAG/web/memory context are added separately and never trimmed here."""
+    out = history
+    max_msgs = settings.max_context_messages
+    if max_msgs and len(out) > max_msgs:
+        out = out[-max_msgs:]
+    max_tokens = settings.max_context_tokens
+    if max_tokens and out:
+        kept: list[dict] = []
+        running = 0
+        for m in reversed(out):
+            t = _estimate_tokens(m["content"])
+            if kept and running + t > max_tokens:
+                break
+            running += t
+            kept.append(m)
+        out = list(reversed(kept))
+    return out
+
+
 def _build_upstream_messages(
     system_prompt: str | None,
     context: str | None,
@@ -274,7 +314,7 @@ def _build_upstream_messages(
         msgs.append({"role": "system", "content": system_prompt})
     if context:
         msgs.append({"role": "system", "content": context})
-    msgs.extend(history)
+    msgs.extend(_budget_history(history))
     if extra:
         msgs.extend(extra)
     return msgs

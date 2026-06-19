@@ -40,9 +40,9 @@ Most are `S`/`M` and high risk-reduction. **Partially landed on
 | Request body-size cap + global JSON exception envelope (no stack leak) | S | ✅ landed |
 | Login rate-limiting (per IP+username) | S | ✅ landed |
 | `PRAGMA busy_timeout` in `db.open_db` | S | ✅ landed |
-| Client-disconnect abort in the streaming tool loop | M | ⬜ deferred |
-| Transaction-wrap regenerate/edit delete+insert | M | ⬜ deferred |
-| Context/token budgeting (stop sending full history + all memories every turn) | M | ⬜ deferred |
+| Client-disconnect abort in the streaming tool loop | M | ✅ landed (`is_disconnected` probe stops the upstream read + tool loop when the client goes away; persists the partial, matching the stop button; regenerate restores the prior reply if it aborts at zero tokens) |
+| Transaction-wrap regenerate/edit delete+insert | M | ✅ landed (`db.transaction()` on the Database boundary — commit-on-success / rollback-on-error — wraps the send/edit/regenerate/delete mutation blocks so a mid-sequence failure can't leak pending writes onto the shared connection) |
+| Context/token budgeting (stop sending full history + all memories every turn) | M | ✅ landed (`_budget_history` caps replayed turns by `max_context_messages`/`max_context_tokens`; `max_memory_items` caps injected memories — generous defaults, opt-in tighter limits) |
 
 ## Phase 2 — Table-stakes chat UX (P0/P1, high-visibility)
 

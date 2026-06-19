@@ -127,6 +127,19 @@ authoritative status):
   UI; reusable toast store + container; **clone conversation**.
 
 ### Engineering
+- **Streaming correctness trio** (Phase-1 hardening): (1) **client-disconnect
+  abort** — the streaming generator stops reading the upstream and stops the tool
+  loop when the client goes away (closed tab / stop button) instead of running to
+  completion and billing tokens after nobody's listening; the partial reply is
+  persisted to match the on-screen text. (2) **transactional mutations** — a new
+  `db.transaction()` (commit-on-success / rollback-on-error) wraps the
+  send/edit/regenerate/delete blocks so a mid-sequence failure can't leak pending
+  writes onto the shared connection for the next request's commit to flush.
+  (3) **context budgeting** — `max_context_messages`/`max_context_tokens` bound the
+  history replayed each turn and `max_memory_items` bounds injected memories,
+  instead of resending the whole transcript + every memory forever. Disconnect
+  change shipped with adversarial review (caught + fixed a regenerate-abort
+  data-loss regression).
 - **Postgres backend** (opt-in via `FREE_WEBUI_DATABASE_URL=postgresql://…`):
   a backend-agnostic `Database` boundary with SQLite (aiosqlite, default) and
   Postgres (asyncpg) implementations. The **full test suite passes on both**,

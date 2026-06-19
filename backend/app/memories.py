@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
 from .auth import current_user
+from .config import settings
 
 router = APIRouter(
     prefix="/api/memories",
@@ -70,12 +71,25 @@ async def delete_memory(
 
 
 async def load_memory_context(
-    db: aiosqlite.Connection, user_id: int
+    db: aiosqlite.Connection, user_id: int, limit: int | None = None
 ) -> str | None:
-    cur = await db.execute(
-        "SELECT content FROM memories WHERE user_id = ? ORDER BY id", (user_id,)
-    )
-    rows = await cur.fetchall()
+    """Injected block of the user's persistent memories. Capped at `limit`
+    (defaults to settings.max_memory_items) so a large memory set doesn't bloat
+    every turn — the most recently added memories are kept."""
+    if limit is None:
+        limit = settings.max_memory_items
+    if limit and limit > 0:
+        cur = await db.execute(
+            "SELECT content FROM memories WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+            (user_id, limit),
+        )
+        # keep the newest `limit`, then restore chronological (insertion) order
+        rows = list(reversed(await cur.fetchall()))
+    else:
+        cur = await db.execute(
+            "SELECT content FROM memories WHERE user_id = ? ORDER BY id", (user_id,)
+        )
+        rows = await cur.fetchall()
     if not rows:
         return None
     bullets = "\n".join(f"- {r[0]}" for r in rows)

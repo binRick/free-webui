@@ -57,3 +57,39 @@ async def test_memories_inject_into_send(client):
         if m["role"] == "system"
     )
     assert "Always answer in haiku." in systems
+
+
+async def test_memories_capped_to_most_recent(client):
+    """With max_memory_items set, only the most recently added memories are
+    injected — an ever-growing memory set can't bloat every turn."""
+    import httpx
+    from app.config import settings
+    from app.main import app
+
+    await _signup(client)
+    settings.max_memory_items = 2
+    for i in range(5):
+        await client.post("/api/memories", json={"content": f"fact {i}"})
+
+    captured: dict = {}
+
+    async def capture(request: httpx.Request) -> httpx.Response:
+        from tests.conftest import _fake_chat_stream, _fake_handler
+        if request.url.path.endswith("/chat/completions"):
+            captured["payload"] = json.loads(request.content)
+            return _fake_chat_stream(captured["payload"])
+        return await _fake_handler(request)
+
+    app.state.http = httpx.AsyncClient(
+        transport=httpx.MockTransport(capture), base_url="http://upstream/v1"
+    )
+
+    cid = (await client.post("/api/conversations", json={})).json()["id"]
+    await _consume(client, f"/api/conversations/{cid}/messages", {"content": "ok"})
+
+    systems = "\n".join(
+        m["content"] for m in captured["payload"]["messages"] if m["role"] == "system"
+    )
+    # newest two kept, older three dropped
+    assert "fact 4" in systems and "fact 3" in systems
+    assert "fact 2" not in systems and "fact 0" not in systems

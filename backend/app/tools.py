@@ -250,13 +250,14 @@ ASYNC_HANDLERS: dict[str, Callable[[dict[str, Any], "ToolContext | None"], Await
 }
 
 
-def builtin_tool_specs() -> list[dict]:
+def builtin_tool_specs(allow_image: bool = True, allow_code: bool = True) -> list[dict]:
     """OpenAI tool schemas for every built-in available right now. `imagine`
-    and `run_python` only appear when their backends are configured."""
+    and `run_python` only appear when their backends are configured AND the
+    caller is permitted (per-user feature permissions; see permissions.py)."""
     specs = list(TOOL_SPECS)
-    if settings.image_backend:
+    if allow_image and settings.image_backend:
         specs.append(IMAGINE_SPEC)
-    if code_exec._resolve_backend():
+    if allow_code and code_exec._resolve_backend():
         specs.append(RUN_PYTHON_SPEC)
     return specs
 

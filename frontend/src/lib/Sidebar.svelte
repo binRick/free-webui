@@ -298,6 +298,7 @@
           <a class="admin-link" href="/admin/banners" title="broadcast banners">📢 banners</a>
           <a class="admin-link" href="/admin/users" title="manage users">👥 users</a>
           <a class="admin-link" href="/admin/access" title="groups & model access">🔒 access</a>
+          <a class="admin-link" href="/admin/permissions" title="per-feature permissions">🎛 perms</a>
           <a class="admin-link" href="/admin/audit" title="admin audit log">📜 audit</a>
           <a class="admin-link" href="/admin/feedback" title="message feedback">💬 feedback</a>
           <a class="admin-link" href="/admin/models" title="manage installed models">⚙ models</a>

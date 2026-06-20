@@ -21,6 +21,15 @@ authoritative status):
   users; aggregated from existing tables, no new dep), and **broadcast banners**
   (admin-posted info/warning/error/success announcements shown to every user,
   client-side dismissible; `/admin/banners`).
+- **Per-feature permission matrix**: a fine-grained capability gate for non-admin
+  users — web search, image generation, code interpreter, file upload, external
+  (MCP/OpenAPI) tools, knowledge bases, notes, temporary chat, and public share
+  links. Every capability defaults to *allowed* (opt-in restriction); an admin
+  flips a global default off and optionally grants it back to specific **groups**
+  (effective = default OR any group grant). Admins always bypass. Enforced
+  server-side at every surface (tool composition + the upload/knowledge/notes/
+  temporary/share endpoints) and reflected in the chat UI via
+  `GET /api/permissions/me`; managed at `/admin/permissions`.
 - **Chat UX**: sidebar search + date grouping + rename + **pin/archive**,
   **non-destructive regenerate with variant navigation**, copy + 👍/👎 per
   message, **LLM auto-titling**, extra generation params

@@ -223,6 +223,25 @@ CREATE TABLE IF NOT EXISTS model_access (
     -- model 'restricted' while granting access to no one)
     CHECK (group_id IS NOT NULL OR user_id IS NOT NULL)
 );
+
+-- Fine-grained per-feature permissions for non-admin users. permission_defaults
+-- holds the global default (allowed/denied) for each capability key; a key with
+-- no row uses the built-in default (allowed). group_permissions GRANTS a key to a
+-- group's members, so the effective permission is the default OR'd with any of
+-- the user's groups' grants (groups can only widen access). Admins bypass both.
+-- See permissions.py for the key registry + enforcement.
+CREATE TABLE IF NOT EXISTS permission_defaults (
+    key     TEXT PRIMARY KEY,
+    allowed INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS group_permissions (
+    group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    key      TEXT NOT NULL,
+    allowed  INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (group_id, key)
+);
+
 -- Free-text tags on a conversation (for sidebar filtering/organization).
 CREATE TABLE IF NOT EXISTS conversation_tags (
     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,

@@ -11,6 +11,7 @@ from .auth import current_user
 from .config import settings
 from .conversations import _decode_content
 from .files import _INLINE_BUDGET, expand_file_refs
+from .permissions import require_permission
 
 router = APIRouter(prefix="/api", tags=["shares"])
 
@@ -36,7 +37,10 @@ async def get_share(cid: str, request: Request, user: dict = Depends(current_use
     return {"token": row[0] if row else None}
 
 
-@router.post("/conversations/{cid}/share")
+@router.post(
+    "/conversations/{cid}/share",
+    dependencies=[Depends(require_permission("chat_share"))],
+)
 async def create_share(cid: str, request: Request, user: dict = Depends(current_user)) -> dict:
     if not settings.allow_public_sharing:
         raise HTTPException(status_code=403, detail="public sharing is disabled")

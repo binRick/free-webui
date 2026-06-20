@@ -245,7 +245,12 @@ async def list_enabled_servers(
 
 
 async def compose_tool_specs(
-    db: aiosqlite.Connection, user_id: int
+    db: aiosqlite.Connection,
+    user_id: int,
+    *,
+    allow_image: bool = True,
+    allow_code: bool = True,
+    allow_external: bool = True,
 ) -> tuple[list[dict], dict[str, tuple]]:
     """Return (openai_tool_specs, dispatch_table).
 
@@ -253,13 +258,20 @@ async def compose_tool_specs(
     ``(kind, server_id, payload)``: ``("builtin", 0, name)``,
     ``("mcp", server_id, original_tool_name)``, or
     ``("openapi", server_id, operation_meta)``.
+
+    The ``allow_*`` flags are the caller's per-user feature permissions: they
+    drop the ``imagine`` / ``run_python`` built-ins and the external (MCP +
+    OpenAPI) tool servers respectively when the user isn't permitted.
     """
-    builtins = builtin_tool_specs()
+    builtins = builtin_tool_specs(allow_image=allow_image, allow_code=allow_code)
     specs: list[dict] = list(builtins)
     dispatch: dict[str, tuple] = {}
     for spec in builtins:
         name = spec["function"]["name"]
         dispatch[name] = ("builtin", 0, name)
+
+    if not allow_external:
+        return specs, dispatch
 
     servers = await list_enabled_servers(db, user_id)
     for s in servers:

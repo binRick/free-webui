@@ -7,6 +7,7 @@
     createNote,
     updateNote,
     deleteNote,
+    getMyPermissions,
     type Note
   } from '$lib/api';
 
@@ -17,10 +18,12 @@
   let dirty = $state(false);
   let saving = $state(false);
   let preview = $state(false);
+  let notesAllowed = $state(true);
 
   const selected = $derived(notes.find((n) => n.id === selectedId) ?? null);
 
   onMount(async () => {
+    notesAllowed = (await getMyPermissions()).notes !== false;
     notes = await listNotes();
     if (notes.length) select(notes[0]);
   });
@@ -35,13 +38,17 @@
   }
 
   async function newNote() {
-    const n = await createNote('Untitled');
-    notes = [n, ...notes];
-    selectedId = n.id;
-    title = n.title;
-    content = n.content;
-    dirty = false;
-    preview = false;
+    try {
+      const n = await createNote('Untitled');
+      notes = [n, ...notes];
+      selectedId = n.id;
+      title = n.title;
+      content = n.content;
+      dirty = false;
+      preview = false;
+    } catch (e) {
+      toasts.error((e as Error).message || 'could not create note');
+    }
   }
 
   async function save() {
@@ -95,7 +102,12 @@
   <aside class="list">
     <header>
       <a class="back" href="/">← chat</a>
-      <button class="new" onclick={newNote}>+ note</button>
+      <button
+        class="new"
+        onclick={newNote}
+        disabled={!notesAllowed}
+        title={notesAllowed ? '' : 'notes are disabled for your account'}
+      >+ note</button>
     </header>
     {#each notes as n (n.id)}
       <div class="item" class:active={n.id === selectedId}>
@@ -115,7 +127,7 @@
       <div class="toolbar">
         <input class="title" bind:value={title} oninput={markDirty} placeholder="title" aria-label="note title" />
         <button class="ghost" onclick={() => (preview = !preview)}>{preview ? '✎ edit' : '👁 preview'}</button>
-        <button class="primary" onclick={save} disabled={saving || !dirty}>
+        <button class="primary" onclick={save} disabled={saving || !dirty || !notesAllowed}>
           {saving ? 'saving…' : dirty ? 'save' : 'saved'}
         </button>
       </div>

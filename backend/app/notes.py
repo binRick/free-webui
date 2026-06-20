@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from .auth import current_user
+from .permissions import require_permission
 
 router = APIRouter(
     prefix="/api/notes",
@@ -51,7 +52,10 @@ async def list_notes(request: Request, user: dict = Depends(current_user)):
     ]
 
 
-@router.post("", response_model=NoteOut)
+@router.post(
+    "", response_model=NoteOut,
+    dependencies=[Depends(require_permission("notes"))],
+)
 async def create_note(
     body: NoteIn, request: Request, user: dict = Depends(current_user)
 ):
@@ -87,7 +91,10 @@ async def get_note(nid: int, request: Request, user: dict = Depends(current_user
     return NoteOut(id=nid, title=row[0], content=row[1], created_at=row[2], updated_at=row[2])
 
 
-@router.patch("/{nid}", response_model=NoteOut)
+@router.patch(
+    "/{nid}", response_model=NoteOut,
+    dependencies=[Depends(require_permission("notes"))],
+)
 async def update_note(
     nid: int, body: NotePatch, request: Request, user: dict = Depends(current_user)
 ):

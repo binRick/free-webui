@@ -20,6 +20,7 @@
     getCodeStatus,
     getConversation,
     getImageStatus,
+    getMyPermissions,
     getWebSearchStatus,
     synthesizeSpeech,
     transcribeAudio,
@@ -116,6 +117,10 @@
   let toolsEnabled = $state(false);
   let imageGenAvailable = $state(false);
   let codeInterpreterAvailable = $state(false);
+  let fileUploadAllowed = $state(true);
+  let toolsAllowed = $state(true);
+  let shareAllowed = $state(true);
+  let webSearchPermitted = $state(true);
 
   let builtinTools = $derived(
     ['now', 'calculate', ...(imageGenAvailable ? ['imagine'] : []), ...(codeInterpreterAvailable ? ['run_python'] : [])]
@@ -177,11 +182,20 @@
       prompts = await listPrompts();
       presets = await listPresets();
       memories = await listMemories();
-      webSearch = !!conv.web_search;
-      webSearchAvailable = (await getWebSearchStatus()).available;
+      // Effective per-feature permissions gate the UI alongside availability;
+      // the backend enforces regardless (missing key -> treat as allowed).
+      const perms = await getMyPermissions();
+      fileUploadAllowed = perms.file_upload !== false;
+      toolsAllowed = perms.tools !== false;
+      shareAllowed = perms.chat_share !== false;
+      webSearchPermitted = perms.web_search !== false;
+      webSearchAvailable = (await getWebSearchStatus()).available && webSearchPermitted;
+      // a previously-on conversation can't keep web search active once it's
+      // unavailable or no longer permitted (the server skips it regardless).
+      webSearch = !!conv.web_search && webSearchAvailable;
       toolsEnabled = !!conv.tools_enabled;
-      imageGenAvailable = (await getImageStatus()).available;
-      codeInterpreterAvailable = (await getCodeStatus()).available;
+      imageGenAvailable = (await getImageStatus()).available && perms.image_generation !== false;
+      codeInterpreterAvailable = (await getCodeStatus()).available && perms.code_interpreter !== false;
       const audioStatus = await getAudioStatus();
       sttAvailable = audioStatus.stt;
       ttsAvailable = audioStatus.tts;
@@ -229,8 +243,8 @@
   async function makeShare() {
     try {
       shareToken = await createShare(currentId);
-    } catch {
-      /* sharing disabled / failed */
+    } catch (e) {
+      toasts.push((e as Error).message || 'could not create share link', 'error');
     }
   }
   async function revokeShare() {
@@ -1087,7 +1101,9 @@
       <input type="checkbox" bind:checked={webSearch} disabled={!webSearchAvailable} />
       <span class="lbl" style="text-transform: none; letter-spacing: 0;">
         web search
-        {#if !webSearchAvailable}
+        {#if !webSearchPermitted}
+          <span class="hint">— disabled for your account</span>
+        {:else if !webSearchAvailable}
           <span class="hint">— set <code>FREE_WEBUI_SEARXNG_URL</code> on the backend to enable</span>
         {/if}
       </span>
@@ -1095,7 +1111,7 @@
     <label class="toggle">
       <input type="checkbox" bind:checked={toolsEnabled} />
       <span class="lbl" style="text-transform: none; letter-spacing: 0;">
-        tools <span class="hint">— built-in: {#each builtinTools as t, ti (t)}{ti > 0 ? ', ' : ''}<code>{t}</code>{/each}</span>
+        tools <span class="hint">— built-in: {#each builtinTools as t, ti (t)}{ti > 0 ? ', ' : ''}<code>{t}</code>{/each}{#if !toolsAllowed} · external MCP/OpenAPI tools disabled for your account{/if}</span>
       </span>
     </label>
     <div class="settings-actions">
@@ -1197,7 +1213,13 @@
             <button class="action" type="button" onclick={revokeShare}>revoke</button>
           </div>
         {:else}
-          <button class="action" type="button" onclick={makeShare}>create link</button>
+          <button
+            class="action"
+            type="button"
+            onclick={makeShare}
+            disabled={!shareAllowed}
+            title={shareAllowed ? '' : 'share links are disabled for your account'}
+          >create link</button>
         {/if}
       </div>
       {#if shareToken}
@@ -1222,7 +1244,8 @@
           class="action"
           type="button"
           onclick={() => docInput.click()}
-          disabled={docUploading}
+          disabled={docUploading || !fileUploadAllowed}
+          title={fileUploadAllowed ? '' : 'file upload is disabled for your account'}
         >{docUploading ? 'uploading…' : '+ upload'}</button>
       </div>
       {#if docError}<div class="doc-err">{docError}</div>{/if}

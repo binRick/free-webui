@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from .auth import current_user
 from .config import settings
+from .permissions import require_permission
 from .rag import pack, prepare_document
 
 router = APIRouter(prefix="/api", tags=["collections"], dependencies=[Depends(current_user)])
@@ -82,7 +83,11 @@ async def list_collections(request: Request, user: dict = Depends(current_user))
     ]
 
 
-@router.post("/collections", response_model=CollectionOut)
+@router.post(
+    "/collections",
+    response_model=CollectionOut,
+    dependencies=[Depends(require_permission("knowledge"))],
+)
 async def create_collection(body: CollectionIn, request: Request, user: dict = Depends(current_user)):
     db = _db(request)
     now = int(time.time())
@@ -121,7 +126,11 @@ async def list_collection_documents(coll_id: int, request: Request, user: dict =
     ]
 
 
-@router.post("/collections/{coll_id}/documents", response_model=DocumentOut)
+@router.post(
+    "/collections/{coll_id}/documents",
+    response_model=DocumentOut,
+    dependencies=[Depends(require_permission("file_upload"))],
+)
 async def upload_collection_document(
     coll_id: int, request: Request, file: UploadFile = File(...), user: dict = Depends(current_user)
 ):

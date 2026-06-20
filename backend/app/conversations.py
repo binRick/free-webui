@@ -28,6 +28,7 @@ from .files import (
 )
 from .mcp import compose_tool_specs, run_tool as run_dispatch
 from .memories import load_memory_context
+from .permissions import get_permissions
 from .plugins import PluginContext, PluginRegistry, run_inlet, run_outlet
 from .tools import ToolContext
 from .rag import retrieve_context
@@ -244,12 +245,15 @@ async def _gather_context(
     query: str,
     conv: dict,
     user_id: int,
+    allow_web: bool = True,
 ) -> tuple[str | None, list[dict]]:
     """Build the injected system context (memories + web + RAG) and the list of
-    sources (documents + web results) that grounded it."""
+    sources (documents + web results) that grounded it. ``allow_web`` is the
+    caller's web-search permission; web search is skipped when it's false even if
+    the conversation has it toggled on."""
     rag_ctx, sources = await retrieve_context(db, http, cid, query)
     web_ctx = None
-    if conv.get("web_search"):
+    if allow_web and conv.get("web_search"):
         results = await web_search(query)
         web_ctx = format_web_context(results)
         for r in results:
@@ -340,6 +344,9 @@ async def _stream_and_persist(
     continue_message_id: int | None = None,
     persist: bool = True,
     is_disconnected: Callable[[], Awaitable[bool]] | None = None,
+    allow_image: bool = True,
+    allow_code: bool = True,
+    allow_tools: bool = True,
 ) -> AsyncIterator[bytes]:
     """Stream a chat completion. If tools_enabled, runs a tool loop until
     the upstream finishes with a non-tool finish reason, surfacing each
@@ -363,7 +370,10 @@ async def _stream_and_persist(
     tool_specs: list[dict] = []
     dispatch: dict[str, tuple[int, str]] = {}
     if tools_enabled and user_id is not None:
-        tool_specs, dispatch = await compose_tool_specs(db, user_id)
+        tool_specs, dispatch = await compose_tool_specs(
+            db, user_id,
+            allow_image=allow_image, allow_code=allow_code, allow_external=allow_tools,
+        )
 
     # Assemble the request body ONCE so a plugin inlet's edits (model, params,
     # messages) survive across tool-loop iterations. Tools/tool_choice are owned
@@ -988,8 +998,11 @@ async def send_message(
         await _maybe_update_title(db, cid, conv["title"], _content_preview(body.content))
         chosen_model = await _maybe_update_model(db, cid, body.model, conv["model"])
 
+    perms = await get_permissions(db, user)
     query_text = _content_text(body.content)
-    context, sources = await _gather_context(db, http, cid, query_text, conv, user["id"])
+    context, sources = await _gather_context(
+        db, http, cid, query_text, conv, user["id"], allow_web=perms["web_search"]
+    )
     upstream = _build_upstream_messages(
         conv["system_prompt"],
         context,
@@ -1006,6 +1019,9 @@ async def send_message(
             gen=conv,
             sources=sources,
             is_disconnected=request.is_disconnected,
+            allow_image=perms["image_generation"],
+            allow_code=perms["code_interpreter"],
+            allow_tools=perms["tools"],
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -1170,7 +1186,10 @@ async def _regenerate_assistant(
         if m["role"] == "user":
             last_user_text = _content_text(m["content"])
             break
-    context, sources = await _gather_context(db, http, cid, last_user_text, conv, user["id"])
+    perms = await get_permissions(db, user)
+    context, sources = await _gather_context(
+        db, http, cid, last_user_text, conv, user["id"], allow_web=perms["web_search"]
+    )
     upstream = _build_upstream_messages(conv["system_prompt"], context, history)
     conn = await resolve_connection(request, db, chosen_model)
     return StreamingResponse(
@@ -1183,6 +1202,9 @@ async def _regenerate_assistant(
             gen=conv,
             sources=sources,
             is_disconnected=request.is_disconnected,
+            allow_image=perms["image_generation"],
+            allow_code=perms["code_interpreter"],
+            allow_tools=perms["tools"],
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -1228,9 +1250,12 @@ async def edit_message(
         chosen_model = await _maybe_update_model(db, cid, body.model, conv["model"])
     await purge_objects(stale)
 
+    perms = await get_permissions(db, user)
     history = await _load_history(db, cid)
     query_text = _content_text(body.content)
-    context, sources = await _gather_context(db, http, cid, query_text, conv, user["id"])
+    context, sources = await _gather_context(
+        db, http, cid, query_text, conv, user["id"], allow_web=perms["web_search"]
+    )
     upstream = _build_upstream_messages(conv["system_prompt"], context, history)
     conn = await resolve_connection(request, db, chosen_model)
     return StreamingResponse(
@@ -1242,6 +1267,9 @@ async def edit_message(
             gen=conv,
             sources=sources,
             is_disconnected=request.is_disconnected,
+            allow_image=perms["image_generation"],
+            allow_code=perms["code_interpreter"],
+            allow_tools=perms["tools"],
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

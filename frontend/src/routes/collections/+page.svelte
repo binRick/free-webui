@@ -6,6 +6,7 @@
     createCollection,
     deleteCollection,
     deleteCollectionDocument,
+    getMyPermissions,
     listCollectionDocuments,
     listCollections,
     uploadCollectionDocument,
@@ -17,6 +18,8 @@
   let loadError = $state<string | null>(null);
   let newName = $state('');
   let busy = $state(false);
+  let knowledgeAllowed = $state(true);
+  let fileUploadAllowed = $state(true);
 
   let openId = $state<number | null>(null);
   let docs = $state<Document[]>([]);
@@ -29,6 +32,9 @@
       await goto('/login', { replaceState: true });
       return;
     }
+    const perms = await getMyPermissions();
+    knowledgeAllowed = perms.knowledge !== false;
+    fileUploadAllowed = perms.file_upload !== false;
     await refresh();
   });
 
@@ -111,9 +117,17 @@
     <p class="hint">Collections are reusable document sets. Attach one to any chat
       (in the chat's settings drawer) to ground answers in it — embed once, use
       everywhere.</p>
+    {#if !knowledgeAllowed}
+      <p class="hint">Creating knowledge bases is disabled for your account.</p>
+    {/if}
     <form class="row" onsubmit={add}>
-      <input placeholder="new collection name" bind:value={newName} maxlength="120" />
-      <button type="submit" disabled={!newName.trim() || busy}>+ create</button>
+      <input
+        placeholder="new collection name"
+        bind:value={newName}
+        maxlength="120"
+        disabled={!knowledgeAllowed}
+      />
+      <button type="submit" disabled={!newName.trim() || busy || !knowledgeAllowed}>+ create</button>
     </form>
 
     {#each collections as c (c.id)}
@@ -126,7 +140,12 @@
       </div>
       {#if openId === c.id}
         <div class="docs">
-          <button class="small" onclick={() => fileInput?.click()} disabled={uploading}>
+          <button
+            class="small"
+            onclick={() => fileInput?.click()}
+            disabled={uploading || !fileUploadAllowed}
+            title={fileUploadAllowed ? '' : 'file upload is disabled for your account'}
+          >
             {uploading ? 'uploading…' : '+ upload documents'}
           </button>
           <input bind:this={fileInput} type="file" multiple hidden onchange={onFiles} />

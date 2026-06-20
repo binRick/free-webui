@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from .admin_models import router as admin_models_router
 from .access import filter_models
 from .admin_access import router as admin_access_router
+from .admin_permissions import router as admin_permissions_router
 from .admin_connections import router as admin_connections_router
 from .admin_feedback import router as admin_feedback_router
 from .admin_users import router as admin_users_router
@@ -44,6 +45,7 @@ from .mcp import router as mcp_router
 from .memories import router as memories_router
 from .oidc import router as oidc_router
 from .openai_compat import router as openai_compat_router
+from .permissions import router as permissions_router
 from .plugins import load as load_plugins
 from .plugins import router as plugins_router
 from .presets import router as presets_router
@@ -255,6 +257,8 @@ app.include_router(presets_router)
 app.include_router(admin_models_router)
 app.include_router(admin_users_router)
 app.include_router(admin_access_router)
+app.include_router(admin_permissions_router)
+app.include_router(permissions_router)
 app.include_router(admin_connections_router)
 app.include_router(audit_router)
 app.include_router(admin_feedback_router)

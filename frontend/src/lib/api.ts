@@ -879,6 +879,51 @@ export async function setModelAccess(
   if (!res.ok) throw new Error(`update failed: ${res.status}`);
 }
 
+// ---- per-feature permission matrix ----
+
+export type Permissions = Record<string, boolean>;
+
+export interface PermissionMatrix {
+  permissions: { key: string; label: string; builtin_default: boolean }[];
+  defaults: Permissions;
+  groups: { id: number; name: string; keys: string[] }[];
+}
+
+export async function getMyPermissions(): Promise<Permissions> {
+  // On a transient failure this returns {} and callers treat missing keys as
+  // allowed (perms.x !== false) — i.e. the UI fails OPEN, showing controls. This
+  // is intentional: the backend enforces every permission regardless, so a brief
+  // network hiccup must not hide working features behind a false "denied".
+  const res = await apiFetch('/api/permissions/me');
+  if (!res.ok) return {};
+  return res.json();
+}
+
+export async function getPermissionMatrix(): Promise<PermissionMatrix> {
+  const res = await apiFetch('/api/admin/permissions');
+  if (!res.ok) throw new Error(`load failed: ${res.status}`);
+  return res.json();
+}
+
+export async function setPermissionDefaults(defaults: Permissions): Promise<Permissions> {
+  const res = await apiFetch('/api/admin/permissions/defaults', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ defaults })
+  });
+  if (!res.ok) throw new Error(`save failed: ${res.status}`);
+  return (await res.json()) as Permissions;
+}
+
+export async function setGroupPermissions(gid: number, keys: string[]): Promise<void> {
+  const res = await apiFetch(`/api/admin/permissions/groups/${gid}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ keys })
+  });
+  if (!res.ok) throw new Error(`save failed: ${res.status}`);
+}
+
 export interface AuditEntry {
   id: number;
   username: string | null;

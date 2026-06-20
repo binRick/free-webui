@@ -122,7 +122,7 @@ while deliberately staying a lean two-tier app. Roughly:
 | Knowledge / RAG | per-chat uploads, reusable **collections**, web search, **citations**, **hybrid dense+BM25 retrieval** (RRF) |
 | Tools | function-calling loop, **MCP**, **OpenAPI tool servers**, code interpreter, image generation, custom assistants, plugins/pipelines |
 | Models | **multiple upstream connections**, Ollama model management, per-model access control, per-chat params |
-| Multi-user / admin | argon2 auth, **OIDC/SSO**, groups + RBAC, audit log, feedback log, **usage analytics**, **broadcast banners**, self-service **data export + account deletion** |
+| Multi-user / admin | argon2 auth, **OIDC/SSO**, groups + RBAC, **per-feature permission matrix**, audit log, feedback log, **usage analytics**, **broadcast banners**, self-service **data export + account deletion** |
 | Evaluation | **arena** (blind A/B vote → ELO), feedback-driven **leaderboard** (Wilson-scored) |
 | Collaboration | **real-time channels** (WebSocket), **notes**, public share links, **multi-model compare** |
 | Voice | server-side STT/TTS proxy + browser Web Speech fallback, **hands-free voice/video call mode** (VAD turn-taking, optional camera→vision) |
@@ -147,8 +147,8 @@ while deliberately staying a lean two-tier app. Roughly:
 **Missing** ❌ (open-webui has these; free-webui does not yet)
 
 - **Enterprise auth** — LDAP / SCIM.
-- Assorted polish: inline-citation hovercards, fine-grained per-feature
-  permission matrix, custom CSS/theming beyond light/dark.
+- Assorted polish: inline-citation hovercards, custom CSS/theming beyond
+  light/dark.
 
 Net: strong parity for everyday single- / small-team self-hosting (now including
 Postgres); the meaningful remaining distance is **i18n breadth**, the
@@ -462,6 +462,7 @@ We're aiming at the 95% workflow people actually want from open-webui — not st
 ### Tier 2 — the things people pick open-webui *for*
 
 - ✅ **Auth** — first-run `/setup` creates an admin (argon2id hashing); signed HTTP-only cookie session; all conversation routes are scoped per-user. Admin UI at `/admin/users` for create / promote / demote / reset-password / delete (with last-admin and self-delete guards). OAuth deferred.
+- ✅ **Per-feature permissions** — admins gate what non-admin users may do (web search, image generation, code interpreter, file upload, external tools, knowledge, notes, temporary chat, share links) at `/admin/permissions`. Each capability defaults to allowed; turn a default off to restrict everyone, then grant it back to specific **groups** (effective = default OR group grant). Admins always bypass; enforced server-side at every surface.
 - ✅ **RAG** — per-chat document upload (txt / md / pdf / common code files), fixed-size chunking with overlap, embeddings via the upstream's OpenAI-compatible `/v1/embeddings` (default model: `nomic-embed-text`), float32 BLOB storage, **numpy-vectorized cosine retrieval** (one matrix-vector product, ~18× faster than the former per-chunk loop), retrieved excerpts prepended as a system message every turn. Settings drawer shows attached docs + a 📎 N badge appears in the chat header when RAG is active.
 - ✅ **Web search** — SearXNG-compatible provider. Per-chat toggle in the settings drawer; when on, the user's query is searched, top results' title/url/snippet are prepended as a system message, and a 🌐 web badge appears in the chat header. Brave / Tavily / Google PSE as follow-ups.
 - ✅ **Multimodal input** — paste / drop / pick images in the composer; sent as OpenAI multimodal content arrays (`{type:"text"}` + `{type:"image_url"}`) and persisted as JSON. Use any vision model (Ollama `llama3.2-vision`, `qwen2.5-vl`, OpenAI `gpt-4o`, etc.) to actually interpret them.

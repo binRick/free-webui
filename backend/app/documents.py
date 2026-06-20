@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from .auth import current_user
 from .config import settings
+from .permissions import require_permission
 from .rag import pack, prepare_document
 
 router = APIRouter(
@@ -64,7 +65,11 @@ async def list_documents(
     ]
 
 
-@router.post("/{cid}/documents", response_model=DocumentOut)
+@router.post(
+    "/{cid}/documents",
+    response_model=DocumentOut,
+    dependencies=[Depends(require_permission("file_upload"))],
+)
 async def upload_document(
     cid: str,
     request: Request,

@@ -20,6 +20,7 @@ from .conversations import (
     _guard_model,
     _stream_and_persist,
 )
+from .permissions import require_permission
 
 router = APIRouter(prefix="/api/chat", tags=["temporary"])
 
@@ -94,7 +95,7 @@ def _validate_history(messages: list[TemporaryMessage]) -> list[dict]:
     return out
 
 
-@router.post("/temporary")
+@router.post("/temporary", dependencies=[Depends(require_permission("temporary_chat"))])
 async def temporary_chat(
     body: TemporaryBody, request: Request, user: dict = Depends(current_user)
 ) -> StreamingResponse:

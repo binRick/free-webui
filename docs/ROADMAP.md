@@ -61,6 +61,7 @@ Most are `S`/`M` and high risk-reduction. **Partially landed on
 
 | Item | Effort | Notes |
 | --- | --- | --- |
+| RAG URL loader (ingest a web page / PDF by URL) | M | ✅ landed (`web_loader.fetch_url`: SSRF-guarded, per-redirect-hop-checked, size-capped fetch; stdlib HTML→text extraction, PDF/text via the existing extractor; `POST …/documents/url` for a conversation + `POST …/collections/{id}/documents/url`; chat + collections URL-paste UI; gated by the `file_upload` permission). |
 | Scalable RAG index + hybrid retrieval | M | ✅ numpy-vectorized retrieval landed (`_rank_chunks`: one matrix-vector product instead of a per-chunk Python loop — ~18× faster on 50k chunks, identical top-k). A true ANN index (`sqlite-vec`) + BM25 hybrid is the optional next step (heavier/native dep). |
 | **Knowledge bases / collections** reusable across chats | L | ✅ landed (`collections` + `collection_documents`/`collection_chunks`; `/api/collections` CRUD + uploads; attach to a conversation via `PUT …/collections`; RAG searches the conversation's docs + every attached collection; `/collections` management page + chat-drawer attach). |
 | **Multiple upstream connections** | L | ✅ landed (`connections` table; env upstream = implicit conn 0; admin CRUD + `/test` probe at `/admin/connections`; merged `/api/models` + `/v1/models`; per-model routing with a cached, concurrent `/models` resolver; keyless connections don't inherit the env key). |

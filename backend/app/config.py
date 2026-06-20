@@ -114,6 +114,11 @@ class Settings(BaseSettings):
     # in-process fan-out (the zero-config default). See docs/SCALING.md.
     redis_url: str = ""
 
+    # RAG URL loader: fetch a web page / PDF / text file by URL and ingest it
+    # like an uploaded document. The fetch is SSRF-guarded (netguard) and capped
+    # at rag_max_upload_bytes; this is the per-request fetch timeout (seconds).
+    url_fetch_timeout_seconds: float = 15.0
+
     # Web search: SearXNG-compatible endpoint (returns JSON when ?format=json).
     # Leave empty to disable globally.
     searxng_url: str = ""

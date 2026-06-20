@@ -10,7 +10,8 @@ from pydantic import BaseModel, Field
 from .auth import current_user
 from .config import settings
 from .permissions import require_permission
-from .rag import pack, prepare_document
+from .rag import pack, prepare_document, prepare_text
+from .web_loader import fetch_url
 
 router = APIRouter(prefix="/api", tags=["collections"], dependencies=[Depends(current_user)])
 
@@ -41,6 +42,10 @@ async def _owned_conversation(db: aiosqlite.Connection, conv_id: str, user_id: i
 
 class CollectionIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
+
+
+class UrlIn(BaseModel):
+    url: str = Field(min_length=1, max_length=2048)
 
 
 class CollectionOut(BaseModel):
@@ -159,6 +164,41 @@ async def upload_collection_document(
     return DocumentOut(
         id=doc_id, filename=file.filename or "upload", mime=file.content_type,
         bytes=len(data), chunk_count=len(chunks), embedding_model=settings.embedding_model, created_at=now,
+    )
+
+
+@router.post(
+    "/collections/{coll_id}/documents/url",
+    response_model=DocumentOut,
+    dependencies=[Depends(require_permission("file_upload"))],
+)
+async def add_collection_document_url(
+    coll_id: int, body: UrlIn, request: Request, user: dict = Depends(current_user)
+):
+    """Fetch a URL and ingest it into a collection like an uploaded file."""
+    db = _db(request)
+    await _owned_collection(db, coll_id, user["id"])
+
+    label, mime, text = await fetch_url(body.url)
+    chunks, embeddings = await prepare_text(_http(request), text)
+    now = int(time.time())
+    async with db.transaction():
+        doc_id = await db.insert(
+            """
+            INSERT INTO collection_documents
+            (collection_id, filename, mime, bytes, chunk_count, embedding_model, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (coll_id, label, mime, len(text.encode("utf-8")), len(chunks), settings.embedding_model, now),
+        )
+        await db.executemany(
+            "INSERT INTO collection_chunks (document_id, seq, text, embedding) VALUES (?, ?, ?, ?)",
+            [(doc_id, i, c, pack(v)) for i, (c, v) in enumerate(zip(chunks, embeddings))],
+        )
+        await db.execute("UPDATE collections SET updated_at = ? WHERE id = ?", (now, coll_id))
+    return DocumentOut(
+        id=doc_id, filename=label, mime=mime, bytes=len(text.encode("utf-8")),
+        chunk_count=len(chunks), embedding_model=settings.embedding_model, created_at=now,
     )
 
 

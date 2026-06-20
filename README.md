@@ -119,7 +119,7 @@ while deliberately staying a lean two-tier app. Roughly:
 | Chat core | streaming, markdown (code/KaTeX/mermaid), edit, **regenerate any turn**, **continue**, branching/variants, copy, 👍/👎, auto-titling, follow-ups |
 | Organization | search, date grouping, pin/archive, **tags**, **folders**, **clone**, **temporary chat** |
 | Composer | searchable model picker, `/`·`@`·`#` commands, **prompt variables** with custom input |
-| Knowledge / RAG | per-chat uploads, reusable **collections**, web search, **citations**, **hybrid dense+BM25 retrieval** (RRF) |
+| Knowledge / RAG | per-chat uploads, **URL ingest** (fetch a web page/PDF), reusable **collections**, web search, **citations**, **hybrid dense+BM25 retrieval** (RRF) |
 | Tools | function-calling loop, **MCP**, **OpenAPI tool servers**, code interpreter, image generation, custom assistants, plugins/pipelines |
 | Models | **multiple upstream connections**, Ollama model management, per-model access control, per-chat params |
 | Multi-user / admin | argon2 auth, **OIDC/SSO**, groups + RBAC, **per-feature permission matrix**, audit log, feedback log, **usage analytics**, **broadcast banners**, self-service **data export + account deletion** |

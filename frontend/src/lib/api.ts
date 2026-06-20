@@ -494,6 +494,22 @@ export async function uploadDocument(
   return res.json();
 }
 
+export async function addDocumentUrl(
+  conversationId: string,
+  url: string
+): Promise<Document> {
+  const res = await apiFetch(`/api/conversations/${conversationId}/documents/url`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ url })
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail ?? `fetch failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function deleteDocument(
   conversationId: string,
   documentId: number
@@ -549,6 +565,19 @@ export async function uploadCollectionDocument(id: number, file: File): Promise<
   if (!res.ok) {
     const b = await res.json().catch(() => ({}));
     throw new Error(b.detail ?? `upload failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function addCollectionDocumentUrl(id: number, url: string): Promise<Document> {
+  const res = await apiFetch(`/api/collections/${id}/documents/url`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ url })
+  });
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}));
+    throw new Error(b.detail ?? `fetch failed: ${res.status}`);
   }
   return res.json();
 }

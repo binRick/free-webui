@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { auth } from '$lib/auth.svelte';
   import {
+    addCollectionDocumentUrl,
     createCollection,
     deleteCollection,
     deleteCollectionDocument,
@@ -24,6 +25,7 @@
   let openId = $state<number | null>(null);
   let docs = $state<Document[]>([]);
   let uploading = $state(false);
+  let urlDraft = $state('');
   let fileInput = $state<HTMLInputElement>();
 
   onMount(async () => {
@@ -97,6 +99,22 @@
     }
   }
 
+  async function onUrl() {
+    const url = urlDraft.trim();
+    if (!url || openId == null || uploading) return;
+    uploading = true;
+    try {
+      await addCollectionDocumentUrl(openId, url);
+      urlDraft = '';
+      docs = await listCollectionDocuments(openId);
+      await refresh();
+    } catch (e) {
+      loadError = (e as Error).message;
+    } finally {
+      uploading = false;
+    }
+  }
+
   async function removeDoc(docId: number) {
     if (openId == null) return;
     await deleteCollectionDocument(openId, docId);
@@ -149,6 +167,18 @@
             {uploading ? 'uploading…' : '+ upload documents'}
           </button>
           <input bind:this={fileInput} type="file" multiple hidden onchange={onFiles} />
+          {#if fileUploadAllowed}
+            <div class="url-row">
+              <input
+                type="url"
+                placeholder="…or paste a URL (web page / PDF / text)"
+                bind:value={urlDraft}
+                onkeydown={(e) => e.key === 'Enter' && onUrl()}
+                disabled={uploading}
+              />
+              <button class="small" onclick={onUrl} disabled={uploading || !urlDraft.trim()}>add url</button>
+            </div>
+          {/if}
           {#each docs as d (d.id)}
             <div class="doc">
               <span class="fn">{d.filename}</span>
@@ -223,6 +253,13 @@
   .meta { color: var(--text-muted); font-size: 0.78rem; }
   .item .del { margin-left: auto; }
   .docs { padding: 0.25rem 0 0.6rem 1.25rem; display: flex; flex-direction: column; gap: 0.3rem; }
+  .url-row { display: flex; gap: 0.4rem; }
+  .url-row input {
+    flex: 1; min-width: 0;
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border-soft); border-radius: 6px;
+    padding: 0.35rem 0.55rem; font: inherit; font-size: 0.82rem;
+  }
   .doc { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; }
   .fn { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .doc .meta { margin-left: auto; }

@@ -35,6 +35,12 @@ authoritative status):
   message, **LLM auto-titling**, extra generation params
   (`max_tokens`/penalties/seed).
 - **Knowledge bases**: reusable document **collections** attachable to any chat.
+- **RAG URL loader**: paste a URL to ingest a web page / PDF / text file as a RAG
+  document (per-chat or into a collection), reusing the upload pipeline. The
+  fetch is **SSRF-guarded** (netguard, re-checked on every redirect hop, with
+  auto-redirects disabled), size-capped at `rag_max_upload_bytes`, and gated by
+  the `file_upload` permission. HTML is reduced to readable text with the stdlib
+  parser (no new dependency); PDFs/text reuse the existing extractor.
 - **Faster RAG**: numpy-vectorized retrieval (`_rank_chunks`) replaces the
   per-chunk Python cosine loop with a single matrix-vector product — ~18× faster
   on 50k chunks with identical top-k (first runtime dependency added: `numpy`).

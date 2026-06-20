@@ -259,19 +259,27 @@ async def embed_texts(
     return [item["embedding"] for item in data_sorted]
 
 
+async def prepare_text(
+    http: httpx.AsyncClient, text: str
+) -> tuple[list[str], list[list[float]]]:
+    """Chunk and embed already-extracted text. Shared by file uploads (after
+    extraction) and the URL loader (which extracts HTML/PDF itself)."""
+    chunks = chunk_text(text)
+    if not chunks:
+        raise HTTPException(status_code=400, detail="no extractable text")
+    embeddings = await embed_texts(http, chunks)
+    if len(embeddings) != len(chunks):
+        raise HTTPException(status_code=502, detail="upstream returned wrong number of embeddings")
+    return chunks, embeddings
+
+
 async def prepare_document(
     http: httpx.AsyncClient, filename: str, content_type: str | None, data: bytes
 ) -> tuple[list[str], list[list[float]]]:
     """Extract, chunk, and embed a file. Shared by per-chat uploads and
     knowledge-base collections. Raises HTTPException on bad input/upstream."""
     text = extract_text(filename, content_type, data)
-    chunks = chunk_text(text)
-    if not chunks:
-        raise HTTPException(status_code=400, detail="no extractable text in file")
-    embeddings = await embed_texts(http, chunks)
-    if len(embeddings) != len(chunks):
-        raise HTTPException(status_code=502, detail="upstream returned wrong number of embeddings")
-    return chunks, embeddings
+    return await prepare_text(http, text)
 
 
 # ---------- retrieval ----------

@@ -49,6 +49,7 @@
     setFeedback,
     updateConversation,
     uploadDocument,
+    addDocumentUrl,
     type ContentPart,
     type Document,
     type Memory,
@@ -102,6 +103,7 @@
   let savingSettings = $state(false);
   let docs = $state<Document[]>([]);
   let docUploading = $state(false);
+  let docUrl = $state('');
   let collections = $state<Collection[]>([]);
   let attachedCollections = $state<Set<number>>(new Set());
   let shareToken = $state<string | null>(null);
@@ -220,6 +222,22 @@
       docError = (err as Error).message;
     } finally {
       target.value = '';
+      docUploading = false;
+    }
+  }
+
+  async function onDocUrl() {
+    const url = docUrl.trim();
+    if (!url || docUploading) return;
+    docUploading = true;
+    docError = null;
+    try {
+      await addDocumentUrl(currentId, url);
+      docUrl = '';
+      docs = await listDocuments(currentId);
+    } catch (err) {
+      docError = (err as Error).message;
+    } finally {
       docUploading = false;
     }
   }
@@ -1248,6 +1266,18 @@
           title={fileUploadAllowed ? '' : 'file upload is disabled for your account'}
         >{docUploading ? 'uploading…' : '+ upload'}</button>
       </div>
+      {#if fileUploadAllowed}
+        <div class="doc-url">
+          <input
+            type="url"
+            placeholder="…or paste a URL to ingest a web page / PDF"
+            bind:value={docUrl}
+            onkeydown={(e) => e.key === 'Enter' && onDocUrl()}
+            disabled={docUploading}
+          />
+          <button class="action" type="button" onclick={onDocUrl} disabled={docUploading || !docUrl.trim()}>add url</button>
+        </div>
+      {/if}
       {#if docError}<div class="doc-err">{docError}</div>{/if}
       {#if docs.length === 0}
         <div class="doc-empty">no documents — upload .txt, .md, .pdf or a code file to ground replies in its contents</div>
@@ -1767,6 +1797,22 @@
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
+  }
+  .doc-url {
+    display: flex;
+    gap: 0.4rem;
+    margin: 0.4rem 0;
+  }
+  .doc-url input {
+    flex: 1;
+    min-width: 0;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    padding: 0.35rem 0.55rem;
+    font: inherit;
+    font-size: 0.8rem;
   }
   .doc-err {
     color: var(--danger);

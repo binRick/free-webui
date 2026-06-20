@@ -3,12 +3,13 @@ import time
 import aiosqlite
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .auth import current_user
 from .config import settings
 from .permissions import require_permission
-from .rag import pack, prepare_document
+from .rag import pack, prepare_document, prepare_text
+from .web_loader import fetch_url
 
 router = APIRouter(
     prefix="/api/conversations",
@@ -25,6 +26,10 @@ class DocumentOut(BaseModel):
     chunk_count: int
     embedding_model: str | None
     created_at: int
+
+
+class UrlIn(BaseModel):
+    url: str = Field(min_length=1, max_length=2048)
 
 
 def _db(request: Request) -> aiosqlite.Connection:
@@ -121,6 +126,45 @@ async def upload_document(
         chunk_count=len(chunks),
         embedding_model=settings.embedding_model,
         created_at=now,
+    )
+
+
+@router.post(
+    "/{cid}/documents/url",
+    response_model=DocumentOut,
+    dependencies=[Depends(require_permission("file_upload"))],
+)
+async def add_document_url(
+    cid: str,
+    body: UrlIn,
+    request: Request,
+    user: dict = Depends(current_user),
+):
+    """Fetch a URL (web page / PDF / text) and ingest it like an uploaded file."""
+    db = _db(request)
+    await _owned(db, cid, user["id"])
+
+    label, mime, text = await fetch_url(body.url)
+    chunks, embeddings = await prepare_text(_http(request), text)
+
+    now = int(time.time())
+    async with db.transaction():
+        doc_id = await db.insert(
+            """
+            INSERT INTO documents
+            (conversation_id, filename, mime, bytes, chunk_count, embedding_model, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (cid, label, mime, len(text.encode("utf-8")), len(chunks), settings.embedding_model, now),
+        )
+        await db.executemany(
+            "INSERT INTO chunks (document_id, seq, text, embedding) VALUES (?, ?, ?, ?)",
+            [(doc_id, i, c, pack(v)) for i, (c, v) in enumerate(zip(chunks, embeddings))],
+        )
+
+    return DocumentOut(
+        id=doc_id, filename=label, mime=mime, bytes=len(text.encode("utf-8")),
+        chunk_count=len(chunks), embedding_model=settings.embedding_model, created_at=now,
     )
 
 

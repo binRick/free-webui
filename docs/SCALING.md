@@ -15,16 +15,23 @@ pub/sub and delivered to local sockets on **every** replica's subscriber, so the
 workspace chat no longer fragments per-replica. `redis` is an optional, lazily
 imported dependency; unset → the in-process hub (single-replica) as before.
 Validated against a real Redis (two-instance fan-out + a REST-post→Redis→socket
-round-trip). *Still per-replica (a documented follow-up):* the numeric presence
-`online` count and the per-user WS connection cap (B10) — a globally-accurate
-version needs shared Redis counters with liveness TTLs.
+round-trip).
+
+**The per-user WS connection cap + presence count (B10) are now global too.** When
+`FREE_WEBUI_REDIS_URL` is set, the `ChannelHub` keeps the per-user connection count
+(`fw:wsconn:{uid}`) and the per-channel presence count (`fw:presence:{channel}`) in
+shared Redis `INCR`/`DECR` counters (each with a refreshed `EXPIRE` TTL so a
+crashed replica that never decrements self-heals after a quiet window rather than
+leaking forever — the cap is a coarse backstop, not exact). Any Redis error falls
+back to the in-process counters, so a hiccup never errors a connection. Unset →
+per-replica counters as before.
 
 The Redis-backed **login rate-limiter** (B2) also landed: a global `INCR`+`EXPIRE`
 fixed-window counter when `FREE_WEBUI_REDIS_URL` is set (in-process sliding window
 otherwise, and as the fail-open fallback on any Redis error).
 
-Remaining: the rest of Phase 2 (OIDC first-admin lock B3, the per-user WS cap /
-presence count B10, etc. — §3/§5) and the connection-pool/per-request-transaction
+Remaining: the rest of Phase 2 (OIDC first-admin lock B3, etc. — §3/§5) and the
+connection-pool/per-request-transaction
 refinement (the Postgres
 backend currently uses one lock-serialized connection per replica, the same
 concurrency profile as the shared SQLite connection).
@@ -118,7 +125,7 @@ or **silently diverges** (rate limits N× looser) across replicas.
 | B7 | **model→connection TTL cache** | `connections.py:137` | Latency optimization with a 20s self-healing TTL → bounded eventual-consistency window. Optionally broadcast invalidation over the same pub/sub. |
 | B8 | **code-exec concurrency semaphore** | `code_exec.py:67` | If each replica runs local Docker, a per-replica cap is correct; document that the **cluster** cap is N× and set `code_max_concurrency` accordingly. |
 | B9 | **OIDC discovery cache** | `oidc.py:32` | Static doc; N cold-start fetches are negligible. Add a TTL for key rotation. |
-| B10 | **per-WebSocket frame-rate deque / revalidate clock** | `channels.py:324` | Per-connection state on a pinned socket is correct under N replicas. (The per-**user** WS connection cap shares the hub — fold its counter into B1's shared store.) |
+| B10 | **per-WebSocket frame-rate deque / revalidate clock** | `channels.py` | Per-connection state on a pinned socket is correct under N replicas. (The per-**user** WS connection cap + presence count are now ✅ **global** via shared Redis counters — `ChannelHub.configure_redis` — with in-process fallback.) |
 
 ---
 

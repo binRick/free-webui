@@ -197,6 +197,7 @@ async def lifespan(app: FastAPI):
         await channel_hub.use_redis(settings.redis_url)
         app.state.redis = aioredis.from_url(settings.redis_url)
         configure_rate_limiter(app.state.redis)
+        channel_hub.configure_redis(app.state.redis)  # global WS cap + presence
     try:
         yield
     finally:
@@ -207,6 +208,7 @@ async def lifespan(app: FastAPI):
             await app.state.object_store.aclose()
         configure_store(None)
         configure_rate_limiter(None)
+        channel_hub.configure_redis(None)
         if app.state.redis is not None:
             await app.state.redis.aclose()
 

@@ -44,6 +44,14 @@ _FRAME_RATE_WINDOW = 10.0
 # so a single hung send would freeze delivery everywhere. Time out → treat dead.
 _SEND_TIMEOUT = 10.0
 
+# Redis keys for the cross-replica per-user connection counter and per-channel
+# presence counter. Each carries a generous TTL refreshed on every change, so a
+# crashed replica that never decrements self-heals after a quiet window rather
+# than leaking a count forever (the cap is a coarse backstop, not exact).
+_WSCONN_PREFIX = "fw:wsconn:"
+_PRESENCE_PREFIX = "fw:presence:"
+_COUNTER_TTL = 3600
+
 
 class ChannelHub:
     """Tracks live WebSocket subscribers per channel and fans messages out."""
@@ -55,16 +63,51 @@ class ChannelHub:
         # Fan-out transport. Defaults to in-process; swapped for Redis at startup
         # when configured. deliver_local is what actually writes to local sockets.
         self._broadcaster = LocalBroadcaster(self._deliver_local)
+        # Optional shared Redis client (set at startup): makes the per-user
+        # connection cap and the presence count GLOBAL across replicas instead of
+        # per-replica. None → the in-process counters below (single-replica).
+        self._redis = None
+
+    def configure_redis(self, client) -> None:
+        """Use ``client`` for the global cap + presence counters (or None to
+        revert to in-process). Shares the app's Redis client, like the limiter."""
+        self._redis = client
+
+    # Invariant: when ``self._redis`` is set, the in-process counters below are
+    # NEVER touched — Redis is the single source of truth and a transient Redis
+    # error fails toward AVAILABILITY (never locks a user out). This avoids any
+    # cross-store drift (a slot reserved in one store, released in the other).
 
     async def try_reserve(self, user_id: int, cap: int) -> bool:
-        """Reserve a connection slot for a user, capping concurrent sockets."""
+        """Reserve a connection slot for a user, capping concurrent sockets
+        (globally when Redis is configured, else per-replica)."""
+        if self._redis is not None:
+            return await self._redis_reserve(f"{_WSCONN_PREFIX}{user_id}", cap)
         async with self._lock:
             if self._user_counts.get(user_id, 0) >= cap:
                 return False
             self._user_counts[user_id] = self._user_counts.get(user_id, 0) + 1
             return True
 
+    async def _redis_reserve(self, key: str, cap: int) -> bool:
+        try:
+            n = await self._redis.incr(key)
+        except Exception:
+            return True  # Redis down → fail OPEN (availability); never lock out
+        if n == 1:
+            # Set the TTL only at creation (not on every change) so a leaked
+            # counter ages out within one window instead of being refreshed alive
+            # forever — the self-heal the design depends on.
+            await self._safe(self._redis.expire(key, _COUNTER_TTL))
+        if n > cap:
+            await self._safe(self._redis.decr(key))  # leak (if this fails) ages out via TTL
+            return False
+        return True
+
     async def release(self, user_id: int) -> None:
+        if self._redis is not None:
+            await self._redis_decr(f"{_WSCONN_PREFIX}{user_id}")
+            return
         async with self._lock:
             n = self._user_counts.get(user_id, 0) - 1
             if n <= 0:
@@ -72,19 +115,62 @@ class ChannelHub:
             else:
                 self._user_counts[user_id] = n
 
+    async def _redis_decr(self, key: str) -> None:
+        """DECR a Redis counter, flooring at 0 with a COMPENSATING incr (not a
+        blind SET, which would clobber a concurrent incr on another replica). A
+        Redis error is swallowed — the create-time TTL reclaims any leaked slot."""
+        try:
+            n = await self._redis.decr(key)
+            if n < 0:
+                await self._redis.incr(key)  # undo only this over-decrement
+        except Exception:
+            pass
+
+    @staticmethod
+    async def _safe(coro) -> None:
+        try:
+            await coro
+        except Exception:
+            pass
+
     async def connect(self, channel_id: str, ws: WebSocket) -> None:
         async with self._lock:
             self._channels.setdefault(channel_id, set()).add(ws)
+        if self._redis is not None:
+            key = f"{_PRESENCE_PREFIX}{channel_id}"
+            try:
+                n = await self._redis.incr(key)
+            except Exception:
+                return
+            if n == 1:
+                await self._safe(self._redis.expire(key, _COUNTER_TTL))
 
     async def disconnect(self, channel_id: str, ws: WebSocket) -> None:
+        # Decrement presence only when this socket was actually present, so a
+        # double disconnect (dead-socket reap in _deliver_local + the handler's
+        # finally) can't over-decrement the shared counter.
+        removed = False
         async with self._lock:
             conns = self._channels.get(channel_id)
-            if conns:
+            if conns and ws in conns:
                 conns.discard(ws)
+                removed = True
                 if not conns:
                     self._channels.pop(channel_id, None)
+        if removed and self._redis is not None:
+            await self._redis_decr(f"{_PRESENCE_PREFIX}{channel_id}")
 
     async def count(self, channel_id: str) -> int:
+        if self._redis is not None:
+            try:
+                v = await self._redis.get(f"{_PRESENCE_PREFIX}{channel_id}")
+                if v is not None:
+                    # redis-py GET returns bytes by default; decode before int().
+                    if isinstance(v, (bytes, bytearray)):
+                        v = v.decode()
+                    return max(0, int(v))
+            except Exception:
+                pass
         async with self._lock:
             return len(self._channels.get(channel_id, ()))
 

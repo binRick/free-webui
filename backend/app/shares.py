@@ -1,6 +1,8 @@
 """Public read-only share links for a conversation. The owner endpoints are
-auth-scoped; GET /api/shared/{token} is public (no auth) and returns only the
-title + messages — no params, no user info."""
+auth-scoped; GET /api/shared/{token} is public (no auth) and returns the title,
+the active messages, and — so inline [n] citations resolve — a redacted source
+list per message: web sources (public URLs) are kept; document sources are
+collapsed to a bare marker so the owner's private filename + excerpt never leak."""
 import json
 import secrets
 import time
@@ -19,6 +21,16 @@ router = APIRouter(prefix="/api", tags=["shares"])
 
 def _db(request: Request) -> aiosqlite.Connection:
     return request.app.state.db
+
+
+def _public_source(s: dict) -> dict:
+    """Reduce a stored source for the PUBLIC share payload. Web sources are
+    public URLs — kept. Document sources would otherwise disclose the owner's
+    private filename + a verbatim excerpt, so collapse them to a bare marker
+    (the inline [n] still resolves to a chip; nothing private is revealed)."""
+    if s.get("kind") == "web":
+        return s
+    return {"kind": "document", "label": "attached document"}
 
 
 async def _owned(db: aiosqlite.Connection, cid: str, user_id: int) -> None:
@@ -96,10 +108,12 @@ async def get_shared(token: str, request: Request) -> dict:
     for r in await cur.fetchall():
         content = await expand_file_refs(db, _decode_content(r[1]), cid, budget)
         msg: dict = {"role": r[0], "content": content}
-        if r[2]:  # citation sources, so inline [n] markers resolve on the share too
+        if r[2]:  # citation sources (redacted), so inline [n] markers resolve too
             try:
-                msg["sources"] = json.loads(r[2])
+                parsed = json.loads(r[2])
             except (ValueError, TypeError):
-                pass
+                parsed = None
+            if isinstance(parsed, list):
+                msg["sources"] = [_public_source(s) for s in parsed if isinstance(s, dict)]
         messages.append(msg)
     return {"title": conv[0], "messages": messages}

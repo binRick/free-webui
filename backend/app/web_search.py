@@ -6,6 +6,8 @@ import httpx
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
+from .rag import neutralize_markers
+
 from .auth import current_user
 from .config import settings
 
@@ -64,7 +66,7 @@ def format_context(results: list[dict], start: int = 1) -> str | None:
         return None
     blocks = []
     for i, r in enumerate(results, start=start):
-        snippet = (r["content"] or "").strip()
+        snippet = neutralize_markers((r["content"] or "").strip())
         blocks.append(f'[{i}] {r["title"]} ({r["url"]})\n{snippet}'.strip())
     body = "\n\n".join(blocks)
     return (

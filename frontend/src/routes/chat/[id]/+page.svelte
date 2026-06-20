@@ -720,6 +720,36 @@
     messages[messages.length - 1] = { ...last, sources };
   }
 
+  // De-duplicate the footer bibliography by source while keeping each entry's
+  // citation numbers (the inline [n] chips remain per-excerpt). One numbered RAG
+  // source per chunk would otherwise list the same filename several times.
+  type GroupedSource = {
+    key: string;
+    kind: string;
+    label: string;
+    detail?: string;
+    snippet?: string;
+    nums: number[];
+  };
+  function groupSources(sources: Source[]): GroupedSource[] {
+    const map = new Map<string, GroupedSource>();
+    sources.forEach((s, i) => {
+      const key = `${s.kind}|${s.kind === 'web' ? s.detail || s.label : s.label}`;
+      const g = map.get(key);
+      if (g) g.nums.push(i + 1);
+      else
+        map.set(key, {
+          key,
+          kind: s.kind,
+          label: s.label,
+          detail: s.detail,
+          snippet: s.snippet,
+          nums: [i + 1]
+        });
+    });
+    return [...map.values()];
+  }
+
   async function runStream(
     operation: (opts: {
       signal: AbortSignal;
@@ -1431,11 +1461,11 @@
         {#if msg.sources && msg.sources.length}
           <div class="sources">
             <span class="src-label">sources</span>
-            {#each msg.sources as s, si (si)}
-              {#if s.kind === 'web' && s.detail}
-                <a class="src" href={s.detail} target="_blank" rel="noreferrer noopener" title={s.snippet || s.detail}><span class="src-n">{si + 1}</span>🌐 {s.label}</a>
+            {#each groupSources(msg.sources) as g (g.key)}
+              {#if g.kind === 'web' && g.detail}
+                <a class="src" href={g.detail} target="_blank" rel="noreferrer noopener" title={g.snippet || g.detail}><span class="src-n">{g.nums.join(',')}</span>🌐 {g.label}</a>
               {:else}
-                <span class="src" title={s.snippet || s.label}><span class="src-n">{si + 1}</span>📄 {s.label}</span>
+                <span class="src" title={g.snippet || g.label}><span class="src-n">{g.nums.join(',')}</span>📄 {g.label}</span>
               {/if}
             {/each}
           </div>

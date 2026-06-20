@@ -72,8 +72,25 @@ async def test_shared_conversation_includes_sources(client):
     token = (await client.post(f"/api/conversations/{cid}/share")).json()["token"]
     shared = (await client.get(f"/api/shared/{token}")).json()
     asst = [m for m in shared["messages"] if m["role"] == "assistant"][-1]
+    # sources are present (so [n] resolves) but DOCUMENT sources are redacted:
+    # the private filename + excerpt must NOT reach an unauthenticated viewer.
     assert asst.get("sources")
-    assert asst["sources"][0]["label"] == "kb.txt"
+    src = asst["sources"][0]
+    assert src["kind"] == "document"
+    assert src["label"] == "attached document"  # filename redacted
+    assert "snippet" not in src                  # private excerpt not leaked
+    assert "kb.txt" not in str(shared["messages"])
+
+
+def test_public_source_redacts_documents_keeps_web():
+    from app.shares import _public_source
+
+    assert _public_source({"kind": "document", "label": "secret.pdf", "snippet": "private text"}) == {
+        "kind": "document",
+        "label": "attached document",
+    }
+    web = {"kind": "web", "label": "Title", "detail": "http://x", "snippet": "s"}
+    assert _public_source(web) == web
 
 
 async def test_sources_not_emitted_on_upstream_error(client, upstream):

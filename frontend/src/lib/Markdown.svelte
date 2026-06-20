@@ -152,6 +152,18 @@
     return wrap;
   }
 
+  // Flip the hovercard below / leftward when the chip is near a viewport edge,
+  // so the overflow scroller (top) and right edge don't clip it.
+  function positionCite(e: Event) {
+    const wrap = (e.target as HTMLElement).closest?.('.cite-wrap') as HTMLElement | null;
+    if (!wrap) return;
+    const card = wrap.querySelector('.cite-card') as HTMLElement | null;
+    if (!card) return;
+    const r = wrap.getBoundingClientRect();
+    card.classList.toggle('below', r.top < 180);
+    card.classList.toggle('flip-left', r.left > window.innerWidth - 340);
+  }
+
   function onClick(e: MouseEvent) {
     const target = e.target as HTMLElement;
     if (!target.matches('[data-copy]')) return;
@@ -168,7 +180,14 @@
   }
 </script>
 
-<div class="md" bind:this={container} onclick={onClick} role="presentation">{@html html}</div>
+<div
+  class="md"
+  bind:this={container}
+  onclick={onClick}
+  onpointerover={positionCite}
+  onfocusin={positionCite}
+  role="presentation"
+>{@html html}</div>
 
 <style>
   .md :global(p) { margin: 0.5em 0; }
@@ -306,7 +325,7 @@
     left: 0;
     z-index: 20;
     width: max-content;
-    max-width: 320px;
+    max-width: min(320px, 80vw);
     padding: 0.5rem 0.6rem;
     background: var(--bg-elev);
     border: 1px solid var(--border);
@@ -319,6 +338,8 @@
     text-align: left;
     cursor: default;
   }
+  .md :global(.cite-card.below) { bottom: auto; top: calc(100% + 6px); }
+  .md :global(.cite-card.flip-left) { left: auto; right: 0; }
   .md :global(.cite-wrap:hover .cite-card),
   .md :global(.cite-wrap:focus-within .cite-card) { display: flex; }
   .md :global(.cite-card-label) { font-weight: 600; font-size: 0.82rem; color: var(--text); }

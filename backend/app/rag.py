@@ -64,6 +64,13 @@ def snippet(text: str, limit: int = 320) -> str:
     return collapsed if len(collapsed) <= limit else collapsed[:limit].rstrip() + "…"
 
 
+def neutralize_markers(text: str) -> str:
+    """Defang bracketed-number sequences inside an injected excerpt so the model
+    can't echo a document's own footnote (e.g. [1]) and have the client resolve
+    it to one of our citations. Display snippets are left untouched."""
+    return re.sub(r"\[(\d+)\]", r"(\1)", text or "")
+
+
 # ---------- chunking ----------
 
 def chunk_text(text: str, size: int | None = None, overlap: int | None = None) -> list[str]:
@@ -344,7 +351,7 @@ async def retrieve_context(
     sections: list[str] = []
     for i, (_score, fn, txt) in enumerate(top, start=1):
         sources.append({"kind": "document", "label": fn, "snippet": snippet(txt)})
-        sections.append(f'[{i}] from "{fn}":\n{txt}')
+        sections.append(f'[{i}] from "{fn}":\n{neutralize_markers(txt)}')
     context = (
         "Numbered excerpts from documents the user attached to this conversation "
         "are below. Use them when answering, and when a statement relies on one, "

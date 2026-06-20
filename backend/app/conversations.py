@@ -266,7 +266,9 @@ async def _gather_context(
                 "snippet": rag_snippet(r.get("content") or ""),
             })
     mem_ctx = await load_memory_context(db, user_id)
-    context = "\n\n".join(c for c in (mem_ctx, web_ctx, rag_ctx) if c) or None
+    # RAG before web so the bracketed numbers read top-to-bottom (rag is [1..k],
+    # web continues [k+1..]); the sources array matches this order.
+    context = "\n\n".join(c for c in (mem_ctx, rag_ctx, web_ctx) if c) or None
     return context, sources
 
 

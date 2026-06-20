@@ -41,6 +41,7 @@ export interface Source {
   kind: string; // 'document' | 'web'
   label: string;
   detail?: string;
+  snippet?: string;
 }
 
 export interface StoredMessage {
@@ -376,7 +377,7 @@ export async function deleteShare(conversationId: string): Promise<void> {
 
 export interface SharedConversation {
   title: string;
-  messages: { role: string; content: MessageContent }[];
+  messages: { role: string; content: MessageContent; sources?: Source[] }[];
 }
 
 export async function getSharedConversation(token: string): Promise<SharedConversation | null> {

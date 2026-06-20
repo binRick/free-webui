@@ -35,6 +35,13 @@ authoritative status):
   message, **LLM auto-titling**, extra generation params
   (`max_tokens`/penalties/seed).
 - **Knowledge bases**: reusable document **collections** attachable to any chat.
+- **Inline citation hovercards**: RAG/web-search context is injected as numbered
+  excerpts and the model is asked to cite inline as `[n]`; the client turns each
+  `[n]` into a citation chip whose hovercard shows the source's label, snippet,
+  and (web) link. Each source now carries a snippet; numbering is continuous
+  across document + web sources, the sources list is numbered to match, and
+  public share pages resolve citations too. Chips are built with DOM APIs +
+  `textContent` (untrusted source text can't inject), skipping code/math.
 - **RAG URL loader**: paste a URL to ingest a web page / PDF / text file as a RAG
   document (per-chat or into a collection), reusing the upload pipeline. The
   fetch is **SSRF-guarded** (netguard, re-checked on every redirect hop, with

@@ -1412,11 +1412,11 @@
         {:else}
           {@const parsed = parseContent(msg.content)}
           {#if typeof parsed === 'string'}
-            <Markdown source={parsed} />
+            <Markdown source={parsed} sources={msg.sources ?? []} />
           {:else}
             {#each parsed as part}
               {#if part.type === 'text'}
-                <Markdown source={part.text} />
+                <Markdown source={part.text} sources={msg.sources ?? []} />
               {:else if part.type === 'image_url'}
                 <img class="attached" src={part.image_url.url} alt="attachment" />
               {/if}
@@ -1433,9 +1433,9 @@
             <span class="src-label">sources</span>
             {#each msg.sources as s, si (si)}
               {#if s.kind === 'web' && s.detail}
-                <a class="src" href={s.detail} target="_blank" rel="noreferrer noopener" title={s.detail}>🌐 {s.label}</a>
+                <a class="src" href={s.detail} target="_blank" rel="noreferrer noopener" title={s.snippet || s.detail}><span class="src-n">{si + 1}</span>🌐 {s.label}</a>
               {:else}
-                <span class="src" title={s.label}>📄 {s.label}</span>
+                <span class="src" title={s.snippet || s.label}><span class="src-n">{si + 1}</span>📄 {s.label}</span>
               {/if}
             {/each}
           </div>
@@ -1989,6 +1989,17 @@
     text-decoration: none;
   }
   a.src:hover { color: var(--text); border-color: var(--accent); }
+  .src-n {
+    display: inline-block;
+    min-width: 1.1em;
+    margin-right: 0.3em;
+    padding: 0 0.25em;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    color: var(--accent);
+    font-size: 0.92em;
+    text-align: center;
+  }
   .edit {
     width: 100%;
     resize: vertical;

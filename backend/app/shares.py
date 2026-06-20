@@ -1,6 +1,7 @@
 """Public read-only share links for a conversation. The owner endpoints are
 auth-scoped; GET /api/shared/{token} is public (no auth) and returns only the
 title + messages — no params, no user info."""
+import json
 import secrets
 import time
 
@@ -85,7 +86,7 @@ async def get_shared(token: str, request: Request) -> dict:
     if not conv:
         raise HTTPException(status_code=404, detail="not found")
     cur = await db.execute(
-        "SELECT role, content FROM messages WHERE conversation_id = ? AND active = 1 ORDER BY id",
+        "SELECT role, content, sources FROM messages WHERE conversation_id = ? AND active = 1 ORDER BY id",
         (cid,),
     )
     # The public viewer is unauthenticated and cannot hit /api/files/{id}, so
@@ -94,5 +95,11 @@ async def get_shared(token: str, request: Request) -> dict:
     budget = [_INLINE_BUDGET]
     for r in await cur.fetchall():
         content = await expand_file_refs(db, _decode_content(r[1]), cid, budget)
-        messages.append({"role": r[0], "content": content})
+        msg: dict = {"role": r[0], "content": content}
+        if r[2]:  # citation sources, so inline [n] markers resolve on the share too
+            try:
+                msg["sources"] = json.loads(r[2])
+            except (ValueError, TypeError):
+                pass
+        messages.append(msg)
     return {"title": conv[0], "messages": messages}

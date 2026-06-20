@@ -56,18 +56,19 @@ async def search(query: str) -> list[dict]:
     return out
 
 
-def format_context(results: list[dict]) -> str | None:
+def format_context(results: list[dict], start: int = 1) -> str | None:
+    """Numbered web-search context. ``start`` is the first citation number so the
+    web results can continue the numbering after the RAG excerpts (shared [n]
+    space), letting the model cite either with one inline scheme."""
     if not results:
         return None
     blocks = []
-    for r in results:
+    for i, r in enumerate(results, start=start):
         snippet = (r["content"] or "").strip()
-        blocks.append(
-            f'### {r["title"]}\n{r["url"]}\n{snippet}'.strip()
-        )
+        blocks.append(f'[{i}] {r["title"]} ({r["url"]})\n{snippet}'.strip())
     body = "\n\n".join(blocks)
     return (
-        "You have access to the following live web search results. Use them "
-        "when answering, and cite the URLs you draw from. Say so if none of "
-        "them are relevant.\n\n" + body
+        "Numbered live web search results are below. Use them when answering and "
+        "cite the ones you draw from with their bracketed number, e.g. [1]. Say "
+        "so if none are relevant.\n\n" + body
     )

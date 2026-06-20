@@ -31,7 +31,7 @@ from .memories import load_memory_context
 from .permissions import get_permissions
 from .plugins import PluginContext, PluginRegistry, run_inlet, run_outlet
 from .tools import ToolContext
-from .rag import retrieve_context
+from .rag import retrieve_context, snippet as rag_snippet
 from .web_search import format_context as format_web_context
 from .web_search import search as web_search
 
@@ -255,12 +255,15 @@ async def _gather_context(
     web_ctx = None
     if allow_web and conv.get("web_search"):
         results = await web_search(query)
-        web_ctx = format_web_context(results)
+        # Web citations continue the numbering after the RAG excerpts so [n] is
+        # globally unique across both context blocks.
+        web_ctx = format_web_context(results, start=len(sources) + 1)
         for r in results:
             sources.append({
                 "kind": "web",
                 "label": r.get("title") or r.get("url") or "result",
                 "detail": r.get("url", ""),
+                "snippet": rag_snippet(r.get("content") or ""),
             })
     mem_ctx = await load_memory_context(db, user_id)
     context = "\n\n".join(c for c in (mem_ctx, web_ctx, rag_ctx) if c) or None

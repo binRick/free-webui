@@ -94,3 +94,16 @@ async def test_message_includes_web_results_when_enabled(client, monkeypatch):
     systems = "\n".join(m["content"] for m in payload["messages"] if m["role"] == "system")
     assert "Capybara" in systems
     assert "wikipedia.org/wiki/Capybara" in systems
+
+
+def test_format_context_continues_numbering():
+    from app.web_search import format_context
+
+    results = [
+        {"title": "Alpha", "url": "http://a.example", "content": "first"},
+        {"title": "Beta", "url": "http://b.example", "content": "second"},
+    ]
+    out = format_context(results, start=3)
+    assert "[3] Alpha (http://a.example)" in out
+    assert "[4] Beta (http://b.example)" in out
+    assert format_context([], start=3) is None

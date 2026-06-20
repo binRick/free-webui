@@ -58,6 +58,12 @@ def extract_text(filename: str, mime: str | None, data: bytes) -> str:
         )
 
 
+def snippet(text: str, limit: int = 320) -> str:
+    """A short, single-spaced preview of an excerpt for a citation hovercard."""
+    collapsed = " ".join((text or "").split())
+    return collapsed if len(collapsed) <= limit else collapsed[:limit].rstrip() + "…"
+
+
 # ---------- chunking ----------
 
 def chunk_text(text: str, size: int | None = None, overlap: int | None = None) -> list[str]:
@@ -330,19 +336,19 @@ async def retrieve_context(
     if not top:
         return None, []
 
-    sections = [
-        f'--- from "{fn}" (score={score:.2f}) ---\n{txt}'
-        for score, fn, txt in top
-    ]
+    # One numbered source per retrieved excerpt (rank order), each carrying a
+    # short snippet for the citation hovercard. The excerpt numbers in the
+    # context match the 1-based indices into `sources`, so the model can cite
+    # inline as [1], [2], … and the client can resolve each marker to its source.
     sources: list[dict] = []
-    seen: set[str] = set()
-    for _score, fn, _txt in top:
-        if fn not in seen:
-            seen.add(fn)
-            sources.append({"kind": "document", "label": fn})
+    sections: list[str] = []
+    for i, (_score, fn, txt) in enumerate(top, start=1):
+        sources.append({"kind": "document", "label": fn, "snippet": snippet(txt)})
+        sections.append(f'[{i}] from "{fn}":\n{txt}')
     context = (
-        "You have access to the following excerpts from documents the user attached "
-        "to this conversation. Use them when answering, and say so if the answer "
+        "Numbered excerpts from documents the user attached to this conversation "
+        "are below. Use them when answering, and when a statement relies on one, "
+        "cite it inline with its bracketed number, e.g. [1]. Say so if the answer "
         "isn't supported by the excerpts.\n\n" + "\n\n".join(sections)
     )
     return context, sources

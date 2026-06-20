@@ -178,3 +178,12 @@ async def test_send_message_injects_retrieved_context(client):
     joined = "\n".join(s["content"] for s in systems)
     assert "secret.txt" in joined
     assert "purple-fox-77" in joined
+
+
+def test_snippet_collapses_and_truncates():
+    from app.rag import snippet
+
+    assert snippet("a  b\n c") == "a b c"
+    s = snippet("x" * 500, limit=100)
+    assert len(s) <= 101 and s.endswith("…")
+    assert snippet("") == ""

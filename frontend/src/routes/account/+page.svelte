@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { auth } from '$lib/auth.svelte';
   import { theme, ACCENT_PRESETS } from '$lib/theme.svelte';
+  import { t } from '$lib/i18n.svelte';
   import {
     listApiKeys,
     mintApiKey,
@@ -77,16 +78,16 @@
 </script>
 
 <header>
-  <a class="back" href="/">← back to chat</a>
-  <h1>account · api keys</h1>
-  <a class="tabs" href="/account/mcp">MCP servers →</a>
-  <a class="tabs" href="/account/openapi">OpenAPI tools →</a>
+  <a class="back" href="/">{t('common.backToChat')}</a>
+  <h1>{t('account.title')}</h1>
+  <a class="tabs" href="/account/mcp">{t('account.mcpServers')}</a>
+  <a class="tabs" href="/account/openapi">{t('account.openapiTools')}</a>
 </header>
 
 <main>
   <section class="card">
-    <h2>appearance</h2>
-    <p class="hint">Pick an accent color for the interface (saved in this browser). Theme light/dark is in the sidebar.</p>
+    <h2>{t('account.appearance')}</h2>
+    <p class="hint">{t('account.appearanceHint')}</p>
     <div class="swatches">
       {#each ACCENT_PRESETS as c (c)}
         <button
@@ -97,21 +98,21 @@
           onclick={() => theme.setAccent(c)}
         ></button>
       {/each}
-      <button class="swatch reset" class:on={!theme.accent} aria-label="default accent" onclick={() => theme.setAccent(null)}>↺</button>
+      <button class="swatch reset" class:on={!theme.accent} aria-label={t('account.defaultAccent')} onclick={() => theme.setAccent(null)}>↺</button>
     </div>
   </section>
 
   <section class="card">
-    <h2>mint a new key</h2>
+    <h2>{t('account.mintKey')}</h2>
     <p class="hint">
       Use this to talk to free-webui from external clients via the
       OpenAI-compatible <code>/v1/chat/completions</code> and
       <code>/v1/models</code> endpoints.
     </p>
     <div class="row">
-      <input bind:value={newName} placeholder="key name (e.g. shell-cli)" disabled={busy} />
+      <input bind:value={newName} placeholder={t('account.keyNamePlaceholder')} disabled={busy} />
       <button onclick={mint} disabled={busy || !newName.trim()}>
-        {busy ? 'minting…' : 'mint key'}
+        {busy ? t('account.minting') : t('account.mint')}
       </button>
     </div>
     {#if mintedRaw}
@@ -120,16 +121,16 @@
           new key <code>{mintedName}</code> — <strong>copy it now, it won't be shown again</strong>
         </div>
         <pre>{mintedRaw}</pre>
-        <button class="copy" onclick={() => copy(mintedRaw!)}>copy</button>
-        <button class="copy" onclick={() => (mintedRaw = null)}>dismiss</button>
+        <button class="copy" onclick={() => copy(mintedRaw!)}>{t('composer.copy')}</button>
+        <button class="copy" onclick={() => (mintedRaw = null)}>{t('common.dismiss')}</button>
       </div>
     {/if}
   </section>
 
   <section class="card">
-    <h2>your keys</h2>
+    <h2>{t('account.yourKeys')}</h2>
     {#if keys.length === 0}
-      <div class="empty">no keys yet</div>
+      <div class="empty">{t('account.noKeys')}</div>
     {:else}
       <table>
         <thead>
@@ -142,7 +143,7 @@
               <td><code>{k.key_prefix}</code></td>
               <td class="ts">{fmtDate(k.created_at)}</td>
               <td class="ts">{fmtDate(k.last_used_at)}</td>
-              <td><button class="del" onclick={() => revoke(k.id)}>revoke</button></td>
+              <td><button class="del" onclick={() => revoke(k.id)}>{t('common.revoke')}</button></td>
             </tr>
           {/each}
         </tbody>
@@ -151,37 +152,37 @@
   </section>
 
   <section class="card">
-    <h2>sessions</h2>
+    <h2>{t('account.sessions')}</h2>
     <p class="muted">Sign out of every device. Other sessions are revoked on their next request.</p>
-    <button class="danger" onclick={() => auth.logoutEverywhere()}>log out everywhere</button>
+    <button class="danger" onclick={() => auth.logoutEverywhere()}>{t('account.logoutEverywhere')}</button>
   </section>
 
   <section class="card">
-    <h2>your data</h2>
+    <h2>{t('account.yourData')}</h2>
     <p class="muted">Download everything in your account — conversations, prompts, notes, memories,
       collections and more — as a single JSON file.</p>
-    <a class="action" href={ACCOUNT_EXPORT_URL} download>↓ export my data (JSON)</a>
+    <a class="action" href={ACCOUNT_EXPORT_URL} download>{t('account.exportData')}</a>
   </section>
 
   <section class="card">
-    <h2>delete account</h2>
+    <h2>{t('account.deleteAccount')}</h2>
     <p class="muted">Permanently delete your account and all associated data. This cannot be undone.</p>
     <div class="del-row">
       <input
         type="password"
-        placeholder="confirm your password"
+        placeholder={t('account.deletePasswordPlaceholder')}
         bind:value={deletePw}
         autocomplete="current-password"
       />
       <button class="danger" disabled={deleteBusy || !deletePw} onclick={removeAccount}>
-        {deleteBusy ? 'deleting…' : 'delete my account'}
+        {deleteBusy ? t('account.deleting') : t('account.deleteConfirm')}
       </button>
     </div>
     {#if deleteErr}<p class="del-err">{deleteErr}</p>{/if}
   </section>
 
   <section class="card">
-    <h2>example usage</h2>
+    <h2>{t('account.exampleUsage')}</h2>
     <pre>curl http://localhost:8000/v1/chat/completions \
   -H "Authorization: Bearer YOUR_KEY" \
   -H "Content-Type: application/json" \

@@ -34,6 +34,11 @@ authoritative status):
   **non-destructive regenerate with variant navigation**, copy + 👍/👎 per
   message, **LLM auto-titling**, extra generation params
   (`max_tokens`/penalties/seed).
+- **i18n breadth**: two more UI languages (**Italian, Portuguese** → en/es/fr/de/
+  it/pt), expanded `t()` coverage (setup + account pages), and a build-time
+  **catalog-parity guard** wired into `npm run check` that fails if any locale is
+  missing/extra/empty keys versus the English source — so a half-translated
+  locale can't silently ship.
 - **Instance appearance**: admin-configurable **branding** (instance name) and
   **site-wide custom CSS**, served to every client (including logged-out login /
   setup / share pages) via a public `GET /api/config` and injected into a managed

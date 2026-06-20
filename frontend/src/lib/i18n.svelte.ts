@@ -9,16 +9,20 @@ import de from './locales/de.json';
 import en from './locales/en.json';
 import es from './locales/es.json';
 import fr from './locales/fr.json';
+import it from './locales/it.json';
+import pt from './locales/pt.json';
 
 type Catalog = Record<string, string>;
 
-const CATALOGS: Record<string, Catalog> = { en, es, fr, de };
+const CATALOGS: Record<string, Catalog> = { en, es, fr, de, it, pt };
 
 export const LOCALES: { code: string; label: string }[] = [
   { code: 'en', label: 'English' },
   { code: 'es', label: 'Español' },
   { code: 'fr', label: 'Français' },
-  { code: 'de', label: 'Deutsch' }
+  { code: 'de', label: 'Deutsch' },
+  { code: 'it', label: 'Italiano' },
+  { code: 'pt', label: 'Português' }
 ];
 
 const STORAGE_KEY = 'fw_locale';

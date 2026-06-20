@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import { appConfig } from '$lib/appConfig.svelte';
   import { auth } from '$lib/auth.svelte';
+  import { t } from '$lib/i18n.svelte';
 
   let username = $state('');
   let password = $state('');
@@ -44,22 +45,22 @@
 <div class="wrap">
   <form class="card" onsubmit={submit}>
     <h1>{appConfig.instanceName}</h1>
-    <p class="sub">first-time setup — create your admin account</p>
+    <p class="sub">{t('setup.subtitle')}</p>
     {#if error}<div class="err">{error}</div>{/if}
     <label>
-      <span>username</span>
+      <span>{t('login.username')}</span>
       <input bind:value={username} autocomplete="username" required autofocus />
     </label>
     <label>
-      <span>password</span>
+      <span>{t('login.password')}</span>
       <input bind:value={password} type="password" autocomplete="new-password" required />
     </label>
     <label>
-      <span>confirm password</span>
+      <span>{t('setup.confirmPassword')}</span>
       <input bind:value={confirm} type="password" autocomplete="new-password" required />
     </label>
     <button type="submit" disabled={busy || !username || !password}>
-      {busy ? 'creating…' : 'create admin account'}
+      {busy ? t('setup.creating') : t('setup.createAdmin')}
     </button>
   </form>
 </div>

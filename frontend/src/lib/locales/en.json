@@ -49,5 +49,36 @@
   "composer.copy": "copy",
   "composer.copied": "✓ copied",
 
+  "common.dismiss": "dismiss",
+  "common.revoke": "revoke",
+  "common.backToChat": "← back to chat",
+
+  "setup.subtitle": "first-time setup — create your admin account",
+  "setup.confirmPassword": "confirm password",
+  "setup.creating": "creating…",
+  "setup.createAdmin": "create admin account",
+
+  "account.title": "account · api keys",
+  "account.mcpServers": "MCP servers →",
+  "account.openapiTools": "OpenAPI tools →",
+  "account.appearance": "appearance",
+  "account.appearanceHint": "Pick an accent color for the interface (saved in this browser). Theme light/dark is in the sidebar.",
+  "account.defaultAccent": "default accent",
+  "account.mintKey": "mint a new key",
+  "account.keyNamePlaceholder": "key name (e.g. shell-cli)",
+  "account.mint": "mint key",
+  "account.minting": "minting…",
+  "account.deleteConfirm": "delete my account",
+  "account.deleting": "deleting…",
+  "account.yourKeys": "your keys",
+  "account.noKeys": "no keys yet",
+  "account.sessions": "sessions",
+  "account.logoutEverywhere": "log out everywhere",
+  "account.yourData": "your data",
+  "account.exportData": "↓ export my data (JSON)",
+  "account.deleteAccount": "delete account",
+  "account.deletePasswordPlaceholder": "confirm your password",
+  "account.exampleUsage": "example usage",
+
   "settings.language": "language"
 }

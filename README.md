@@ -141,9 +141,11 @@ while deliberately staying a lean two-tier app. Roughly:
   remaining in-process bits (login limiter, per-user WS cap / presence count) and
   the per-request connection pool are the rest of Phase-2 in `docs/SCALING.md`.
 - **i18n** — a dependency-free foundation is in place (reactive `t()` + JSON
-  catalogs, **en/es/fr/de**, in-app language switcher); UI-string coverage is
-  partial (sidebar + login wired, the rest adopting `t()` incrementally).
-  open-webui ships dozens of fully-translated languages.
+  catalogs, **en/es/fr/de/it/pt**, in-app language switcher), with a build-time
+  **catalog-parity guard** (`npm run check` fails if any locale drifts from the
+  English source keys). UI-string coverage is growing (sidebar, login, setup,
+  account wired; the rest adopting `t()` incrementally). open-webui still ships
+  more fully-translated languages.
 
 **Missing** ❌ (open-webui has these; free-webui does not yet)
 

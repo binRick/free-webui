@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
+  import { appConfig } from './appConfig.svelte';
   import { auth } from './auth.svelte';
   import { convs } from './conversations.svelte';
   import {
@@ -193,7 +194,7 @@
 
 <aside class:open={sidebar.open}>
   <header>
-    <a href="/" class="brand" onclick={openChat}>free-webui</a>
+    <a href="/" class="brand" onclick={openChat}>{appConfig.instanceName}</a>
     <select
       class="lang"
       aria-label={t('settings.language')}
@@ -304,6 +305,7 @@
           <a class="admin-link" href="/admin/models" title="manage installed models">⚙ models</a>
           <a class="admin-link" href="/admin/connections" title="upstream connections">🔌 conns</a>
           <a class="admin-link" href="/admin/plugins" title="loaded plugins">🧩 plugins</a>
+          <a class="admin-link" href="/admin/appearance" title="branding & custom CSS">🎨 appearance</a>
         {/if}
         <button class="logout" onclick={() => auth.logout()}>{t('common.logout')}</button>
       </div>

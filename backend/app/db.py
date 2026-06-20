@@ -242,6 +242,13 @@ CREATE TABLE IF NOT EXISTS group_permissions (
     PRIMARY KEY (group_id, key)
 );
 
+-- Operator-tunable instance settings (branding / custom CSS). A simple key→value
+-- store; admin-written, read by the public /api/config endpoint. See appearance.py.
+CREATE TABLE IF NOT EXISTS app_settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 -- Free-text tags on a conversation (for sidebar filtering/organization).
 CREATE TABLE IF NOT EXISTS conversation_tags (
     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,

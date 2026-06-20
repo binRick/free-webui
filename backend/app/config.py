@@ -77,6 +77,11 @@ class Settings(BaseSettings):
     # Allow users to create public read-only share links for conversations.
     allow_public_sharing: bool = True
 
+    # Default instance display name (branding). An admin can override it at
+    # runtime via /admin/appearance (stored in app_settings); this is the
+    # fallback shown before any override is set.
+    instance_name: str = "free-webui"
+
     # After the first exchange, ask the model for a short conversation title
     # (POST /api/conversations/{id}/autotitle). Falls back to the first-message
     # heuristic on any failure. Set false to keep the heuristic title.

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { auth } from '$lib/auth.svelte';
+  import { theme, ACCENT_PRESETS } from '$lib/theme.svelte';
   import {
     listApiKeys,
     mintApiKey,
@@ -83,6 +84,23 @@
 </header>
 
 <main>
+  <section class="card">
+    <h2>appearance</h2>
+    <p class="hint">Pick an accent color for the interface (saved in this browser). Theme light/dark is in the sidebar.</p>
+    <div class="swatches">
+      {#each ACCENT_PRESETS as c (c)}
+        <button
+          class="swatch"
+          class:on={theme.accent === c}
+          style="background: {c}"
+          aria-label="accent {c}"
+          onclick={() => theme.setAccent(c)}
+        ></button>
+      {/each}
+      <button class="swatch reset" class:on={!theme.accent} aria-label="default accent" onclick={() => theme.setAccent(null)}>↺</button>
+    </div>
+  </section>
+
   <section class="card">
     <h2>mint a new key</h2>
     <p class="hint">
@@ -216,6 +234,17 @@
   }
   h2 { margin: 0; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); font-weight: 500; }
   .hint { color: var(--text-dim); font-size: 0.85rem; margin: 0; }
+  .swatches { display: flex; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap; }
+  .swatch {
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 999px;
+    border: 2px solid var(--border);
+    cursor: pointer;
+    padding: 0;
+  }
+  .swatch.on { border-color: var(--text); box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--text); }
+  .swatch.reset { background: var(--bg-hover); color: var(--text-dim); font-size: 0.9rem; line-height: 1; }
   .row { display: flex; gap: 0.5rem; }
   .row input {
     flex: 1;

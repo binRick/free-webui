@@ -34,6 +34,11 @@ authoritative status):
   **non-destructive regenerate with variant navigation**, copy + 👍/👎 per
   message, **LLM auto-titling**, extra generation params
   (`max_tokens`/penalties/seed).
+- **Instance appearance**: admin-configurable **branding** (instance name) and
+  **site-wide custom CSS**, served to every client (including logged-out login /
+  setup / share pages) via a public `GET /api/config` and injected into a managed
+  `<style>` via `textContent`; managed at `/admin/appearance`. Plus a **per-user
+  accent color** (preset swatches, saved per browser) on top of light/dark/system.
 - **Knowledge bases**: reusable document **collections** attachable to any chat.
 - **Inline citation hovercards**: RAG/web-search context is injected as numbered
   excerpts and the model is asked to cite inline as `[n]`; the client turns each

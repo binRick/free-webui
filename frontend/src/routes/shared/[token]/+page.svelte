@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { page } from '$app/state';
   import Markdown from '$lib/Markdown.svelte';
+  import { appConfig } from '$lib/appConfig.svelte';
   import { getSharedConversation, type SharedConversation } from '$lib/api';
 
   let conv = $state<SharedConversation | null>(null);
@@ -21,7 +22,7 @@
 
 <div class="page">
   <header>
-    <span class="brand">free-webui</span>
+    <span class="brand">{appConfig.instanceName}</span>
     <span class="tag">shared · read-only</span>
   </header>
 

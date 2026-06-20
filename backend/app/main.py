@@ -17,6 +17,8 @@ from .admin_users import router as admin_users_router
 from .connections import merged_model_ids
 from .anthropic_compat import router as anthropic_compat_router
 from .api_keys import router as api_keys_router
+from .appearance import admin_router as appearance_admin_router
+from .appearance import public_router as appearance_public_router
 from .audit import router as audit_router
 from .auth import configure_rate_limiter, current_user
 from .auth import router as auth_router
@@ -264,6 +266,8 @@ app.include_router(audit_router)
 app.include_router(admin_feedback_router)
 app.include_router(admin_analytics_router)
 app.include_router(banners_router)
+app.include_router(appearance_public_router)
+app.include_router(appearance_admin_router)
 app.include_router(evaluations_router)
 app.include_router(account_router)
 app.include_router(web_search_router)

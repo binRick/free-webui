@@ -5,12 +5,26 @@
   import BannerBar from '$lib/BannerBar.svelte';
   import Sidebar from '$lib/Sidebar.svelte';
   import Toasts from '$lib/Toasts.svelte';
+  import { appConfig } from '$lib/appConfig.svelte';
   import { auth } from '$lib/auth.svelte';
   import { i18n } from '$lib/i18n.svelte';
   import { sidebar } from '$lib/sidebarState.svelte';
   import { theme } from '$lib/theme.svelte';
 
   let { children } = $props();
+
+  // Inject the operator's custom CSS into a managed style element via textContent
+  // (CSS, never parsed as HTML). Reactive so an admin save reflects on next load.
+  $effect(() => {
+    if (typeof document === 'undefined') return;
+    let el = document.getElementById('fw-custom-css') as HTMLStyleElement | null;
+    if (!el) {
+      el = document.createElement('style');
+      el.id = 'fw-custom-css';
+      document.head.appendChild(el);
+    }
+    el.textContent = appConfig.customCss;
+  });
 
   // Routes that don't require auth; sidebar is hidden on these.
   const PUBLIC_ROUTES = ['/login', '/setup'];
@@ -22,6 +36,7 @@
   onMount(async () => {
     theme.init();
     i18n.init();
+    appConfig.load(); // branding + custom CSS (public; also for login/setup/share)
     // Register the PWA service worker; ignore failures (e.g. http with no TLS).
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/service-worker.js').catch(() => {});

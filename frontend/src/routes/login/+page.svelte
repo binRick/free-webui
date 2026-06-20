@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
+  import { appConfig } from '$lib/appConfig.svelte';
   import { auth } from '$lib/auth.svelte';
   import { t } from '$lib/i18n.svelte';
 
@@ -43,7 +44,7 @@
 
 <div class="wrap">
   <form class="card" onsubmit={submit}>
-    <h1>free-webui</h1>
+    <h1>{appConfig.instanceName}</h1>
     <p class="sub">{t('login.signIn')}</p>
     {#if error}<div class="err">{error}</div>{/if}
     <label>

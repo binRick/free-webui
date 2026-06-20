@@ -954,6 +954,38 @@ export async function setGroupPermissions(gid: number, keys: string[]): Promise<
   if (!res.ok) throw new Error(`save failed: ${res.status}`);
 }
 
+// ---- instance appearance (branding + custom CSS) ----
+
+export interface AppConfig {
+  instance_name: string;
+  custom_css: string;
+}
+
+export async function getConfig(): Promise<AppConfig> {
+  const res = await apiFetch('/api/config');
+  if (!res.ok) return { instance_name: 'free-webui', custom_css: '' };
+  return res.json();
+}
+
+export async function getAppearance(): Promise<AppConfig> {
+  const res = await apiFetch('/api/admin/appearance');
+  if (!res.ok) throw new Error(`load failed: ${res.status}`);
+  return res.json();
+}
+
+export async function setAppearance(instanceName: string, customCss: string): Promise<AppConfig> {
+  const res = await apiFetch('/api/admin/appearance', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ instance_name: instanceName, custom_css: customCss })
+  });
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}));
+    throw new Error(b.detail ?? `save failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 export interface AuditEntry {
   id: number;
   username: string | null;

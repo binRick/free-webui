@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
+  import { appConfig } from '$lib/appConfig.svelte';
   import { auth } from '$lib/auth.svelte';
 
   let username = $state('');
@@ -42,7 +43,7 @@
 
 <div class="wrap">
   <form class="card" onsubmit={submit}>
-    <h1>free-webui</h1>
+    <h1>{appConfig.instanceName}</h1>
     <p class="sub">first-time setup — create your admin account</p>
     {#if error}<div class="err">{error}</div>{/if}
     <label>

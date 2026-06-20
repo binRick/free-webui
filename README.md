@@ -128,6 +128,7 @@ while deliberately staying a lean two-tier app. Roughly:
 | Voice | server-side STT/TTS proxy + browser Web Speech fallback, **hands-free voice/video call mode** (VAD turn-taking, optional camera→vision) |
 | API | OpenAI-compatible `/v1`, **Anthropic `/v1/messages` proxy**, per-user API keys |
 | Deployment | **SQLite or Postgres** (full suite green on both), optional **S3/MinIO** media storage |
+| Appearance | light/dark + **system**, **per-user accent color**, admin **instance branding + site-wide custom CSS** |
 
 **Partial / weaker** ⚠️
 
@@ -147,7 +148,6 @@ while deliberately staying a lean two-tier app. Roughly:
 **Missing** ❌ (open-webui has these; free-webui does not yet)
 
 - **Enterprise auth** — LDAP / SCIM.
-- Assorted polish: custom CSS/theming beyond light/dark.
 
 Net: strong parity for everyday single- / small-team self-hosting (now including
 Postgres); the meaningful remaining distance is **i18n breadth**, the

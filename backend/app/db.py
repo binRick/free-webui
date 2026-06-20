@@ -455,8 +455,14 @@ async def open_db(target: str) -> Database:
     if is_postgres_url(target):
         import asyncpg  # optional dependency, only needed for the Postgres backend
 
-        conn = await asyncpg.connect(target)
-        db: Database = PostgresDatabase(conn)
+        from .config import settings
+
+        pool = await asyncpg.create_pool(
+            target,
+            min_size=settings.db_pool_min_size,
+            max_size=settings.db_pool_max_size,
+        )
+        db: Database = PostgresDatabase(pool, acquire_timeout=settings.db_pool_acquire_timeout)
         schema, indexes = to_pg_ddl(SCHEMA), to_pg_ddl(INDEXES)
     else:
         Path(target).parent.mkdir(parents=True, exist_ok=True)

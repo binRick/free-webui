@@ -994,8 +994,11 @@ async def send_message(
     history = await _load_history(db, cid)
 
     now = int(time.time())
+    # Externalize inline images (an S3 upload) BEFORE opening the transaction so a
+    # pooled DB connection isn't held across that network I/O. A blob whose message
+    # INSERT then fails is a harmless orphan (reclaimed by gc_orphan_files).
+    stored_content = await externalize_parts(db, user["id"], cid, body.content)
     async with db.transaction():
-        stored_content = await externalize_parts(db, user["id"], cid, body.content)
         await db.execute(
             "INSERT INTO messages (conversation_id, role, content, created_at) VALUES (?, ?, ?, ?)",
             (cid, "user", _encode_content(stored_content), now),
@@ -1240,10 +1243,12 @@ async def edit_message(
     conv = await _conv_settings(db, cid)
     await _guard_model(db, user, body.model, conv["model"])
 
+    # Externalize inline images (S3 upload) before the transaction so the pooled
+    # connection isn't held across network I/O (orphan blobs are GC'd below).
+    stored_content = await externalize_parts(db, user["id"], cid, body.content)
     # Edit the user turn and truncate everything after it as one atomic unit, so
     # a failure can't leave the message rewritten but the tail half-deleted.
     async with db.transaction():
-        stored_content = await externalize_parts(db, user["id"], cid, body.content)
         await db.execute(
             "UPDATE messages SET content = ? WHERE id = ?", (_encode_content(stored_content), msg_id)
         )

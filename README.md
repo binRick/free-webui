@@ -136,11 +136,14 @@ while deliberately staying a lean two-tier app. Roughly:
   (BM25 keyword) retrieval fused with Reciprocal Rank Fusion, so exact-term
   matches (names, IDs, code symbols) surface alongside semantic ones. Still a
   brute-force scan — no ANN index yet (would add `sqlite-vec` for >100k chunks).
-- **Horizontal scaling** — Postgres is supported and real-time **channels fan out
-  across replicas via Redis pub/sub** (`FREE_WEBUI_REDIS_URL`); the login limiter,
-  the **per-user WS connection cap**, and the **channel presence count** are now
-  Redis-backed (global across replicas, with in-process fallback). The remaining
-  Phase-2 item is the per-request DB connection pool — see `docs/SCALING.md`.
+- **Horizontal scaling** — Postgres runs on an **asyncpg connection pool** with
+  real per-request transactions (concurrent requests no longer serialize behind
+  one connection, and multi-statement mutations are atomic on Postgres too).
+  Real-time **channels fan out across replicas via Redis pub/sub**
+  (`FREE_WEBUI_REDIS_URL`); the login limiter, the **per-user WS connection cap**,
+  and the **channel presence count** are Redis-backed (global across replicas,
+  with in-process fallback). Remaining Phase-2 bits (OIDC first-admin / migration
+  advisory locks) are scoped in `docs/SCALING.md`.
 - **i18n** — a dependency-free foundation is in place (reactive `t()` + JSON
   catalogs, **en/es/fr/de/it/pt**, in-app language switcher), with a build-time
   **catalog-parity guard** (`npm run check` fails if any locale drifts from the

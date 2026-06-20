@@ -30,11 +30,20 @@ The Redis-backed **login rate-limiter** (B2) also landed: a global `INCR`+`EXPIR
 fixed-window counter when `FREE_WEBUI_REDIS_URL` is set (in-process sliding window
 otherwise, and as the fail-open fallback on any Redis error).
 
-Remaining: the rest of Phase 2 (OIDC first-admin lock B3, etc. — §3/§5) and the
-connection-pool/per-request-transaction
-refinement (the Postgres
-backend currently uses one lock-serialized connection per replica, the same
-concurrency profile as the shared SQLite connection).
+**The connection-pool / per-request-transaction refinement also landed.** The
+Postgres backend now uses an `asyncpg` connection **pool** (`FREE_WEBUI_DB_POOL_MIN_SIZE`
+/ `_MAX_SIZE`) instead of one lock-serialized connection: a statement outside a
+transaction acquires a connection for just that statement (autocommit), and
+`transaction()` acquires one pooled connection, binds it to the current task via a
+`ContextVar`, and runs a real `BEGIN/COMMIT/ROLLBACK` — so multi-statement
+mutations are genuinely atomic and concurrent requests no longer serialize behind
+a single connection. This closes the **transaction-semantics gap** (the
+edit/regenerate/delete truncation and `*_collections` DELETE-then-INSERT were
+non-atomic on the old autocommit connection — `test_tx_rollback` now passes on
+Postgres too, so the suite is green on both backends).
+
+Remaining: the rest of Phase 2 — OIDC first-admin lock (B3) and migration
+coordination (B4) via `pg_advisory_lock` — see §3/§5.
 
 This document inventories every blocker between today's
 single-process / single-SQLite design and a deployment that (a) runs against
@@ -201,16 +210,14 @@ metrics/observability; Alembic (D3).
 - **Behavioral drift between backends** — mitigated by the dual-backend CI matrix
   (the same 311-test suite must pass on both). This is the single most important
   safety net and should land *with* the asyncpg backend, not after.
-- **Transaction semantics** — the Postgres backend currently runs **autocommit**
-  (one lock-serialized connection), so multi-statement write sequences are not
-  atomic: an adversarial review confirmed that `set_conversation_collections` /
-  `_set_preset_collections` (DELETE-then-INSERT) and the edit/delete/regenerate
-  truncation (DELETE + `gc_orphan_files` + UPDATE) can leave partial state if a
-  statement fails mid-sequence — destructive-then-non-atomic. (SQLite's shared
-  connection has a smaller version of the same window.) **The fix is the
-  per-request connection pool + an explicit transaction per request** (the
-  Phase-1.5 refinement) — wrap each handler's writes in one transaction that
-  `commit()` commits. Until then these sequences are best-effort on Postgres.
+- **Transaction semantics** — ✅ **fixed.** The Postgres backend used to run
+  autocommit on one lock-serialized connection, so multi-statement write
+  sequences weren't atomic (an adversarial review flagged `*_collections`
+  DELETE-then-INSERT and the edit/delete/regenerate truncation as
+  destructive-then-non-atomic). The **connection pool + per-task transaction**
+  refinement landed: `transaction()` now runs a real `BEGIN/COMMIT/ROLLBACK` on a
+  bound pooled connection, so those `async with db.transaction():` blocks are
+  genuinely atomic on Postgres. `test_tx_rollback` is green on both backends.
 - **Migration coordination** — never run ad-hoc DDL from N replicas (B4).
 - **No SQLite regression** — the zero-config SQLite path must stay byte-for-byte
   behaviorally identical; every phase keeps it as the default.

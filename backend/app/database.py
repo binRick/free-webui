@@ -7,21 +7,23 @@ implement the same small interface:
   proxy: ``execute`` returns the real aiosqlite cursor and ``__getattr__``
   forwards anything not wrapped, so existing call sites are unchanged.
 * ``PostgresDatabase`` — Postgres via asyncpg (opt-in via a ``postgresql://``
-  URL). One connection guarded by a lock (same per-replica serialization profile
-  as the shared SQLite connection); ``execute`` translates ``?``→``$N`` and
+  URL). Backed by an ``asyncpg`` connection **pool**: a statement outside a
+  transaction acquires a connection for that one statement (autocommit, like
+  before), while ``transaction()`` acquires ONE pooled connection, binds it to
+  the current task via a ``ContextVar`` so every ``execute`` inside the block
+  hits it, and runs a real ``BEGIN/COMMIT/ROLLBACK`` — so multi-statement
+  mutations are genuinely atomic, and concurrent requests no longer serialize
+  behind a single shared connection. ``execute`` translates ``?``→``$N`` and
   buffers rows behind a cursor shim exposing ``fetchone``/``fetchall``.
 
 Dialect-specific SQL the call sites still emit (``strftime``, ``GROUP_CONCAT``,
 ``COLLATE NOCASE``, …) is normalized per-backend in :func:`adapt_query`; DDL is
 normalized in :func:`to_pg_ddl`.
-
-NOTE: the Postgres connection runs in autocommit (``commit``/``rollback`` are
-no-ops) and is a single connection per replica — a connection pool with
-per-request transactions is the documented next refinement.
 """
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import re
 import sqlite3
 from contextlib import asynccontextmanager
@@ -206,43 +208,95 @@ class _PgCursor:
 
 
 class PostgresDatabase(_FetchMixin):
-    def __init__(self, conn) -> None:
-        self._conn = conn
+    def __init__(self, pool, acquire_timeout: float = 30.0) -> None:
+        self._pool = pool
+        self._acquire_timeout = acquire_timeout
         self.dialect = "postgres"
-        self._lock = asyncio.Lock()  # one connection → serialize ops (like aiosqlite)
+        # The (connection, owning-task) bound to the CURRENT task while inside
+        # transaction(); None outside one (each statement then autocommits on a
+        # pooled conn). ContextVars are task-local, so concurrent requests don't
+        # see each other's bound connection; the owning-task tag additionally
+        # rejects using one task's transaction connection from another task.
+        self._bound: contextvars.ContextVar = contextvars.ContextVar(
+            "pg_bound_conn", default=None
+        )
 
     def _q(self, sql: str) -> str:
         return adapt_query(qmark_to_dollar(sql), "postgres")
 
+    @asynccontextmanager
+    async def _conn(self):
+        """The bound transaction connection if inside one, else a freshly
+        acquired pooled connection for a single autocommit statement.
+
+        A bound connection may only be used from the task that opened the
+        transaction: asyncpg forbids concurrent ops on one connection, so a
+        ``gather`` of db ops or a db-touching child task inside a ``transaction()``
+        would corrupt it — we raise a clear error instead."""
+        bound = self._bound.get()
+        if bound is not None:
+            conn, owner = bound
+            if owner is not asyncio.current_task():
+                raise RuntimeError(
+                    "concurrent/cross-task DB op inside transaction(): the bound "
+                    "connection must not be used from another task (no asyncio.gather "
+                    "of db ops, and no db-touching child task, inside the block)"
+                )
+            yield conn
+        else:
+            async with self._pool.acquire(timeout=self._acquire_timeout) as conn:
+                yield conn
+
     async def execute(self, sql: str, params: "tuple | list" = ()) -> _PgCursor:
         q = self._q(sql)
-        async with self._lock:
-            rows = await self._conn.fetch(q, *params)
+        async with self._conn() as conn:
+            rows = await conn.fetch(q, *params)
         return _PgCursor(rows)
 
     async def executemany(self, sql: str, seq_of_params) -> None:
         q = self._q(sql)
-        async with self._lock:
-            await self._conn.executemany(q, [tuple(p) for p in seq_of_params])
+        data = [tuple(p) for p in seq_of_params]
+        async with self._conn() as conn:
+            await conn.executemany(q, data)
 
     async def executescript(self, script: str) -> None:
         # asyncpg's simple-query protocol (no args) runs multi-statement scripts.
-        async with self._lock:
-            await self._conn.execute(script)
+        async with self._conn() as conn:
+            await conn.execute(script)
 
-    async def commit(self) -> None:  # autocommit
+    @asynccontextmanager
+    async def transaction(self):
+        """Real atomic unit on Postgres: acquire one pooled connection, bind it
+        to this task, and run a BEGIN/COMMIT/ROLLBACK around the block. A nested
+        ``transaction()`` on the same task joins the outer unit (no inner BEGIN),
+        so a failure anywhere unwinds the whole thing."""
+        if self._bound.get() is not None:
+            yield self  # already in a transaction on this task → join it
+            return
+        async with self._pool.acquire(timeout=self._acquire_timeout) as conn:
+            token = self._bound.set((conn, asyncio.current_task()))
+            try:
+                async with conn.transaction():
+                    yield self
+            finally:
+                self._bound.reset(token)
+
+    async def commit(self) -> None:
+        # Atomicity comes from transaction(); a bare execute() already autocommits
+        # on its pooled connection, so commit() outside a transaction is a no-op
+        # (and inside one the real COMMIT happens when the block exits).
         return None
 
     async def rollback(self) -> None:
         return None
 
     async def close(self) -> None:
-        await self._conn.close()
+        await self._pool.close()
 
     async def insert(self, sql: str, params: "tuple | list" = ()) -> int:
         q = self._q(sql) + " RETURNING id"
-        async with self._lock:
-            row = await self._conn.fetchrow(q, *params)
+        async with self._conn() as conn:
+            row = await conn.fetchrow(q, *params)
         return int(row[0])
 
 

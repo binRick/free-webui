@@ -89,6 +89,22 @@ async def test_transaction_rolls_back_on_error():
     await db.close()
 
 
+def test_pool_size_validation():
+    """Bad pool-size config fails fast at construction with a clear error, not a
+    raw asyncpg crash at startup."""
+    import pytest
+    from pydantic import ValidationError
+
+    from app.config import Settings
+
+    with pytest.raises(ValidationError):
+        Settings(db_pool_max_size=0)
+    with pytest.raises(ValidationError):
+        Settings(db_pool_min_size=5, db_pool_max_size=2)
+    # a valid pair is accepted
+    assert Settings(db_pool_min_size=2, db_pool_max_size=4).db_pool_max_size == 4
+
+
 async def test_passthrough_and_proxy():
     db = await _mem_db()
     assert db.dialect == "sqlite"

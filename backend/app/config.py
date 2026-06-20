@@ -1,3 +1,4 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,6 +19,16 @@ class Settings(BaseSettings):
     # Optional Postgres backend: set to a postgresql:// URL to use Postgres
     # (asyncpg) instead of the default SQLite file. Takes precedence over db_path.
     database_url: str = ""
+    # asyncpg connection-pool bounds (Postgres only): statements outside a
+    # transaction acquire a connection per statement and transaction() holds one
+    # for its duration, so concurrent requests no longer serialize behind a single
+    # connection. Size the max for your replica's concurrency + Postgres limits.
+    db_pool_min_size: int = 1
+    db_pool_max_size: int = 10
+    # Seconds to wait for a free pooled connection before failing (instead of
+    # blocking forever) when every connection is in use — sized too small a pool
+    # under load then surfaces as a fast error, not a hang.
+    db_pool_acquire_timeout: float = 30.0
 
     # Session cookie signing key. If empty, a persistent random key is
     # generated and stored next to the DB.
@@ -217,6 +228,17 @@ class Settings(BaseSettings):
 
     # CORS: SvelteKit dev server.
     allowed_origins: list[str] = ["http://localhost:5173"]
+
+    @model_validator(mode="after")
+    def _check_pool_sizes(self) -> "Settings":
+        if self.db_pool_max_size < 1:
+            raise ValueError("FREE_WEBUI_DB_POOL_MAX_SIZE must be >= 1")
+        if not (0 <= self.db_pool_min_size <= self.db_pool_max_size):
+            raise ValueError(
+                "FREE_WEBUI_DB_POOL_MIN_SIZE must be between 0 and "
+                "FREE_WEBUI_DB_POOL_MAX_SIZE"
+            )
+        return self
 
 
 settings = Settings()

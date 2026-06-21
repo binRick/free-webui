@@ -62,6 +62,11 @@ authoritative status):
 - **Faster RAG**: numpy-vectorized retrieval (`_rank_chunks`) replaces the
   per-chunk Python cosine loop with a single matrix-vector product — ~18× faster
   on 50k chunks with identical top-k (first runtime dependency added: `numpy`).
+- **RAG reranking** (optional): after hybrid retrieval, re-score the top
+  candidates with a cross-encoder reranker for sharper precision — point
+  `FREE_WEBUI_RERANK_URL` at any Cohere/Jina/TEI-compatible `/rerank` endpoint
+  (`rag_rerank_candidates` chunks are retrieved, then reranked down to
+  `rag_top_k`). Off by default; falls back to the hybrid order on any failure.
 - **Hybrid RAG retrieval**: dense embedding cosine and sparse **BM25** keyword
   scores are fused with **Reciprocal Rank Fusion**, so exact-term matches
   (names, IDs, error codes, code symbols) that pure embeddings miss are

@@ -123,6 +123,17 @@ class Settings(BaseSettings):
     # rankings via Reciprocal Rank Fusion. Catches exact-term matches (names,
     # IDs, code symbols) that pure embeddings miss. Set false for vector-only.
     rag_hybrid: bool = True
+    # Optional reranking: after hybrid retrieval, re-score the top candidates with
+    # a cross-encoder reranker for sharper precision. Point rerank_url at any
+    # Cohere/Jina/TEI-compatible /rerank endpoint (POST {model, query, documents}
+    # -> {"results":[{index, relevance_score}]} or a bare [{index, score}] list).
+    # Empty -> reranking off (hybrid order used as-is). rag_rerank_candidates
+    # chunks are retrieved before reranking down to rag_top_k.
+    rerank_url: str = ""
+    rerank_model: str = ""
+    rerank_api_key: str = ""
+    rerank_timeout_seconds: float = 20.0
+    rag_rerank_candidates: int = 20
 
     # S3-compatible object store for media blobs. Set s3_bucket to externalize
     # file bytes (generated/uploaded images) out of the DB into S3/MinIO/Ceph/etc.

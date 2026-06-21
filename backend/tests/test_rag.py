@@ -187,3 +187,62 @@ def test_snippet_collapses_and_truncates():
     s = snippet("x" * 500, limit=100)
     assert len(s) <= 101 and s.endswith("…")
     assert snippet("") == ""
+
+
+def _patch_rerank(monkeypatch, handler):
+    """Route the reranker's fresh httpx.AsyncClient through a MockTransport."""
+    import httpx
+
+    orig = httpx.AsyncClient
+
+    class Patched(orig):
+        def __init__(self, *a, **kw):
+            kw["transport"] = httpx.MockTransport(handler)
+            super().__init__(*a, **kw)
+
+    monkeypatch.setattr(httpx, "AsyncClient", Patched)
+
+
+async def test_rerank_reorders_by_relevance(monkeypatch):
+    import httpx
+
+    from app import rag
+
+    monkeypatch.setattr(rag.settings, "rerank_url", "http://rr.test/rerank")
+    monkeypatch.setattr(rag.settings, "rerank_model", "rr")
+    candidates = [(0.9, "a.txt", "alpha"), (0.5, "b.txt", "beta"), (0.1, "c.txt", "gamma")]
+    # reranker says gamma is most relevant, then alpha (and returns them unsorted)
+    _patch_rerank(monkeypatch, lambda req: httpx.Response(200, json={"results": [
+        {"index": 0, "relevance_score": 0.4},
+        {"index": 2, "relevance_score": 0.95},
+        {"index": 1, "relevance_score": 0.1},
+    ]}))
+    out = await rag._rerank("q", candidates, top_k=2)
+    assert [fn for _s, fn, _t in out] == ["c.txt", "a.txt"]
+
+
+async def test_rerank_accepts_bare_list_and_score_key(monkeypatch):
+    import httpx
+
+    from app import rag
+
+    monkeypatch.setattr(rag.settings, "rerank_url", "http://rr.test/rerank")
+    candidates = [(0.9, "a.txt", "alpha"), (0.5, "b.txt", "beta")]
+    # TEI-style bare array with "score"
+    _patch_rerank(monkeypatch, lambda req: httpx.Response(200, json=[
+        {"index": 1, "score": 0.9}, {"index": 0, "score": 0.2},
+    ]))
+    out = await rag._rerank("q", candidates, top_k=2)
+    assert [fn for _s, fn, _t in out] == ["b.txt", "a.txt"]
+
+
+async def test_rerank_falls_back_to_hybrid_order_on_error(monkeypatch):
+    import httpx
+
+    from app import rag
+
+    monkeypatch.setattr(rag.settings, "rerank_url", "http://rr.test/rerank")
+    candidates = [(0.9, "a.txt", "alpha"), (0.5, "b.txt", "beta"), (0.1, "c.txt", "gamma")]
+    _patch_rerank(monkeypatch, lambda req: httpx.Response(500, text="boom"))
+    out = await rag._rerank("q", candidates, top_k=2)
+    assert [fn for _s, fn, _t in out] == ["a.txt", "b.txt"]  # hybrid order preserved

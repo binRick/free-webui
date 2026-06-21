@@ -295,6 +295,60 @@ async def prepare_document(
     return await prepare_text(http, text)
 
 
+# ---------- reranking ----------
+
+async def _rerank(
+    query: str, candidates: list[tuple], top_k: int
+) -> list[tuple]:
+    """Reorder hybrid ``candidates`` ([(score, filename, text)]) with an external
+    cross-encoder reranker and keep the top_k. Uses its own client (operator-
+    configured endpoint, like the embedding/upstream URLs) and FALLS BACK to the
+    hybrid order on any failure — reranking only ever sharpens, never breaks, RAG."""
+    docs = [txt for _s, _fn, txt in candidates]
+    payload = {
+        "model": settings.rerank_model,
+        "query": query,
+        "documents": docs,
+        "top_n": top_k,
+    }
+    headers = {}
+    if settings.rerank_api_key:
+        headers["authorization"] = f"Bearer {settings.rerank_api_key}"
+    try:
+        async with httpx.AsyncClient(timeout=settings.rerank_timeout_seconds) as c:
+            r = await c.post(settings.rerank_url, json=payload, headers=headers)
+        if r.status_code >= 400:
+            return candidates[:top_k]
+        data = r.json()
+    except (httpx.HTTPError, ValueError):
+        return candidates[:top_k]
+    # Cohere/Jina wrap in {"results": [...]}; TEI/Infinity return a bare list.
+    results = data.get("results") if isinstance(data, dict) else data
+    if not isinstance(results, list):
+        return candidates[:top_k]
+    scored: list[tuple[float, int]] = []
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        idx = item.get("index")
+        score = item.get("relevance_score", item.get("score"))
+        if isinstance(idx, int) and 0 <= idx < len(candidates) and isinstance(score, (int, float)):
+            scored.append((float(score), idx))
+    if not scored:
+        return candidates[:top_k]
+    scored.sort(key=lambda x: x[0], reverse=True)  # robust to unsorted responses
+    out: list[tuple] = []
+    seen: set[int] = set()
+    for _s, i in scored:  # dedupe indices defensively
+        if i in seen:
+            continue
+        seen.add(i)
+        out.append(candidates[i])
+        if len(out) >= top_k:
+            break
+    return out
+
+
 # ---------- retrieval ----------
 
 async def retrieve_context(
@@ -339,9 +393,17 @@ async def retrieve_context(
 
     [query_vec] = await embed_texts(http, [query])
 
-    top = _hybrid_rank(query, query_vec, rows, top_k, use_bm25=settings.rag_hybrid)
+    # When a reranker is configured, pull a wider candidate set first, then let it
+    # re-score down to top_k; otherwise the hybrid top_k is used directly.
+    rerank_on = bool(settings.rerank_url)
+    candidate_k = max(top_k, settings.rag_rerank_candidates) if rerank_on else top_k
+    top = _hybrid_rank(query, query_vec, rows, candidate_k, use_bm25=settings.rag_hybrid)
     if not top:
         return None, []
+    if rerank_on and len(top) > 1:
+        top = await _rerank(query, top, top_k)
+    else:
+        top = top[:top_k]
 
     # One numbered source per retrieved excerpt (rank order), each carrying a
     # short snippet for the citation hovercard. The excerpt numbers in the

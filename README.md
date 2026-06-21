@@ -119,7 +119,7 @@ while deliberately staying a lean two-tier app. Roughly:
 | Chat core | streaming, markdown (code/KaTeX/mermaid), edit, **regenerate any turn**, **continue**, branching/variants, copy, 👍/👎, auto-titling, follow-ups |
 | Organization | search, date grouping, pin/archive, **tags** (+ optional LLM auto-tagging), **folders**, **clone**, **temporary chat** |
 | Composer | searchable model picker, `/`·`@`·`#` commands, **prompt variables** with custom input |
-| Knowledge / RAG | per-chat uploads, **URL ingest** (fetch a web page/PDF), reusable **collections**, web search, **inline citations + hovercards**, **hybrid dense+BM25 retrieval** (RRF) |
+| Knowledge / RAG | per-chat uploads, **URL ingest** (fetch a web page/PDF), reusable **collections**, web search, **inline citations + hovercards**, **hybrid dense+BM25 retrieval** (RRF) + optional **cross-encoder reranking** |
 | Tools | function-calling loop, **MCP**, **OpenAPI tool servers**, code interpreter, image generation, custom assistants, plugins/pipelines |
 | Models | **multiple upstream connections**, Ollama model management, per-model access control, per-chat params |
 | Multi-user / admin | argon2 auth, **OIDC/SSO**, groups + RBAC, **per-feature permission matrix**, audit log, feedback log, **usage analytics**, **broadcast banners**, self-service **data export + account deletion** |
@@ -134,8 +134,10 @@ while deliberately staying a lean two-tier app. Roughly:
 
 - **RAG retrieval** — **hybrid** dense (numpy-vectorized cosine) + sparse
   (BM25 keyword) retrieval fused with Reciprocal Rank Fusion, so exact-term
-  matches (names, IDs, code symbols) surface alongside semantic ones. Still a
-  brute-force scan — no ANN index yet (would add `sqlite-vec` for >100k chunks).
+  matches (names, IDs, code symbols) surface alongside semantic ones, with
+  **optional cross-encoder reranking** (point `FREE_WEBUI_RERANK_URL` at any
+  Cohere/Jina/TEI-compatible `/rerank` endpoint). Still a brute-force scan — no
+  ANN index yet (would add `sqlite-vec` for >100k chunks).
 - **Horizontal scaling** — Postgres runs on an **asyncpg connection pool** with
   real per-request transactions (concurrent requests no longer serialize behind
   one connection, and multi-statement mutations are atomic on Postgres too).

@@ -149,9 +149,9 @@ while deliberately staying a lean two-tier app. Roughly:
 - **i18n** — a dependency-free foundation is in place (reactive `t()` + JSON
   catalogs, **en/es/fr/de/it/pt**, in-app language switcher), with a build-time
   **catalog-parity guard** (`npm run check` fails if any locale drifts from the
-  English source keys). UI-string coverage is growing (sidebar, login, setup,
-  account wired; the rest adopting `t()` incrementally). open-webui still ships
-  more fully-translated languages.
+  English source keys). UI-string coverage now spans the sidebar, login, setup,
+  account, and the **main chat screen** (settings drawer + controls); the rest
+  adopts `t()` incrementally. open-webui still ships more fully-translated languages.
 
 **Missing** ❌ (open-webui has these; free-webui does not yet)
 

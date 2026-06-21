@@ -1089,54 +1089,54 @@
 {#if settingsOpen}
   <section class="settings">
     <label>
-      <span class="lbl">system prompt</span>
+      <span class="lbl">{t('chat.systemPrompt')}</span>
       <textarea
         bind:value={systemPrompt}
         rows="3"
-        placeholder="e.g. you are a terse senior engineer"
+        placeholder={t('chat.systemPromptPlaceholder')}
       ></textarea>
     </label>
     <div class="row">
       <label class="num">
-        <span class="lbl">temperature</span>
-        <input type="number" min="0" max="2" step="0.1" bind:value={temperature} placeholder="default" />
+        <span class="lbl">{t('chat.temperature')}</span>
+        <input type="number" min="0" max="2" step="0.1" bind:value={temperature} placeholder={t('common.default')} />
       </label>
       <label class="num">
-        <span class="lbl">top-p</span>
-        <input type="number" min="0" max="1" step="0.05" bind:value={topP} placeholder="default" />
-      </label>
-    </div>
-    <div class="row">
-      <label class="num">
-        <span class="lbl">max tokens</span>
-        <input type="number" min="1" step="1" bind:value={maxTokens} placeholder="default" />
-      </label>
-      <label class="num">
-        <span class="lbl">seed</span>
-        <input type="number" step="1" bind:value={seed} placeholder="random" />
+        <span class="lbl">{t('chat.topP')}</span>
+        <input type="number" min="0" max="1" step="0.05" bind:value={topP} placeholder={t('common.default')} />
       </label>
     </div>
     <div class="row">
       <label class="num">
-        <span class="lbl">presence penalty</span>
-        <input type="number" min="-2" max="2" step="0.1" bind:value={presencePenalty} placeholder="default" />
+        <span class="lbl">{t('chat.maxTokens')}</span>
+        <input type="number" min="1" step="1" bind:value={maxTokens} placeholder={t('common.default')} />
       </label>
       <label class="num">
-        <span class="lbl">frequency penalty</span>
-        <input type="number" min="-2" max="2" step="0.1" bind:value={frequencyPenalty} placeholder="default" />
+        <span class="lbl">{t('chat.seed')}</span>
+        <input type="number" step="1" bind:value={seed} placeholder={t('common.random')} />
+      </label>
+    </div>
+    <div class="row">
+      <label class="num">
+        <span class="lbl">{t('chat.presencePenalty')}</span>
+        <input type="number" min="-2" max="2" step="0.1" bind:value={presencePenalty} placeholder={t('common.default')} />
+      </label>
+      <label class="num">
+        <span class="lbl">{t('chat.frequencyPenalty')}</span>
+        <input type="number" min="-2" max="2" step="0.1" bind:value={frequencyPenalty} placeholder={t('common.default')} />
       </label>
     </div>
     <label>
-      <span class="lbl">stop sequences <span class="hint">comma-separated</span></span>
-      <input type="text" bind:value={stopText} placeholder="e.g. ###, END" />
+      <span class="lbl">{t('chat.stopSequences')} <span class="hint">{t('chat.commaSeparated')}</span></span>
+      <input type="text" bind:value={stopText} placeholder={t('chat.stopPlaceholder')} />
     </label>
     <label>
-      <span class="lbl">tags <span class="hint">comma-separated</span></span>
-      <input type="text" bind:value={tagsText} placeholder="e.g. work, research" />
+      <span class="lbl">{t('chat.tags')} <span class="hint">{t('chat.commaSeparated')}</span></span>
+      <input type="text" bind:value={tagsText} placeholder={t('chat.tagsPlaceholder')} />
     </label>
     {#if folders.length}
       <label>
-        <span class="lbl">folder</span>
+        <span class="lbl">{t('chat.folder')}</span>
         <select bind:value={folderId}>
           <option value={null}>— none —</option>
           {#each folders as f (f.id)}
@@ -1148,7 +1148,7 @@
     <label class="toggle">
       <input type="checkbox" bind:checked={webSearch} disabled={!webSearchAvailable} />
       <span class="lbl" style="text-transform: none; letter-spacing: 0;">
-        web search
+        {t('chat.webSearch')}
         {#if !webSearchPermitted}
           <span class="hint">— disabled for your account</span>
         {:else if !webSearchAvailable}
@@ -1159,19 +1159,19 @@
     <label class="toggle">
       <input type="checkbox" bind:checked={toolsEnabled} />
       <span class="lbl" style="text-transform: none; letter-spacing: 0;">
-        tools <span class="hint">— built-in: {#each builtinTools as t, ti (t)}{ti > 0 ? ', ' : ''}<code>{t}</code>{/each}{#if !toolsAllowed} · external MCP/OpenAPI tools disabled for your account{/if}</span>
+        {t('chat.tools')} <span class="hint">— built-in: {#each builtinTools as tn, ti (tn)}{ti > 0 ? ', ' : ''}<code>{tn}</code>{/each}{#if !toolsAllowed} · external MCP/OpenAPI tools disabled for your account{/if}</span>
       </span>
     </label>
     <div class="settings-actions">
-      <button class="action" onclick={() => (settingsOpen = false)}>close</button>
+      <button class="action" onclick={() => (settingsOpen = false)}>{t('common.close')}</button>
       <button class="action primary" onclick={saveSettings} disabled={savingSettings}>
-        {savingSettings ? 'saving…' : 'save'}
+        {savingSettings ? t('common.saving') : t('common.save')}
       </button>
     </div>
 
     <div class="docs">
       <div class="docs-head">
-        <span class="lbl">assistants <span class="hint">model · persona · tools · knowledge</span></span>
+        <span class="lbl">{t('chat.assistants')} <span class="hint">model · persona · tools · knowledge</span></span>
         <button class="action" type="button" onclick={saveCurrentAsPreset}>+ save current</button>
       </div>
       {#if presets.length === 0}
@@ -1202,7 +1202,7 @@
 
     <div class="docs">
       <div class="docs-head">
-        <span class="lbl">prompts <span class="hint">{`{{var}}`} prompts you for input</span></span>
+        <span class="lbl">{t('chat.prompts')} <span class="hint">{`{{var}}`} prompts you for input</span></span>
         <button class="action" type="button" onclick={savePromptFromInput} disabled={!input.trim()}>
           + save current
         </button>
@@ -1225,7 +1225,7 @@
 
     <div class="docs">
       <div class="docs-head">
-        <span class="lbl">memories <span class="hint">applied to every chat</span></span>
+        <span class="lbl">{t('chat.memories')} <span class="hint">{t('chat.memoriesHint')}</span></span>
         <button class="action" type="button" onclick={addMemory}>+ add</button>
       </div>
       {#if memories.length === 0}
@@ -1244,7 +1244,7 @@
 
     <div class="docs">
       <div class="docs-head">
-        <span class="lbl">export this chat</span>
+        <span class="lbl">{t('chat.exportChat')}</span>
         <div style="display: flex; gap: 0.35rem;">
           <a class="action" href={exportConversationUrl(currentId, 'json')} download>↓ json</a>
           <a class="action" href={exportConversationUrl(currentId, 'md')} download>↓ markdown</a>
@@ -1254,7 +1254,7 @@
 
     <div class="docs">
       <div class="docs-head">
-        <span class="lbl">public share link</span>
+        <span class="lbl">{t('chat.shareLink')}</span>
         {#if shareToken}
           <div style="display: flex; gap: 0.35rem;">
             <button class="action" type="button" onclick={copyShare}>{shareCopied ? '✓ copied' : 'copy link'}</button>
@@ -1279,7 +1279,7 @@
 
     <div class="docs">
       <div class="docs-head">
-        <span class="lbl">documents (rag)</span>
+        <span class="lbl">{t('chat.documents')}</span>
         <input
           bind:this={docInput}
           type="file"
@@ -1326,7 +1326,7 @@
 
     <div class="docs">
       <div class="docs-head">
-        <span class="lbl">knowledge bases</span>
+        <span class="lbl">{t('chat.knowledgeBases')}</span>
         <a class="action" href="/collections">manage →</a>
       </div>
       {#if collections.length === 0}
@@ -1437,7 +1437,7 @@
           <textarea class="edit" bind:value={editText} rows="4"></textarea>
           <div class="edit-actions">
             <button class="action" onclick={cancelEdit}>cancel</button>
-            <button class="action primary" onclick={saveEdit} disabled={!editText.trim()}>save &amp; rerun</button>
+            <button class="action primary" onclick={saveEdit} disabled={!editText.trim()}>{t('chat.saveRerun')}</button>
           </div>
         {:else}
           {@const parsed = parseContent(msg.content)}
@@ -1460,7 +1460,7 @@
         {/if}
         {#if msg.sources && msg.sources.length}
           <div class="sources">
-            <span class="src-label">sources</span>
+            <span class="src-label">{t('chat.sources')}</span>
             {#each groupSources(msg.sources) as g (g.key)}
               {#if g.kind === 'web' && g.detail}
                 <a class="src" href={g.detail} target="_blank" rel="noreferrer noopener" title={g.snippet || g.detail}><span class="src-n">{g.nums.join(',')}</span>🌐 {g.label}</a>
@@ -1558,7 +1558,7 @@
       disabled={streaming || editingIndex !== null || varFill !== null}
     ></textarea>
     {#if streaming}
-      <button type="button" onclick={stop}>stop</button>
+      <button type="button" onclick={stop}>{t('common.stop')}</button>
     {:else}
       <button
         type="submit"
@@ -1585,7 +1585,7 @@
         else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitVarFill();
       }}
     >
-      <h3>fill in the prompt</h3>
+      <h3>{t('chat.fillPrompt')}</h3>
       <p class="var-hint">⌘/Ctrl+Enter to insert</p>
       {#each varFill.vars as v, i (v)}
         <label class="var-row">

@@ -106,6 +106,12 @@ class Settings(BaseSettings):
     # upstream call, like auto_title). Set false to disable.
     suggest_followups: bool = True
 
+    # After the first exchange, ask the model for 1-3 short topic tags and add any
+    # new ones to the conversation (POST /api/conversations/{id}/autotag) — another
+    # lightweight upstream call. Off by default since it auto-modifies the chat's
+    # tags; set true to enable auto-categorization.
+    auto_tag: bool = False
+
     # RAG: embedding model + chunking params (set embedding_model to
     # something your upstream actually serves, e.g. nomic-embed-text).
     embedding_model: str = "nomic-embed-text"

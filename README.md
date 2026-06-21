@@ -117,7 +117,7 @@ while deliberately staying a lean two-tier app. Roughly:
 | Area | free-webui |
 | --- | --- |
 | Chat core | streaming, markdown (code/KaTeX/mermaid), edit, **regenerate any turn**, **continue**, branching/variants, copy, 👍/👎, auto-titling, follow-ups |
-| Organization | search, date grouping, pin/archive, **tags**, **folders**, **clone**, **temporary chat** |
+| Organization | search, date grouping, pin/archive, **tags** (+ optional LLM auto-tagging), **folders**, **clone**, **temporary chat** |
 | Composer | searchable model picker, `/`·`@`·`#` commands, **prompt variables** with custom input |
 | Knowledge / RAG | per-chat uploads, **URL ingest** (fetch a web page/PDF), reusable **collections**, web search, **inline citations + hovercards**, **hybrid dense+BM25 retrieval** (RRF) |
 | Tools | function-calling loop, **MCP**, **OpenAPI tool servers**, code interpreter, image generation, custom assistants, plugins/pipelines |

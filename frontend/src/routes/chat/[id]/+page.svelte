@@ -5,6 +5,7 @@
   import {
     activateVariant,
     autotitle,
+    autotagConversation,
     createMemory,
     createPreset,
     createPrompt,
@@ -820,6 +821,12 @@
       const t = await autotitle(currentId).catch(() => null);
       if (t) {
         title = t;
+        convs.refresh();
+      }
+      // Auto-tag (no-op unless enabled server-side); reflect any added tags.
+      const newTags = await autotagConversation(currentId).catch(() => [] as string[]);
+      if (newTags.length && newTags.join(', ') !== tagsText) {
+        tagsText = newTags.join(', ');
         convs.refresh();
       }
     }

@@ -197,6 +197,63 @@ async def test_followups_empty_without_exchange(client, upstream):
     assert upstream.chat_calls == []  # no upstream call when there's nothing to suggest from
 
 
+async def test_autotag_adds_tags_when_enabled(client, upstream, monkeypatch):
+    from app import conversations
+
+    await _signup(client)
+    cid = await _new(client)
+    await _consume(client, "POST", f"/api/conversations/{cid}/messages", {"content": "tell me about penguins"})
+    monkeypatch.setattr(conversations.settings, "auto_tag", True)
+
+    upstream.queue_chat(sse(content_chunk("penguins, antarctica, Birds"), finish()))
+    r = await client.post(f"/api/conversations/{cid}/autotag")
+    assert r.status_code == 200
+    # lowercased, de-duped, sorted in the response
+    assert r.json()["tags"] == ["antarctica", "birds", "penguins"]
+    # persisted: visible on the conversation summary's tags
+    summary = next(c for c in (await client.get("/api/conversations")).json() if c["id"] == cid)
+    assert set(summary["tags"]) == {"antarctica", "birds", "penguins"}
+
+
+async def test_autotag_is_additive_and_keeps_manual_tags(client, upstream, monkeypatch):
+    from app import conversations
+
+    await _signup(client)
+    cid = await _new(client)
+    await _consume(client, "POST", f"/api/conversations/{cid}/messages", {"content": "tell me about penguins"})
+    await client.put(f"/api/conversations/{cid}/tags", json={"tags": ["work"]})
+    monkeypatch.setattr(conversations.settings, "auto_tag", True)
+
+    # the model re-suggests an existing tag (case-different) + a new one
+    upstream.queue_chat(sse(content_chunk("Work, penguins"), finish()))
+    r = await client.post(f"/api/conversations/{cid}/autotag")
+    assert r.status_code == 200
+    # manual "work" kept (not duplicated despite the case difference), "penguins" added
+    assert r.json()["tags"] == ["penguins", "work"]
+
+
+async def test_autotag_disabled_is_noop(client, upstream):
+    await _signup(client)
+    cid = await _new(client)
+    await _consume(client, "POST", f"/api/conversations/{cid}/messages", {"content": "hi there"})
+    before = len(upstream.chat_calls)
+    r = await client.post(f"/api/conversations/{cid}/autotag")  # auto_tag defaults False
+    assert r.status_code == 200
+    assert r.json()["tags"] == []
+    assert len(upstream.chat_calls) == before  # disabled -> no upstream call
+
+
+async def test_autotag_noop_without_exchange(client, upstream, monkeypatch):
+    from app import conversations
+
+    await _signup(client)
+    cid = await _new(client)
+    monkeypatch.setattr(conversations.settings, "auto_tag", True)
+    r = await client.post(f"/api/conversations/{cid}/autotag")
+    assert r.json()["tags"] == []
+    assert upstream.chat_calls == []  # nothing to tag from -> no upstream call
+
+
 async def test_autotitle_noop_without_exchange(client, upstream):
     await _signup(client)
     cid = await _new(client)

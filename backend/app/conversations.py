@@ -1312,6 +1312,36 @@ async def delete_message(
     return {"ok": True}
 
 
+async def _oneshot_completion(
+    http: httpx.AsyncClient, conn: Connection, body: dict[str, Any]
+) -> str | None:
+    """Stream a small one-shot (no-tools, non-persisted) completion and return the
+    collected text, or None on any upstream error. Shared by the autotitle /
+    followups / autotag helpers — all lightweight model calls off the chat path."""
+    text = ""
+    try:
+        async with http.stream(
+            "POST", conn_url(conn, "chat/completions"), json=body, headers=conn_headers(conn)
+        ) as r:
+            if r.status_code >= 400:
+                return None
+            async for line in r.aiter_lines():
+                if line.endswith("[DONE]"):
+                    break
+                if not line.startswith("data: "):
+                    continue
+                try:
+                    chunk = json.loads(line[6:])
+                except json.JSONDecodeError:
+                    continue
+                delta = (chunk.get("choices") or [{}])[0].get("delta", {}).get("content")
+                if isinstance(delta, str):
+                    text += delta
+    except httpx.HTTPError:
+        return None
+    return text
+
+
 @router.post("/{cid}/autotitle")
 async def autotitle(
     cid: str, request: Request, user: dict = Depends(current_user)
@@ -1352,26 +1382,8 @@ async def autotitle(
         "temperature": 0.2,
     }
     conn = await resolve_connection(request, db, conv["model"])
-    text = ""
-    try:
-        async with http.stream(
-            "POST", conn_url(conn, "chat/completions"), json=body, headers=conn_headers(conn)
-        ) as r:
-            if r.status_code >= 400:
-                return {"title": conv["title"]}
-            async for line in r.aiter_lines():
-                if line.endswith("[DONE]"):
-                    break
-                if not line.startswith("data: "):
-                    continue
-                try:
-                    chunk = json.loads(line[6:])
-                except json.JSONDecodeError:
-                    continue
-                delta = (chunk.get("choices") or [{}])[0].get("delta", {}).get("content")
-                if isinstance(delta, str):
-                    text += delta
-    except httpx.HTTPError:
+    text = await _oneshot_completion(http, conn, body)
+    if text is None:
         return {"title": conv["title"]}
 
     new_title = _clean_title(text) or conv["title"]
@@ -1414,26 +1426,8 @@ async def followups(cid: str, request: Request, user: dict = Depends(current_use
         "temperature": 0.7,
         "max_tokens": 200,
     }
-    text = ""
-    try:
-        async with http.stream(
-            "POST", conn_url(conn, "chat/completions"), json=body, headers=conn_headers(conn)
-        ) as r:
-            if r.status_code >= 400:
-                return {"suggestions": []}
-            async for line in r.aiter_lines():
-                if line.endswith("[DONE]"):
-                    break
-                if not line.startswith("data: "):
-                    continue
-                try:
-                    chunk = json.loads(line[6:])
-                except json.JSONDecodeError:
-                    continue
-                delta = (chunk.get("choices") or [{}])[0].get("delta", {}).get("content")
-                if isinstance(delta, str):
-                    text += delta
-    except httpx.HTTPError:
+    text = await _oneshot_completion(http, conn, body)
+    if text is None:
         return {"suggestions": []}
 
     suggestions: list[str] = []
@@ -1442,6 +1436,84 @@ async def followups(cid: str, request: Request, user: dict = Depends(current_use
         if s:
             suggestions.append(s)
     return {"suggestions": suggestions[:3]}
+
+
+def _parse_tags(text: str) -> list[str]:
+    """Pull short topic tags out of the model's reply. Splits on commas/newlines,
+    lowercases, strips quotes/punctuation, drops empties + over-long phrases, and
+    de-dupes (case-insensitively), keeping at most 5."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in re.split(r"[,\n]", text):
+        tag = raw.strip().strip("\"'`.#").strip().lower()[:40]
+        if tag and len(tag.split()) <= 3 and tag not in seen:
+            seen.add(tag)
+            out.append(tag)
+        if len(out) >= 5:
+            break
+    return out
+
+
+async def _conv_tags(db: aiosqlite.Connection, cid: str) -> list[str]:
+    cur = await db.execute(
+        "SELECT tag FROM conversation_tags WHERE conversation_id = ? ORDER BY tag", (cid,)
+    )
+    return [r[0] for r in await cur.fetchall()]
+
+
+@router.post("/{cid}/autotag")
+async def autotag(cid: str, request: Request, user: dict = Depends(current_user)) -> dict:
+    """Suggest 1-3 short topic tags from the opening exchange and ADD any new ones
+    (never removing the user's manual tags). No-op (returns the current tags) when
+    disabled, with no exchange yet, or on any upstream failure."""
+    db = _db(request)
+    await _owned(db, cid, user["id"])
+    http = _http(request)
+    conv = await _conv_settings(db, cid)
+    existing = await _conv_tags(db, cid)
+    if not settings.auto_tag:
+        return {"tags": existing}
+    history = await _load_history(db, cid)
+    convo = [m for m in history if m["role"] in ("user", "assistant")]
+    if len(convo) < 2:
+        return {"tags": existing}
+    # Don't run inference on a model the user may no longer access (matches autotitle).
+    await _guard_model(db, user, None, conv["model"])
+
+    snippet = [{"role": m["role"], "content": _content_text(m["content"])} for m in convo[:4]]
+    instruction = {
+        "role": "user",
+        "content": (
+            "Suggest 1 to 3 short topic tags (1-2 words each, lowercase) that "
+            "categorize this conversation. Reply with ONLY the tags, comma-separated, "
+            "and nothing else."
+        ),
+    }
+    conn = await resolve_connection(request, db, conv["model"])
+    body = {
+        "model": conv["model"] or settings.default_model,
+        "messages": [*snippet, instruction],
+        "stream": True,
+        "temperature": 0.3,
+        "max_tokens": 40,
+    }
+    text = await _oneshot_completion(http, conn, body)
+    if text is None:
+        return {"tags": existing}
+
+    seen = {t.lower() for t in existing}
+    for tag in _parse_tags(text):
+        if len(existing) >= 20:  # same cap as manual set_tags
+            break
+        if tag.lower() in seen:
+            continue
+        seen.add(tag.lower())
+        await db.execute(
+            "INSERT INTO conversation_tags (conversation_id, tag) VALUES (?, ?)", (cid, tag)
+        )
+        existing.append(tag)
+    await db.commit()
+    return {"tags": await _conv_tags(db, cid)}
 
 
 class TagsBody(BaseModel):

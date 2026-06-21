@@ -398,6 +398,14 @@ export async function getFollowups(id: string): Promise<string[]> {
   return (await res.json()).suggestions ?? [];
 }
 
+// Ask the server to auto-suggest topic tags (no-op unless FREE_WEBUI_AUTO_TAG is
+// on); returns the conversation's full tag set.
+export async function autotagConversation(id: string): Promise<string[]> {
+  const res = await apiFetch(`/api/conversations/${id}/autotag`, { method: 'POST' });
+  if (!res.ok) return [];
+  return (await res.json()).tags ?? [];
+}
+
 export interface MessageVariant {
   id: number;
   active: boolean;

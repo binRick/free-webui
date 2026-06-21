@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     # blocking forever) when every connection is in use — sized too small a pool
     # under load then surfaces as a fast error, not a hang.
     db_pool_acquire_timeout: float = 30.0
+    # Seconds to wait for a Postgres advisory lock (schema-migration / OIDC
+    # first-admin) before erroring — bounds the wait if a peer died holding it, so
+    # a stuck lock can't hang a replica's boot indefinitely.
+    db_advisory_lock_timeout: float = 30.0
 
     # Session cookie signing key. If empty, a persistent random key is
     # generated and stored next to the DB.
@@ -231,8 +235,10 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _check_pool_sizes(self) -> "Settings":
-        if self.db_pool_max_size < 1:
-            raise ValueError("FREE_WEBUI_DB_POOL_MAX_SIZE must be >= 1")
+        # >= 2: the schema-migration advisory lock holds one pooled connection
+        # while the bootstrap runs DDL on another, so a max of 1 would self-deadlock.
+        if self.db_pool_max_size < 2:
+            raise ValueError("FREE_WEBUI_DB_POOL_MAX_SIZE must be >= 2")
         if not (0 <= self.db_pool_min_size <= self.db_pool_max_size):
             raise ValueError(
                 "FREE_WEBUI_DB_POOL_MIN_SIZE must be between 0 and "

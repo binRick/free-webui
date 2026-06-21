@@ -4,6 +4,10 @@ import aiosqlite
 
 from .database import Database, PostgresDatabase, is_postgres_url, to_pg_ddl
 
+# Postgres advisory-lock key (bigint) guarding the DDL bootstrap so concurrent
+# replica boots serialize. Arbitrary but stable + distinct from other lock keys.
+_MIGRATION_LOCK_KEY = 0x66775F6D6967  # "fw_mig"
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -462,7 +466,11 @@ async def open_db(target: str) -> Database:
             min_size=settings.db_pool_min_size,
             max_size=settings.db_pool_max_size,
         )
-        db: Database = PostgresDatabase(pool, acquire_timeout=settings.db_pool_acquire_timeout)
+        db: Database = PostgresDatabase(
+            pool,
+            acquire_timeout=settings.db_pool_acquire_timeout,
+            lock_wait_timeout=settings.db_advisory_lock_timeout,
+        )
         schema, indexes = to_pg_ddl(SCHEMA), to_pg_ddl(INDEXES)
     else:
         Path(target).parent.mkdir(parents=True, exist_ok=True)
@@ -475,11 +483,17 @@ async def open_db(target: str) -> Database:
         db = Database(conn, dialect="sqlite")
         schema, indexes = SCHEMA, INDEXES
 
-    await db.executescript(schema)
-    await db.commit()
-    # Add any columns missing from a legacy DB BEFORE creating indexes that
-    # reference them.
-    await _ensure_columns(db)
-    await db.executescript(indexes)
-    await db.commit()
+    # Gate the whole DDL bootstrap behind a cluster-wide advisory lock so N
+    # Postgres replicas booting at once don't race the (idempotent but not
+    # concurrency-safe) CREATE TABLE / ADD COLUMN / CREATE INDEX statements — the
+    # check-then-ALTER in _ensure_columns and even CREATE ... IF NOT EXISTS can
+    # collide under concurrency. No-op on SQLite (single process).
+    async with db.advisory_lock(_MIGRATION_LOCK_KEY):
+        await db.executescript(schema)
+        await db.commit()
+        # Add any columns missing from a legacy DB BEFORE creating indexes that
+        # reference them.
+        await _ensure_columns(db)
+        await db.executescript(indexes)
+        await db.commit()
     return db

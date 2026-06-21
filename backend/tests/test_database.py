@@ -100,9 +100,21 @@ def test_pool_size_validation():
     with pytest.raises(ValidationError):
         Settings(db_pool_max_size=0)
     with pytest.raises(ValidationError):
+        Settings(db_pool_max_size=1)  # < 2 would self-deadlock the bootstrap
+    with pytest.raises(ValidationError):
         Settings(db_pool_min_size=5, db_pool_max_size=2)
     # a valid pair is accepted
     assert Settings(db_pool_min_size=2, db_pool_max_size=4).db_pool_max_size == 4
+
+
+async def test_advisory_lock_is_noop_on_sqlite():
+    """The cross-process advisory lock is a no-op on SQLite (single process) —
+    it must enter/exit cleanly without error so shared call sites stay simple."""
+    db = await _mem_db()
+    async with db.advisory_lock(123):
+        await db.execute("INSERT INTO t (name) VALUES (?)", ("x",))
+    assert await db.fetch_val("SELECT COUNT(*) FROM t") == 1
+    await db.close()
 
 
 async def test_passthrough_and_proxy():

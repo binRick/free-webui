@@ -142,8 +142,10 @@ while deliberately staying a lean two-tier app. Roughly:
   Real-time **channels fan out across replicas via Redis pub/sub**
   (`FREE_WEBUI_REDIS_URL`); the login limiter, the **per-user WS connection cap**,
   and the **channel presence count** are Redis-backed (global across replicas,
-  with in-process fallback). Remaining Phase-2 bits (OIDC first-admin / migration
-  advisory locks) are scoped in `docs/SCALING.md`.
+  with in-process fallback). Cross-replica critical sections (the **schema
+  migration** bootstrap and the **OIDC first-admin** provision) are serialized
+  with Postgres **advisory locks**. The cross-replica blockers are closed; see
+  `docs/SCALING.md` for the remaining operational notes.
 - **i18n** — a dependency-free foundation is in place (reactive `t()` + JSON
   catalogs, **en/es/fr/de/it/pt**, in-app language switcher), with a build-time
   **catalog-parity guard** (`npm run check` fails if any locale drifts from the

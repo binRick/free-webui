@@ -42,8 +42,18 @@ edit/regenerate/delete truncation and `*_collections` DELETE-then-INSERT were
 non-atomic on the old autocommit connection — `test_tx_rollback` now passes on
 Postgres too, so the suite is green on both backends).
 
-Remaining: the rest of Phase 2 — OIDC first-admin lock (B3) and migration
-coordination (B4) via `pg_advisory_lock` — see §3/§5.
+**OIDC first-admin (B3) and migration coordination (B4) are now advisory-locked.**
+The `Database` boundary gained `advisory_lock(key)` — `pg_advisory_lock` on a
+dedicated pooled connection (Postgres), a no-op on SQLite. The DDL bootstrap in
+`open_db` runs under it (so N replicas booting at once serialize their
+idempotent-but-racy `CREATE TABLE`/`ADD COLUMN`/`CREATE INDEX`), and the
+"first user → admin" provision runs under a **single shared lock taken by BOTH
+`/api/auth/setup` and OIDC sign-in** (so no two paths — or replicas — can each
+observe an empty users table and mint a first admin). The blocking lock wait is
+bounded by `FREE_WEBUI_DB_ADVISORY_LOCK_TIMEOUT` so a peer that died holding the
+lock can't hang a replica's boot. With this, **Phase 2's in-process-state
+blockers are closed** — what's left is Phase 5 (the SQL-dialect breadth is done;
+multi-replica is operational).
 
 This document inventories every blocker between today's
 single-process / single-SQLite design and a deployment that (a) runs against
@@ -117,8 +127,8 @@ or **silently diverges** (rate limits N× looser) across replicas.
 | --- | --- | --- | --- | --- | --- |
 | B1 | **`ChannelHub`** real-time broadcast ✅ **done** | `channels.py` + `broadcaster.py` | A channel message/presence/typing only reaches clients on the **same replica** — the workspace chat silently fragments. | **Redis pub/sub** (landed): each frame is published to `freewebui:channel:{id}`; every replica's subscriber fans out to *its* local sockets. Set `FREE_WEBUI_REDIS_URL`. | L |
 | B2 | **Login rate-limiter** ✅ **done** | `auth.py` (`_check_login_rate`) | Effective limit is **N× looser**; resets on any replica restart. | Redis `INCR` + `EXPIRE` fixed-window (landed): one global counter when `FREE_WEBUI_REDIS_URL` is set, falling back to the in-process sliding window otherwise (and on any Redis hiccup, so logins never lock out). | S |
-| B3 | **OIDC first-user→admin provision lock** | `oidc.py:35` (`_provision_lock`) | Process-local `asyncio.Lock` no longer serializes the privilege decision across replicas (race on who becomes first admin). | Postgres `pg_advisory_xact_lock(<const>)` around the count+insert. | M |
-| B4 | **Lifespan schema/migration on every boot** | `main.py:161-182` | N replicas run ad-hoc DDL concurrently against one Postgres → races. | Gate migrations behind `pg_advisory_lock` so exactly one replica applies them (or move to out-of-band migrations — §4). | M |
+| B3 | **OIDC first-user→admin provision lock** ✅ **done** | `oidc.py` | Process-local `asyncio.Lock` didn't serialize the privilege decision across replicas (race on who becomes first admin). | ✅ `db.advisory_lock(<const>)` (`pg_advisory_lock`, no-op on SQLite) now wraps the in-process lock around the count+insert. | M |
+| B4 | **Lifespan schema/migration on every boot** ✅ **done** | `db.py` `open_db` | N replicas ran ad-hoc DDL concurrently against one Postgres → races. | ✅ The DDL bootstrap runs under `db.advisory_lock(<const>)` so exactly one replica applies it at a time. | M |
 
 ### 3.2 Shared-config prerequisites
 

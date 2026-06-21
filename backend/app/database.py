@@ -129,9 +129,9 @@ class _FetchMixin:
                 await db.execute(...)   # insert
 
         On SQLite (the single shared aiosqlite connection) this is a real BEGIN/
-        COMMIT/ROLLBACK. On the Postgres backend ``commit``/``rollback`` are the
-        documented autocommit no-ops (per-statement) until the connection-pool
-        refinement in docs/SCALING.md lands.
+        COMMIT/ROLLBACK. The Postgres backend overrides this with a pooled
+        per-task connection running a real BEGIN/COMMIT/ROLLBACK (see
+        :class:`PostgresDatabase`).
         """
         try:
             yield self
@@ -140,6 +140,14 @@ class _FetchMixin:
             raise
         else:
             await self.commit()
+
+    @asynccontextmanager
+    async def advisory_lock(self, key: int):
+        """Cross-process mutex for cluster-wide critical sections (schema
+        migration, the OIDC first-admin decision). A no-op on SQLite — a
+        single-process backend where an in-process ``asyncio.Lock`` already
+        serializes; Postgres overrides it with ``pg_advisory_lock``."""
+        yield
 
     async def fetch_one(self, sql: str, params: "tuple | list" = ()) -> Row | None:
         cur = await self.execute(sql, params)
@@ -208,9 +216,10 @@ class _PgCursor:
 
 
 class PostgresDatabase(_FetchMixin):
-    def __init__(self, pool, acquire_timeout: float = 30.0) -> None:
+    def __init__(self, pool, acquire_timeout: float = 30.0, lock_wait_timeout: float = 30.0) -> None:
         self._pool = pool
         self._acquire_timeout = acquire_timeout
+        self._lock_wait_timeout = lock_wait_timeout
         self.dialect = "postgres"
         # The (connection, owning-task) bound to the CURRENT task while inside
         # transaction(); None outside one (each statement then autocommits on a
@@ -280,6 +289,29 @@ class PostgresDatabase(_FetchMixin):
                     yield self
             finally:
                 self._bound.reset(token)
+
+    @asynccontextmanager
+    async def advisory_lock(self, key: int):
+        """Cluster-wide mutex via ``pg_advisory_lock`` on a dedicated pooled
+        connection (session-scoped: held until we unlock). Other replicas calling
+        ``advisory_lock`` with the same key block until this block exits."""
+        async with self._pool.acquire(timeout=self._acquire_timeout) as conn:
+            # pg_advisory_lock itself has no timeout, so bound the wait: a peer
+            # that died holding the lock surfaces as a clear timeout error rather
+            # than hanging this replica's boot forever.
+            await conn.execute(f"SET statement_timeout = {int(self._lock_wait_timeout * 1000)}")
+            try:
+                await conn.execute("SELECT pg_advisory_lock($1)", key)
+            finally:
+                await conn.execute("SET statement_timeout = 0")
+            try:
+                yield
+            finally:
+                # On cancellation this explicit unlock may be skipped, but the lock
+                # is still released: asyncpg runs pg_advisory_unlock_all() when the
+                # pooled connection is reset on release, and the async-with exit
+                # (which releases it) always runs. Keep using pool.acquire/reset.
+                await conn.execute("SELECT pg_advisory_unlock($1)", key)
 
     async def commit(self) -> None:
         # Atomicity comes from transaction(); a bare execute() already autocommits

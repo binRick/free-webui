@@ -8,7 +8,6 @@ CSRF is handled with a signed, short-lived state cookie.
 Enable by setting oidc_issuer + oidc_client_id + oidc_client_secret. The
 redirect_uri must point at this backend's /api/auth/oidc/callback.
 """
-import asyncio
 import re
 import secrets
 import time
@@ -20,9 +19,16 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
-from .auth import _secret, _set_cookie, hash_password, issue_session
+from .auth import (
+    PROVISION_LOCK_KEY,
+    _secret,
+    _set_cookie,
+    hash_password,
+    issue_session,
+    provision_lock,
+)
 from .config import oidc_enabled, settings
-from .database import INTEGRITY_ERRORS
+from .database import INTEGRITY_ERRORS, Database
 
 router = APIRouter(prefix="/api/auth/oidc", tags=["auth"])
 
@@ -31,9 +37,6 @@ _STATE_MAX_AGE = 600  # 10 minutes to complete the round trip
 _state_serializer = URLSafeTimedSerializer(_secret, salt="free-webui-oidc-state")
 
 _discovery_cache: dict = {}
-# Serialize user provisioning so a "first user -> admin" decision can't race two
-# concurrent first sign-ins (single shared connection => one worker per process).
-_provision_lock = asyncio.Lock()
 
 
 def _client() -> httpx.AsyncClient:
@@ -103,7 +106,7 @@ async def _user_by_sub(db: aiosqlite.Connection, sub: str) -> dict | None:
     return None
 
 
-async def _find_or_create_user(db: aiosqlite.Connection, sub: str, claims: dict) -> dict | None:
+async def _find_or_create_user(db: Database, sub: str, claims: dict) -> dict | None:
     """Return the user for this OIDC identity, linking or provisioning as needed.
     Returns None when the user is unknown and signup is disabled."""
     found = await _user_by_sub(db, sub)
@@ -133,8 +136,11 @@ async def _find_or_create_user(db: aiosqlite.Connection, sub: str, claims: dict)
         return None
 
     # Provision under a lock so the "first user -> admin" decision and the INSERT
-    # are atomic against a concurrent first sign-in.
-    async with _provision_lock:
+    # are atomic against a concurrent first sign-in. The in-process asyncio.Lock
+    # serializes within a replica; the Postgres advisory lock additionally
+    # serializes ACROSS replicas (no-op on SQLite) so two replicas can't both
+    # observe an empty users table and each mint a first admin.
+    async with provision_lock, db.advisory_lock(PROVISION_LOCK_KEY):
         found = await _user_by_sub(db, sub)  # a racer may have created it
         if found:
             return found

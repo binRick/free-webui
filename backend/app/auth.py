@@ -1,3 +1,4 @@
+import asyncio
 import secrets
 import time
 from pathlib import Path
@@ -15,6 +16,14 @@ from .config import oidc_enabled, settings
 SESSION_COOKIE = "fw_session"
 
 _ph = PasswordHasher()
+
+# The "first user -> admin" decision is guarded by a single lock shared by /setup
+# and OIDC sign-in, so two paths (or two replicas) can't each mint a first admin.
+# The asyncio.Lock serializes within a replica; pair it with
+# db.advisory_lock(PROVISION_LOCK_KEY) for the cross-replica (Postgres) guarantee
+# — a no-op on SQLite, where the single process + this lock already suffice.
+provision_lock = asyncio.Lock()
+PROVISION_LOCK_KEY = 0x66775F6F6964  # "fw_oid"
 
 
 def _resolve_secret() -> str:
@@ -220,18 +229,22 @@ async def status_endpoint(request: Request) -> AuthStatus:
 @router.post("/setup", response_model=UserOut)
 async def setup_endpoint(body: SetupBody, request: Request, response: Response) -> UserOut:
     db = _db(request)
-    if await _user_count(db) > 0:
-        raise HTTPException(status_code=409, detail="setup already completed")
-    now = int(time.time())
-    uid = await db.insert(
-        "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
-        (body.username, hash_password(body.password), "admin", now),
-    )
-    # Claim any pre-existing orphan conversations (from before auth was added).
-    await db.execute(
-        "UPDATE conversations SET user_id = ? WHERE user_id IS NULL", (uid,)
-    )
-    await db.commit()
+    # Same first-admin lock OIDC uses, so a concurrent /setup + OIDC first sign-in
+    # (or two /setup calls across replicas) can't each create a first admin: the
+    # count check + insert run as one critical section, cluster-wide on Postgres.
+    async with provision_lock, db.advisory_lock(PROVISION_LOCK_KEY):
+        if await _user_count(db) > 0:
+            raise HTTPException(status_code=409, detail="setup already completed")
+        now = int(time.time())
+        uid = await db.insert(
+            "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
+            (body.username, hash_password(body.password), "admin", now),
+        )
+        # Claim any pre-existing orphan conversations (from before auth was added).
+        await db.execute(
+            "UPDATE conversations SET user_id = ? WHERE user_id IS NULL", (uid,)
+        )
+        await db.commit()
     token = issue_session(uid, body.username, "admin", 0)
     _set_cookie(response, token)
     return UserOut(id=uid, username=body.username, role="admin")

@@ -83,6 +83,36 @@ async def test_pg_concurrent_transactions_isolated():
         await db.close()
 
 
+async def test_pg_advisory_lock_serializes():
+    """Two tasks taking the same advisory lock must NOT overlap their critical
+    sections — pg_advisory_lock makes the second wait for the first to release.
+    This is what serializes migrations / the OIDC first-admin decision across
+    replicas."""
+    import asyncpg
+
+    from app.database import PostgresDatabase
+
+    pool = await asyncpg.create_pool(PG_URL, min_size=2, max_size=5)
+    db = PostgresDatabase(pool)
+    try:
+        order: list[str] = []
+
+        async def worker(tag: str):
+            async with db.advisory_lock(424242):
+                order.append(f"{tag}-in")
+                await asyncio.sleep(0.05)  # hold the lock; force any overlap to show
+                order.append(f"{tag}-out")
+
+        await asyncio.gather(worker("a"), worker("b"))
+        # each critical section completes (in→out) before the other begins.
+        assert order in (
+            ["a-in", "a-out", "b-in", "b-out"],
+            ["b-in", "b-out", "a-in", "a-out"],
+        )
+    finally:
+        await db.close()
+
+
 async def test_pg_concurrent_ops_inside_one_transaction_raise():
     """Using the bound connection from another task (a gather of db ops, or a
     db-touching child task) inside one transaction() must fail LOUDLY rather than

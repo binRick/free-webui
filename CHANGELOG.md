@@ -41,7 +41,11 @@ authoritative status):
   a **scroll-to-latest** button (appears when scrolled up in a long chat),
   **collapsible reasoning** — a model's `<think>…</think>` (or `<thinking>`)
   chain-of-thought renders in a foldable block (auto-open while streaming, then
-  collapsed) instead of inline, for reasoning models like DeepSeek-R1/QwQ,
+  collapsed) instead of inline, for reasoning models like DeepSeek-R1/QwQ; a
+  separate `reasoning_content` stream is normalized into the same inline
+  `<think>` form, and the chain-of-thought is kept out of everywhere it
+  shouldn't go — history replayed upstream, copy-to-clipboard, TTS, and the
+  voice/call loop — never re-fed to the model nor spoken aloud,
   extra generation params (`max_tokens`/penalties/seed).
 - **i18n breadth**: two more UI languages (**Italian, Portuguese** → en/es/fr/de/
   it/pt), expanded `t()` coverage (setup + account pages), and a build-time

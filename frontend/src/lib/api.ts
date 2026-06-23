@@ -1246,6 +1246,23 @@ export async function deleteAccount(password: string): Promise<true | string> {
   }
 }
 
+export async function changePassword(
+  current_password: string,
+  new_password: string
+): Promise<true | string> {
+  const res = await apiFetch('/api/account/password', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ current_password, new_password })
+  });
+  if (res.ok) return true;
+  try {
+    return (await res.json()).detail ?? `failed (${res.status})`;
+  } catch {
+    return `failed (${res.status})`;
+  }
+}
+
 export interface Preset {
   id: number;
   name: string;

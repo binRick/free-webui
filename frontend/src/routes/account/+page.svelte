@@ -9,6 +9,7 @@
     mintApiKey,
     revokeApiKey,
     deleteAccount,
+    changePassword,
     ACCOUNT_EXPORT_URL,
     type ApiKey
   } from '$lib/api';
@@ -18,6 +19,28 @@
   let busy = $state(false);
   let mintedRaw = $state<string | null>(null);
   let mintedName = $state<string>('');
+
+  let curPw = $state('');
+  let newPw = $state('');
+  let pwBusy = $state(false);
+  let pwErr = $state('');
+  let pwOk = $state(false);
+
+  async function submitPassword() {
+    if (pwBusy || !curPw || newPw.length < 6) return;
+    pwBusy = true;
+    pwErr = '';
+    pwOk = false;
+    const res = await changePassword(curPw, newPw);
+    pwBusy = false;
+    if (res === true) {
+      pwOk = true;
+      curPw = '';
+      newPw = '';
+    } else {
+      pwErr = res;
+    }
+  }
 
   let deletePw = $state('');
   let deleteBusy = $state(false);
@@ -149,6 +172,30 @@
         </tbody>
       </table>
     {/if}
+  </section>
+
+  <section class="card">
+    <h2>change password</h2>
+    <p class="muted">Set a new password. This signs out your other devices but keeps you signed in here.</p>
+    <form class="pw-form" onsubmit={(e) => { e.preventDefault(); submitPassword(); }}>
+      <input
+        type="password"
+        autocomplete="current-password"
+        placeholder="current password"
+        bind:value={curPw}
+      />
+      <input
+        type="password"
+        autocomplete="new-password"
+        placeholder="new password (min 6)"
+        bind:value={newPw}
+      />
+      <button type="submit" disabled={pwBusy || !curPw || newPw.length < 6}>
+        {pwBusy ? 'saving…' : 'update password'}
+      </button>
+    </form>
+    {#if pwErr}<p class="err">{pwErr}</p>{/if}
+    {#if pwOk}<p class="ok">password updated</p>{/if}
   </section>
 
   <section class="card">
@@ -312,6 +359,14 @@
     border: 1px solid var(--border); border-radius: 6px;
   }
   .del-err { color: var(--danger); font-size: 0.85rem; margin: 0.5rem 0 0; }
+  .pw-form { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+  .pw-form input {
+    flex: 1; min-width: 12rem; padding: 0.45rem 0.7rem; font: inherit;
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+  }
+  .err { color: var(--danger); font-size: 0.85rem; margin: 0.5rem 0 0; }
+  .ok { color: var(--accent); font-size: 0.85rem; margin: 0.5rem 0 0; }
   pre {
     background: var(--bg);
     padding: 0.75rem 1rem;

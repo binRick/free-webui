@@ -11,9 +11,16 @@ import time
 
 import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from .auth import SESSION_COOKIE, current_user, verify_password
+from .auth import (
+    SESSION_COOKIE,
+    _set_cookie,
+    current_user,
+    hash_password,
+    issue_session,
+    verify_password,
+)
 from .files import collect_user_objects, purge_objects
 
 router = APIRouter(prefix="/api/account", tags=["account"])
@@ -114,6 +121,40 @@ async def export_account(request: Request, user: dict = Depends(current_user)) -
         media_type="application/json",
         headers={"Content-Disposition": 'attachment; filename="free-webui-account-export.json"'},
     )
+
+
+class ChangePasswordBody(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=6, max_length=256)
+
+
+@router.post("/password")
+async def change_password(
+    body: ChangePasswordBody,
+    request: Request,
+    response: Response,
+    user: dict = Depends(current_user),
+) -> dict:
+    """Change the caller's own password. Requires the current password, revokes
+    every OTHER session (token_version bump), then re-issues THIS session's
+    cookie so the caller isn't logged out of the tab they changed it from."""
+    db = _db(request)
+    uid = user["id"]
+    cur = await db.execute("SELECT password_hash FROM users WHERE id = ?", (uid,))
+    row = await cur.fetchone()
+    if not row or not verify_password(row[0], body.current_password):
+        raise HTTPException(status_code=401, detail="current password incorrect")
+    if body.new_password == body.current_password:
+        raise HTTPException(status_code=400, detail="new password must differ from the current one")
+    await db.execute(
+        "UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?",
+        (hash_password(body.new_password), uid),
+    )
+    await db.commit()
+    cur = await db.execute("SELECT token_version FROM users WHERE id = ?", (uid,))
+    tv = (await cur.fetchone())[0]
+    _set_cookie(response, issue_session(uid, user["username"], user["role"], tv))
+    return {"changed": True}
 
 
 class DeleteAccountBody(BaseModel):

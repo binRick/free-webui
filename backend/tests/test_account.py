@@ -97,3 +97,79 @@ async def test_delete_account_blocks_only_admin(client):
     r = await client.request("DELETE", "/api/account", json={"password": "hunter22hunter"})
     assert r.status_code == 400
     assert (await client.get("/api/auth/me")).status_code == 200  # still here
+
+
+# ---- self-service password change ----
+
+async def test_change_password_then_login_with_new(client):
+    await _signup(client)
+    r = await client.post(
+        "/api/account/password",
+        json={"current_password": "hunter22hunter", "new_password": "brandnewpass"},
+    )
+    assert r.status_code == 200 and r.json()["changed"] is True
+
+    # the current session still works (cookie was re-issued against the new tv)
+    assert (await client.get("/api/auth/me")).status_code == 200
+
+    # old password no longer logs in; the new one does
+    await client.post("/api/auth/logout")
+    assert (
+        await client.post("/api/auth/login", json={"username": "alice", "password": "hunter22hunter"})
+    ).status_code == 401
+    assert (
+        await client.post("/api/auth/login", json={"username": "alice", "password": "brandnewpass"})
+    ).status_code == 200
+
+
+async def test_change_password_wrong_current_rejected(client):
+    await _signup(client)
+    r = await client.post(
+        "/api/account/password",
+        json={"current_password": "wrongpass", "new_password": "brandnewpass"},
+    )
+    assert r.status_code == 401
+    # password unchanged: the original still logs in
+    await client.post("/api/auth/logout")
+    assert (
+        await client.post("/api/auth/login", json={"username": "alice", "password": "hunter22hunter"})
+    ).status_code == 200
+
+
+async def test_change_password_same_rejected(client):
+    await _signup(client)
+    r = await client.post(
+        "/api/account/password",
+        json={"current_password": "hunter22hunter", "new_password": "hunter22hunter"},
+    )
+    assert r.status_code == 400
+
+
+async def test_change_password_revokes_other_sessions(client):
+    # a second client (separate cookie jar) for the same user simulates a second
+    # device; changing the password from device 1 must log device 2 out.
+    import httpx
+
+    from app.main import app
+
+    await _signup(client)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as other:
+        await other.post("/api/auth/login", json={"username": "alice", "password": "hunter22hunter"})
+        assert (await other.get("/api/auth/me")).status_code == 200  # device 2 live
+
+        await client.post(
+            "/api/account/password",
+            json={"current_password": "hunter22hunter", "new_password": "brandnewpass"},
+        )
+        # device 2's session is revoked by the token_version bump
+        assert (await other.get("/api/auth/me")).status_code == 401
+
+
+async def test_change_password_too_short_422(client):
+    await _signup(client)
+    r = await client.post(
+        "/api/account/password",
+        json={"current_password": "hunter22hunter", "new_password": "x"},
+    )
+    assert r.status_code == 422

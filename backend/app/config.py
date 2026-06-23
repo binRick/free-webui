@@ -141,6 +141,15 @@ class Settings(BaseSettings):
     rerank_api_key: str = ""
     rerank_timeout_seconds: float = 20.0
     rag_rerank_candidates: int = 20
+    # Optional external document-extraction service (Apache Tika, Docling, or any
+    # endpoint that accepts the raw file bytes and returns extracted text). When
+    # set, uploads are routed through it FIRST — enabling OCR, scanned PDFs, and
+    # richer Office/table extraction — and fall back to the built-in stdlib
+    # extractor on any failure. Empty -> built-in extraction only (PDF + text +
+    # Office .docx/.xlsx/.pptx, no OCR). The URL is operator-only (no SSRF surface).
+    content_extraction_url: str = ""
+    content_extraction_api_key: str = ""
+    content_extraction_timeout_seconds: float = 60.0
 
     # S3-compatible object store for media blobs. Set s3_bucket to externalize
     # file bytes (generated/uploaded images) out of the DB into S3/MinIO/Ceph/etc.

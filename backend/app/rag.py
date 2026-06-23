@@ -39,10 +39,150 @@ def _extract_pdf(data: bytes) -> str:
     return "\n\n".join(p for p in parts if p)
 
 
+# Office Open XML files are ZIP archives of XML parts. We pull text with the
+# stdlib (zipfile + ElementTree) — no native/office dependency. Guard against
+# decompression bombs: cap each member's declared uncompressed size and the
+# total extracted text.
+_OOXML_MEMBER_MAX = 80 * 1024 * 1024  # per-part uncompressed cap
+_OOXML_TEXT_MAX = 16 * 1024 * 1024     # total extracted text cap
+
+
+def _ooxml_member(zf, name: str) -> bytes | None:
+    import zipfile
+
+    try:
+        info = zf.getinfo(name)
+    except KeyError:
+        return None
+    if info.file_size > _OOXML_MEMBER_MAX:
+        raise HTTPException(status_code=413, detail="document part too large")
+    try:
+        return zf.read(name)
+    except (zipfile.BadZipFile, RuntimeError):
+        return None
+
+
+def _local_texts(xml_bytes: bytes, localname: str) -> list[str]:
+    """All text content of elements whose namespace-stripped tag == localname."""
+    import xml.etree.ElementTree as ET
+
+    out: list[str] = []
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError:
+        return out
+    for el in root.iter():
+        if el.tag.rsplit("}", 1)[-1] == localname and el.text:
+            out.append(el.text)
+    return out
+
+
+def _extract_docx(data: bytes) -> str:
+    import zipfile
+
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        doc = _ooxml_member(zf, "word/document.xml")
+        if doc is None:
+            return ""
+        # Each <w:p> is a paragraph; join its <w:t> runs, then paragraphs by line.
+        import xml.etree.ElementTree as ET
+
+        try:
+            root = ET.fromstring(doc)
+        except ET.ParseError:
+            return ""
+        lines: list[str] = []
+        for para in root.iter():
+            if para.tag.rsplit("}", 1)[-1] != "p":
+                continue
+            runs = [el.text for el in para.iter() if el.tag.rsplit("}", 1)[-1] == "t" and el.text]
+            if runs:
+                lines.append("".join(runs))
+        return "\n".join(lines)
+
+
+def _extract_xlsx(data: bytes) -> str:
+    import zipfile
+
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        shared: list[str] = []
+        ss = _ooxml_member(zf, "xl/sharedStrings.xml")
+        if ss is not None:
+            import xml.etree.ElementTree as ET
+
+            try:
+                root = ET.fromstring(ss)
+                for si in root:
+                    runs = [el.text for el in si.iter() if el.tag.rsplit("}", 1)[-1] == "t" and el.text]
+                    shared.append("".join(runs))
+            except ET.ParseError:
+                pass
+        sheets = sorted(n for n in zf.namelist() if re.match(r"xl/worksheets/sheet\d+\.xml$", n))
+        out: list[str] = []
+        import xml.etree.ElementTree as ET
+
+        for sheet in sheets:
+            raw = _ooxml_member(zf, sheet)
+            if raw is None:
+                continue
+            try:
+                root = ET.fromstring(raw)
+            except ET.ParseError:
+                continue
+            for row in root.iter():
+                if row.tag.rsplit("}", 1)[-1] != "row":
+                    continue
+                cells: list[str] = []
+                for c in row:
+                    if c.tag.rsplit("}", 1)[-1] != "c":
+                        continue
+                    ctype = c.get("t")
+                    val = "".join(
+                        el.text for el in c.iter()
+                        if el.tag.rsplit("}", 1)[-1] in ("v", "t") and el.text
+                    )
+                    if not val:
+                        continue
+                    if ctype == "s":  # shared-string index
+                        try:
+                            val = shared[int(val)]
+                        except (ValueError, IndexError):
+                            continue
+                    cells.append(val)
+                if cells:
+                    out.append("\t".join(cells))
+        return "\n".join(out)
+
+
+def _extract_pptx(data: bytes) -> str:
+    import zipfile
+
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        slides = sorted(
+            (n for n in zf.namelist() if re.match(r"ppt/slides/slide\d+\.xml$", n)),
+            key=lambda n: int(re.search(r"(\d+)", n).group(1)),
+        )
+        out: list[str] = []
+        for slide in slides:
+            raw = _ooxml_member(zf, slide)
+            if raw is None:
+                continue
+            runs = _local_texts(raw, "t")  # drawingml <a:t> runs
+            if runs:
+                out.append("\n".join(runs))
+        return "\n\n".join(out)
+
+
 def extract_text(filename: str, mime: str | None, data: bytes) -> str:
     name = filename.lower()
     if name.endswith(".pdf") or (mime and "pdf" in mime):
         return _extract_pdf(data)
+    if name.endswith(".docx"):
+        return _extract_docx(data)[:_OOXML_TEXT_MAX]
+    if name.endswith(".xlsx"):
+        return _extract_xlsx(data)[:_OOXML_TEXT_MAX]
+    if name.endswith(".pptx"):
+        return _extract_pptx(data)[:_OOXML_TEXT_MAX]
     if mime and mime.startswith("text/"):
         return data.decode("utf-8", errors="replace")
     for ext in _TEXT_EXTENSIONS:
@@ -56,6 +196,43 @@ def extract_text(filename: str, mime: str | None, data: bytes) -> str:
             status_code=415,
             detail=f"unsupported file type: {filename}",
         )
+
+
+async def _extract_external(
+    http: httpx.AsyncClient, filename: str, mime: str | None, data: bytes
+) -> str | None:
+    """POST the raw bytes to an operator-configured extraction service (Tika,
+    Docling, …) and return the text, or None on any failure (caller falls back
+    to the built-in extractor). Like the reranker, this only ever adds value."""
+    headers = {}
+    if settings.content_extraction_api_key:
+        headers["authorization"] = f"Bearer {settings.content_extraction_api_key}"
+    try:
+        r = await http.put(
+            settings.content_extraction_url,
+            content=data,
+            headers={**headers, "content-type": mime or "application/octet-stream", "accept": "text/plain"},
+            timeout=settings.content_extraction_timeout_seconds,
+        )
+        if r.status_code >= 400:
+            return None
+        text = r.text
+        return text.strip() or None
+    except (httpx.HTTPError, ValueError):
+        return None
+
+
+async def extract_document_text(
+    http: httpx.AsyncClient, filename: str, mime: str | None, data: bytes
+) -> str:
+    """Extract text, preferring an external extraction service when configured
+    (OCR / scanned PDFs / richer Office) and falling back to the built-in
+    stdlib extractor."""
+    if settings.content_extraction_url:
+        text = await _extract_external(http, filename, mime, data)
+        if text:
+            return text[:_OOXML_TEXT_MAX]
+    return extract_text(filename, mime, data)
 
 
 def snippet(text: str, limit: int = 320) -> str:
@@ -291,7 +468,7 @@ async def prepare_document(
 ) -> tuple[list[str], list[list[float]]]:
     """Extract, chunk, and embed a file. Shared by per-chat uploads and
     knowledge-base collections. Raises HTTPException on bad input/upstream."""
-    text = extract_text(filename, content_type, data)
+    text = await extract_document_text(http, filename, content_type, data)
     return await prepare_text(http, text)
 
 

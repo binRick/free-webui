@@ -7,8 +7,10 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
-        changeOrigin: true
+        // overridable so E2E can point the dev server at a throwaway backend
+        target: process.env.FW_API_TARGET ?? 'http://localhost:8000',
+        changeOrigin: true,
+        ws: true
       }
     }
   }

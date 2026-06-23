@@ -25,6 +25,13 @@ dist/
 .vite/
 *.log
 
+# Playwright E2E
+test-results/
+playwright-report/
+blob-report/
+.last-run.json
+frontend/e2e/.auth/
+
 # Editor / OS
 .DS_Store
 .idea/

@@ -80,3 +80,65 @@ async def test_analytics_admin_only(client):
 
 async def test_analytics_requires_auth(client):
     assert (await client.get("/api/admin/analytics")).status_code == 401
+
+
+def _usage_chunk(p, c):
+    return {"choices": [], "usage": {"prompt_tokens": p, "completion_tokens": c, "total_tokens": p + c}}
+
+
+async def test_token_usage_captured_and_aggregated(client, upstream):
+    from tests.conftest import content_chunk, finish, sse
+
+    await _signup(client)
+    cid = (await client.post("/api/conversations", json={})).json()["id"]
+    upstream.queue_chat(sse(content_chunk("hi there"), finish("stop"), _usage_chunk(12, 5)))
+    await _send(client, cid, "hello")
+
+    a = (await client.get("/api/admin/analytics")).json()
+    assert a["tokens"] == {"prompt": 12, "completion": 5, "total": 17}
+    assert a["cost_total"] is None  # no prices configured
+    assert any(v["total_tokens"] == 17 for v in a["tokens_per_model"])
+
+    # the counts are persisted on the assistant message
+    msgs = (await client.get(f"/api/conversations/{cid}")).json()["messages"]
+    asst = [m for m in msgs if m["role"] == "assistant"][-1]
+    # not exposed on StoredMessage, but the analytics SUM proves they're stored
+    assert asst["content"] == "hi there"
+
+
+async def test_token_usage_sums_across_tool_loop(client, upstream):
+    from tests.conftest import content_chunk, finish, sse, tool_call_chunk
+
+    await _signup(client)
+    cid = (await client.post("/api/conversations", json={})).json()["id"]
+    await client.patch(f"/api/conversations/{cid}", json={"tools_enabled": True})
+    # first upstream call (tool request) reports usage, second (final answer) too
+    upstream.queue_chat(
+        sse(tool_call_chunk("calculate", '{"expression":"1+1"}'), finish("tool_calls"), _usage_chunk(10, 3)),
+        sse(content_chunk("it is 2"), finish("stop"), _usage_chunk(20, 7)),
+    )
+    await _send(client, cid, "1+1?")
+
+    a = (await client.get("/api/admin/analytics")).json()
+    # summed across both upstream calls: 10+20 prompt, 3+7 completion
+    assert a["tokens"] == {"prompt": 30, "completion": 10, "total": 40}
+
+
+async def test_cost_computed_from_prices(client, upstream, monkeypatch):
+    from app.config import settings
+    from tests.conftest import content_chunk, finish, sse
+
+    await _signup(client)
+    cid = (await client.post("/api/conversations", json={})).json()["id"]
+    await client.patch(f"/api/conversations/{cid}", json={"model": "priced-model"})
+    monkeypatch.setattr(settings, "model_prices", {"priced-model": {"input": 1.0, "output": 2.0}})
+    upstream.queue_chat(
+        sse(content_chunk("answer"), finish("stop"), _usage_chunk(2_000_000, 1_000_000))
+    )
+    await _send(client, cid, "q")
+
+    a = (await client.get("/api/admin/analytics")).json()
+    # 2M input @ $1/1M + 1M output @ $2/1M = 2 + 2 = 4.0
+    assert a["cost_total"] == 4.0
+    row = next(m for m in a["tokens_per_model"] if m["model"] == "priced-model")
+    assert row["cost"] == 4.0

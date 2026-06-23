@@ -1043,6 +1043,14 @@ export async function listFeedback(rating?: number): Promise<FeedbackRow[]> {
   return res.json();
 }
 
+export interface ModelTokens {
+  model: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  cost: number | null;
+}
+
 export interface Analytics {
   totals: Record<string, number>;
   feedback: { up: number; down: number };
@@ -1050,6 +1058,9 @@ export interface Analytics {
   new_users_7d: number;
   messages_per_day: { date: string; count: number }[];
   messages_per_model: { model: string; count: number }[];
+  tokens: { prompt: number; completion: number; total: number };
+  tokens_per_model: ModelTokens[];
+  cost_total: number | null;
 }
 
 export async function getAnalytics(days = 30): Promise<Analytics> {

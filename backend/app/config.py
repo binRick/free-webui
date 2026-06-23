@@ -151,6 +151,11 @@ class Settings(BaseSettings):
     content_extraction_api_key: str = ""
     content_extraction_timeout_seconds: float = 60.0
 
+    # Optional per-model token pricing (USD per 1M tokens) for the cost column in
+    # the admin analytics dashboard. JSON map of model id -> {input, output}, e.g.
+    # {"gpt-4o": {"input": 2.5, "output": 10}}. Empty -> token counts only, no cost.
+    model_prices: dict[str, dict[str, float]] = {}
+
     # S3-compatible object store for media blobs. Set s3_bucket to externalize
     # file bytes (generated/uploaded images) out of the DB into S3/MinIO/Ceph/etc.
     # Empty bucket -> blobs stay in the files.data column (zero-config default).

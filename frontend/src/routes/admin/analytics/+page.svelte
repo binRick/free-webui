@@ -44,6 +44,16 @@
     const [, m, d] = iso.split('-');
     return `${Number(m)}/${Number(d)}`;
   }
+
+  function fmtNum(n: number): string {
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1) + 'M';
+    if (n >= 1_000) return (n / 1_000).toFixed(n >= 10_000 ? 0 : 1) + 'k';
+    return String(n);
+  }
+
+  function fmtUsd(n: number): string {
+    return '$' + (n >= 1 ? n.toFixed(2) : n.toFixed(4));
+  }
 </script>
 
 <svelte:head><title>analytics · free-webui</title></svelte:head>
@@ -71,6 +81,10 @@
       <div class="card"><span class="n">{data.totals.channels}</span><span class="l">channels</span></div>
       <div class="card"><span class="n">{data.active_users_7d}</span><span class="l">active users · 7d</span></div>
       <div class="card"><span class="n">{data.new_users_7d}</span><span class="l">new users · 7d</span></div>
+      <div class="card"><span class="n">{fmtNum(data.tokens.total)}</span><span class="l">tokens · total</span></div>
+      {#if data.cost_total != null}
+        <div class="card"><span class="n">{fmtUsd(data.cost_total)}</span><span class="l">est. cost · total</span></div>
+      {/if}
     </section>
 
     <section class="block">
@@ -125,6 +139,36 @@
         {/if}
       </section>
     </div>
+
+    <section class="block">
+      <h2>token usage by model</h2>
+      {#if data.tokens.total === 0}
+        <div class="muted">no token usage reported — the upstream must send <code>usage</code> on the stream (most OpenAI-compatible servers do)</div>
+      {:else}
+        <table class="tok">
+          <thead>
+            <tr>
+              <th>model</th><th>input</th><th>output</th><th>total</th>
+              {#if data.cost_total != null}<th>cost</th>{/if}
+            </tr>
+          </thead>
+          <tbody>
+            {#each data.tokens_per_model as m (m.model)}
+              <tr>
+                <td class="tk-model" title={m.model}>{m.model}</td>
+                <td>{fmtNum(m.prompt_tokens)}</td>
+                <td>{fmtNum(m.completion_tokens)}</td>
+                <td>{fmtNum(m.total_tokens)}</td>
+                {#if data.cost_total != null}<td>{m.cost != null ? fmtUsd(m.cost) : '—'}</td>{/if}
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+        {#if data.cost_total == null}
+          <div class="muted">set <code>FREE_WEBUI_MODEL_PRICES</code> (per-1M input/output USD) to estimate cost</div>
+        {/if}
+      {/if}
+    </section>
   {/if}
 </div>
 
@@ -218,6 +262,29 @@
   .hb-track { background: var(--bg-sidebar); border-radius: 4px; height: 0.7rem; overflow: hidden; }
   .hb-fill { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
   .hb-n { color: var(--text-dim); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+  .tok { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  .tok th {
+    text-align: right;
+    color: var(--text-dim);
+    font-weight: 600;
+    padding: 0.3rem 0.5rem;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .tok th:first-child { text-align: left; }
+  .tok td {
+    text-align: right;
+    padding: 0.3rem 0.5rem;
+    font-variant-numeric: tabular-nums;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .tok td.tk-model {
+    text-align: left;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tok tbody tr:last-child td { border-bottom: 0; }
   .fb-row { display: flex; justify-content: space-between; margin-bottom: 0.4rem; font-size: 0.9rem; }
   .fb-bar { background: #d8584a; border-radius: 4px; height: 0.7rem; overflow: hidden; }
   .fb-up { display: block; height: 100%; background: #3fa66a; }

@@ -62,6 +62,10 @@ CREATE TABLE IF NOT EXISTS messages (
     -- JSON [{name, arguments, result}] of tool calls run for this assistant
     -- reply, kept so the 🔧 chips re-render on reload (not just live).
     tool_calls      TEXT,
+    -- Upstream-reported token usage for this reply (summed across tool-loop
+    -- iterations); NULL when the upstream didn't report usage.
+    prompt_tokens     INTEGER,
+    completion_tokens INTEGER,
     created_at      INTEGER NOT NULL
 );
 
@@ -444,6 +448,8 @@ _MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     # The model that produced an assistant message, for the evaluation leaderboard.
     ("messages", "model", "TEXT"),
     ("messages", "tool_calls", "TEXT"),
+    ("messages", "prompt_tokens", "INTEGER"),
+    ("messages", "completion_tokens", "INTEGER"),
     # Where a file's bytes live: 'db' (files.data) or 's3' (object store).
     ("files", "storage", "TEXT NOT NULL DEFAULT 'db'"),
     ("users", "token_version", "INTEGER NOT NULL DEFAULT 0"),

@@ -456,6 +456,8 @@ async def _stream_and_persist(
     final_content: list[str] = []
     tools_executed: list[dict] = []
     generated_images: list[str] = []
+    usage_prompt = 0  # token usage, summed across tool-loop iterations
+    usage_completion = 0
     tool_ctx = ToolContext()
     conn = conn or config_connection()
 
@@ -501,7 +503,12 @@ async def _stream_and_persist(
             msgs = new_msgs
 
     def _payload() -> dict[str, Any]:
-        p: dict[str, Any] = {**body, "messages": msgs, "stream": True}
+        # include_usage asks OpenAI-compatible upstreams to emit a final usage
+        # chunk (token counts) on the stream; unknown to an upstream -> ignored.
+        p: dict[str, Any] = {
+            **body, "messages": msgs, "stream": True,
+            "stream_options": {"include_usage": True},
+        }
         if tools_enabled and tool_specs:
             p["tools"] = tool_specs
             p["tool_choice"] = "auto"
@@ -563,6 +570,13 @@ async def _stream_and_persist(
                         chunk = json.loads(line[6:])
                     except json.JSONDecodeError:
                         continue
+
+                    # include_usage emits a trailing chunk with token counts and
+                    # (usually) empty choices. Accumulate across the tool loop.
+                    u = chunk.get("usage")
+                    if isinstance(u, dict):
+                        usage_prompt += int(u.get("prompt_tokens") or 0)
+                        usage_completion += int(u.get("completion_tokens") or 0)
 
                     delta = (chunk.get("choices") or [{}])[0].get("delta", {})
                     # Some reasoning models stream their chain-of-thought in a
@@ -724,12 +738,14 @@ async def _stream_and_persist(
                         stored = text
                     await db.execute(
                         "INSERT INTO messages "
-                        "(conversation_id, role, content, parent_id, sources, tool_calls, model, created_at) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        "(conversation_id, role, content, parent_id, sources, tool_calls, "
+                        "model, prompt_tokens, completion_tokens, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         (cid, "assistant", stored, parent_message_id,
                          json.dumps(sources) if sources else None,
                          json.dumps(tools_executed) if tools_executed else None,
-                         body.get("model", model), ts),
+                         body.get("model", model),
+                         usage_prompt or None, usage_completion or None, ts),
                     )
                 await db.execute(
                     "UPDATE conversations SET updated_at = ? WHERE id = ?", (ts, cid)

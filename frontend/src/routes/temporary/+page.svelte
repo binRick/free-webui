@@ -2,7 +2,7 @@
   import { onMount, tick } from 'svelte';
   import Markdown from '$lib/Markdown.svelte';
   import ModelPicker from '$lib/ModelPicker.svelte';
-  import { toasts } from '$lib/toastStore.svelte';
+  import { t } from '$lib/i18n.svelte';
   import { listModels, temporaryChat } from '$lib/api';
 
   interface Msg {
@@ -17,6 +17,20 @@
   let streaming = $state(false);
   let scroller = $state<HTMLDivElement | null>(null);
   let abort: AbortController | null = null;
+
+  // Playground controls: tune the system prompt + params without saving anything.
+  let showSettings = $state(false);
+  let systemPrompt = $state('');
+  let temperature = $state<number | null>(null);
+  let maxTokens = $state<number | null>(null);
+
+  function params() {
+    const p: { system_prompt?: string; temperature?: number; max_tokens?: number } = {};
+    if (systemPrompt.trim()) p.system_prompt = systemPrompt.trim();
+    if (temperature != null && !Number.isNaN(temperature)) p.temperature = temperature;
+    if (maxTokens != null && !Number.isNaN(maxTokens)) p.max_tokens = maxTokens;
+    return p;
+  }
 
   onMount(async () => {
     models = await listModels();
@@ -40,14 +54,19 @@
     streaming = true;
     abort = new AbortController();
     try {
-      await temporaryChat(transcript, model, {
-        signal: abort.signal,
-        onDelta: (d) => {
-          const last = messages[messages.length - 1];
-          messages[messages.length - 1] = { ...last, content: last.content + d };
-          scrollToBottom();
-        }
-      });
+      await temporaryChat(
+        transcript,
+        model,
+        {
+          signal: abort.signal,
+          onDelta: (d) => {
+            const last = messages[messages.length - 1];
+            messages[messages.length - 1] = { ...last, content: last.content + d };
+            scrollToBottom();
+          }
+        },
+        params()
+      );
     } catch (e) {
       const last = messages[messages.length - 1];
       messages[messages.length - 1] = {
@@ -85,10 +104,39 @@
     <span class="badge" title="this chat is never saved">👻 temporary</span>
     <div class="spacer"></div>
     <ModelPicker {models} value={model} disabled={streaming} onSelect={(m) => (model = m)} />
+    <button
+      class="clear"
+      class:on={showSettings}
+      onclick={() => (showSettings = !showSettings)}
+      title="prompt & parameters"
+    >⚙</button>
     {#if messages.length}
       <button class="clear" onclick={clearAll} disabled={streaming} title="clear">clear</button>
     {/if}
   </header>
+
+  {#if showSettings}
+    <section class="settings">
+      <label class="full">
+        <span class="lbl">{t('chat.systemPrompt')}</span>
+        <textarea
+          bind:value={systemPrompt}
+          rows="2"
+          placeholder={t('chat.systemPromptPlaceholder')}
+        ></textarea>
+      </label>
+      <div class="row">
+        <label>
+          <span class="lbl">{t('chat.temperature')}</span>
+          <input type="number" min="0" max="2" step="0.1" bind:value={temperature} placeholder={t('common.default')} />
+        </label>
+        <label>
+          <span class="lbl">{t('chat.maxTokens')}</span>
+          <input type="number" min="1" step="1" bind:value={maxTokens} placeholder={t('common.default')} />
+        </label>
+      </div>
+    </section>
+  {/if}
 
   <div class="banner">Temporary chat — nothing here is saved. Leaving or refreshing clears it.</div>
 
@@ -166,6 +214,36 @@
     cursor: pointer;
   }
   .clear:disabled { opacity: 0.5; cursor: default; }
+  .clear.on { border-color: var(--accent); color: var(--accent); }
+  .settings {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-soft);
+    background: var(--bg-elev);
+  }
+  .settings .row { display: flex; gap: 0.6rem; }
+  .settings label { display: flex; flex-direction: column; gap: 0.25rem; flex: 1; }
+  .settings .lbl {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .settings textarea,
+  .settings input {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    padding: 0.4rem 0.55rem;
+    font: inherit;
+    font-size: 0.85rem;
+    resize: vertical;
+  }
+  .settings textarea:focus,
+  .settings input:focus { outline: none; border-color: var(--accent); }
   .banner {
     font-size: 0.78rem;
     color: var(--text-muted);

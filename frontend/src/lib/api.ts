@@ -1348,15 +1348,23 @@ export async function listModels(): Promise<string[]> {
 // Stateless, never-persisted completion: the caller passes the whole transcript.
 // Content may be plain text or multimodal parts (text + inline data: images,
 // used by the voice/video call mode for vision input).
+export interface TemporaryParams {
+  system_prompt?: string;
+  temperature?: number;
+  max_tokens?: number;
+}
+
 export async function temporaryChat(
   messages: { role: string; content: string | ContentPart[] }[],
   model: string | null,
-  opts: StreamOpts
+  opts: StreamOpts,
+  params: TemporaryParams = {}
 ): Promise<void> {
   const res = await apiFetch('/api/chat/temporary', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ messages, model }),
+    // undefined params are dropped by JSON.stringify, so unset fields use defaults
+    body: JSON.stringify({ messages, model, ...params }),
     signal: opts.signal
   });
   await consumeStream(res, opts);

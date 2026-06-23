@@ -65,6 +65,23 @@ async def test_temporary_chat_replays_full_transcript(client, upstream):
     assert sent[-1]["content"] == "second"
 
 
+async def test_temporary_chat_forwards_generation_params(client, upstream):
+    await _signup(client)
+    upstream.queue_chat(sse(content_chunk("ok"), finish("stop")))
+    await _consume(
+        client,
+        "/api/chat/temporary",
+        {
+            "messages": [{"role": "user", "content": "hi"}],
+            "temperature": 0.3,
+            "max_tokens": 64,
+        },
+    )
+    body = upstream.chat_calls[-1]
+    assert body["temperature"] == 0.3
+    assert body["max_tokens"] == 64
+
+
 async def test_temporary_chat_requires_auth(client):
     r = await client.post("/api/chat/temporary", json={"messages": [{"role": "user", "content": "x"}]})
     assert r.status_code == 401

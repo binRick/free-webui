@@ -114,7 +114,9 @@ authoritative status):
   drawer editor) and **folders** (single-home, sidebar filter + drawer move),
   on top of search/pin/archive.
 - **Temporary chat**: a stateless `/api/chat/temporary` endpoint + `/temporary`
-  page — a throwaway conversation that is never written to the database.
+  page — a throwaway conversation that is never written to the database, with a
+  **prompt/param playground** (toggle a panel to set the system prompt,
+  temperature, and max tokens for quick model/prompt testing without saving).
 - **Compare models**: a `/compare` page sends one prompt to up to 4 models in
   parallel, side by side (reuses the temporary-chat endpoint; nothing saved).
 - **Composer UX**: **searchable model picker** (scales to many merged models)

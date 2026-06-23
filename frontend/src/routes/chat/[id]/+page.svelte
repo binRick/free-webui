@@ -16,6 +16,7 @@
     continueMessage,
     deleteMessage,
     editMessage,
+    editAssistantMessage,
     exportConversationUrl,
     getAudioStatus,
     getCodeStatus,
@@ -972,10 +973,20 @@
     convs.refresh();
   }
 
+  // The raw editable text of a message: the text part of a multimodal message,
+  // or the string content as-is (keeping any <think> block so it isn't dropped).
+  function editableText(content: string): string {
+    const parsed = parseContent(content);
+    if (typeof parsed === 'string') return parsed;
+    const txt = parsed.find((p) => p.type === 'text');
+    return txt && txt.type === 'text' ? txt.text : '';
+  }
+
   function startEdit(i: number) {
     if (streaming) return;
     editingIndex = i;
-    editText = messages[i].content;
+    const m = messages[i];
+    editText = m.role === 'assistant' ? editableText(m.content) : m.content;
   }
 
   function cancelEdit() {
@@ -990,6 +1001,18 @@
     if (msg.id == null) return;
     const newContent = editText.trim();
     if (!newContent) return;
+
+    if (msg.role === 'assistant') {
+      // In-place fix of a saved reply: rewrite the text, no truncation, no rerun.
+      editingIndex = null;
+      try {
+        await editAssistantMessage(currentId, msg.id, newContent);
+        await load(currentId);
+      } catch (err) {
+        loadingError = (err as Error).message;
+      }
+      return;
+    }
 
     editingIndex = null;
     messages = [
@@ -1454,6 +1477,9 @@
               </span>
             {/if}
             {#if msg.role === 'assistant' && msg.id != null && msg.content}
+              <button class="action" title="edit this reply in place (no rerun)" onclick={() => startEdit(i)}>{t('common.edit')}</button>
+            {/if}
+            {#if msg.role === 'assistant' && msg.id != null && msg.content}
               <button class="action" title="regenerate this reply" onclick={() => regenAt(i)}>{t('composer.regenerate')}</button>
             {/if}
             {#if msg.role === 'assistant' && msg.id != null && msg.content && i === messages.length - 1}
@@ -1501,7 +1527,9 @@
           <textarea class="edit" bind:value={editText} rows="4"></textarea>
           <div class="edit-actions">
             <button class="action" onclick={cancelEdit}>cancel</button>
-            <button class="action primary" onclick={saveEdit} disabled={!editText.trim()}>{t('chat.saveRerun')}</button>
+            <button class="action primary" onclick={saveEdit} disabled={!editText.trim()}>
+              {messages[editingIndex]?.role === 'assistant' ? t('common.save') : t('chat.saveRerun')}
+            </button>
           </div>
         {:else}
           {@const parsed = parseContent(msg.content)}

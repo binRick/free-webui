@@ -131,6 +131,11 @@ class EditBody(BaseModel):
     model: str | None = None
 
 
+class AssistantContentBody(BaseModel):
+    # Plain-text replacement for an assistant reply edited in place.
+    content: str
+
+
 class UpdateBody(BaseModel):
     title: str | None = None
     model: str | None = None
@@ -1466,6 +1471,54 @@ async def edit_message(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.put("/{cid}/messages/{msg_id}/content")
+async def edit_assistant_message(
+    cid: str,
+    msg_id: int,
+    body: AssistantContentBody,
+    request: Request,
+    user: dict = Depends(current_user),
+) -> dict:
+    """Edit a saved assistant reply in place (fix a typo, trim it, correct a
+    fact) WITHOUT re-running the model. Unlike editing a user turn this neither
+    truncates the thread nor regenerates — it only rewrites the stored text.
+    Any non-text parts on the message (e.g. a generated image) are preserved."""
+    db = _db(request)
+    await _owned(db, cid, user["id"])
+    cur = await db.execute(
+        "SELECT role, content FROM messages WHERE id = ? AND conversation_id = ?",
+        (msg_id, cid),
+    )
+    row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="message not found")
+    if row[0] != "assistant":
+        raise HTTPException(
+            status_code=400, detail="only assistant messages can be edited in place"
+        )
+
+    # Keep any generated images etc. the text editor doesn't surface.
+    existing = _decode_content(row[1])
+    non_text = (
+        [p for p in existing if p.get("type") != "text"]
+        if isinstance(existing, list)
+        else []
+    )
+    new_content: str | list[dict] = (
+        [{"type": "text", "text": body.content}, *non_text] if non_text else body.content
+    )
+
+    async with db.transaction():
+        await db.execute(
+            "UPDATE messages SET content = ? WHERE id = ?",
+            (_encode_content(new_content), msg_id),
+        )
+        await db.execute(
+            "UPDATE conversations SET updated_at = ? WHERE id = ?", (int(time.time()), cid)
+        )
+    return {"ok": True}
 
 
 @router.delete("/{cid}/messages/{msg_id}")

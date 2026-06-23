@@ -175,3 +175,110 @@ async def test_continue_only_trailing_assistant(client):
     assert (
         await client.post(f"/api/conversations/{cid}/messages/{user_msg}/continue", json={})
     ).status_code == 400
+
+
+# ---- edit an assistant reply in place (no truncation, no rerun) ----
+
+async def test_edit_assistant_in_place_no_truncation(client):
+    await _signup(client)
+    cid = await _new(client)
+    await _two_turns(client, cid)
+    msgs = await _msgs(client, cid)
+    assert [m["role"] for m in msgs] == ["user", "assistant", "user", "assistant"]
+    first_assistant = msgs[1]["id"]
+
+    r = await client.put(
+        f"/api/conversations/{cid}/messages/{first_assistant}/content",
+        json={"content": "hand-corrected reply"},
+    )
+    assert r.status_code == 200 and r.json() == {"ok": True}
+
+    after = await _msgs(client, cid)
+    # only that one message changed — nothing after it is truncated, no new turn
+    assert [m["role"] for m in after] == ["user", "assistant", "user", "assistant"]
+    assert after[1]["content"] == "hand-corrected reply"
+    assert after[0]["content"].strip() == "one"
+    assert after[2]["content"].strip() == "two"
+
+
+async def test_edit_assistant_does_not_call_upstream(client, upstream):
+    await _signup(client)
+    cid = await _new(client)
+    await _consume(client, "POST", f"/api/conversations/{cid}/messages", {"content": "hi"})
+    aid = (await _msgs(client, cid))[1]["id"]
+    calls_before = len(upstream.chat_calls)
+    r = await client.put(
+        f"/api/conversations/{cid}/messages/{aid}/content", json={"content": "edited"}
+    )
+    assert r.status_code == 200
+    # in-place edit must not re-run the model
+    assert len(upstream.chat_calls) == calls_before
+    assert (await _msgs(client, cid))[1]["content"] == "edited"
+
+
+async def test_edit_user_via_content_endpoint_rejected(client):
+    await _signup(client)
+    cid = await _new(client)
+    await _consume(client, "POST", f"/api/conversations/{cid}/messages", {"content": "hi"})
+    user_id = (await _msgs(client, cid))[0]["id"]
+    r = await client.put(
+        f"/api/conversations/{cid}/messages/{user_id}/content", json={"content": "x"}
+    )
+    assert r.status_code == 400
+
+
+async def test_edit_assistant_unknown_message_404(client):
+    await _signup(client)
+    cid = await _new(client)
+    r = await client.put(
+        f"/api/conversations/{cid}/messages/99999/content", json={"content": "x"}
+    )
+    assert r.status_code == 404
+
+
+async def test_edit_assistant_preserves_non_text_parts(client):
+    """Editing the text of a multimodal assistant reply keeps its image part."""
+    import json as _json
+
+    from app.main import app
+
+    await _signup(client)
+    cid = await _new(client)
+    await _consume(client, "POST", f"/api/conversations/{cid}/messages", {"content": "hi"})
+    aid = (await _msgs(client, cid))[1]["id"]
+    seeded = _json.dumps(
+        [
+            {"type": "text", "text": "original"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}},
+        ]
+    )
+    await app.state.db.execute("UPDATE messages SET content = ? WHERE id = ?", (seeded, aid))
+    await app.state.db.commit()
+
+    r = await client.put(
+        f"/api/conversations/{cid}/messages/{aid}/content", json={"content": "edited text"}
+    )
+    assert r.status_code == 200
+    row = await (
+        await app.state.db.execute("SELECT content FROM messages WHERE id = ?", (aid,))
+    ).fetchone()
+    parts = _json.loads(row[0])
+    assert parts[0] == {"type": "text", "text": "edited text"}
+    assert any(p.get("type") == "image_url" for p in parts)
+
+
+async def test_edit_assistant_requires_ownership(client):
+    await _signup(client)
+    cid = await _new(client)
+    await _consume(client, "POST", f"/api/conversations/{cid}/messages", {"content": "hi"})
+    aid = (await _msgs(client, cid))[1]["id"]
+    await client.post(
+        "/api/admin/users", json={"username": "bob", "password": "passpass", "role": "user"}
+    )
+    await client.post("/api/auth/logout")
+    await client.post("/api/auth/login", json={"username": "bob", "password": "passpass"})
+    # bob can't see the conversation -> 404, no existence leak
+    r = await client.put(
+        f"/api/conversations/{cid}/messages/{aid}/content", json={"content": "x"}
+    )
+    assert r.status_code == 404

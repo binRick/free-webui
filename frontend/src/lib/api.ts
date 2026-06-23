@@ -1531,6 +1531,19 @@ export async function deleteMessage(conversationId: string, messageId: number): 
   await apiFetch(`/api/conversations/${conversationId}/messages/${messageId}`, { method: 'DELETE' });
 }
 
+// In-place edit of an assistant reply (no truncation, no model rerun).
+export async function editAssistantMessage(
+  conversationId: string,
+  messageId: number,
+  content: string
+): Promise<void> {
+  await apiFetch(`/api/conversations/${conversationId}/messages/${messageId}/content`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ content })
+  });
+}
+
 // ---- Evaluations: leaderboard + arena ----
 
 export interface LeaderboardRow {

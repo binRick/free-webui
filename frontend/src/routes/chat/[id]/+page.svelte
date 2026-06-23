@@ -67,6 +67,8 @@
   import { toasts } from '$lib/toastStore.svelte';
   import Markdown from '$lib/Markdown.svelte';
   import ModelPicker from '$lib/ModelPicker.svelte';
+  import ArtifactPanel from '$lib/ArtifactPanel.svelte';
+  import { extractArtifacts, type Artifact } from '$lib/artifacts';
   import { stripReasoning } from '$lib/reasoning';
   import { sidebar } from '$lib/sidebarState.svelte';
 
@@ -124,6 +126,7 @@
   let webSearchAvailable = $state(false);
   let toolsEnabled = $state(false);
   let fullContext = $state(false);
+  let artifactView = $state<Artifact[] | null>(null); // open artifact preview, if any
   let imageGenAvailable = $state(false);
   let codeInterpreterAvailable = $state(false);
   let fileUploadAllowed = $state(true);
@@ -188,6 +191,7 @@
       topP = conv.top_p != null ? String(conv.top_p) : '';
       stopText = (conv.stop ?? []).join(', ');
       queued = []; // a queue belongs to one conversation; reset on navigation
+      artifactView = null; // close any open artifact preview on navigation
       maxTokens = conv.max_tokens != null ? String(conv.max_tokens) : '';
       presencePenalty = conv.presence_penalty != null ? String(conv.presence_penalty) : '';
       frequencyPenalty = conv.frequency_penalty != null ? String(conv.frequency_penalty) : '';
@@ -1458,6 +1462,10 @@
     <div class="empty">start a conversation ↓</div>
   {/if}
   {#each messages as msg, i (msg.id ?? `tmp-${i}`)}
+    {@const arts =
+      msg.role === 'assistant' && msg.content
+        ? extractArtifacts(messagePlainText(msg.content, 'assistant'))
+        : []}
     <div class="msg {msg.role}">
       <div class="role-row">
         <span class="role">{msg.role}</span>
@@ -1490,6 +1498,9 @@
             {/if}
             {#if msg.role === 'assistant' && msg.id != null && msg.content}
               <button class="action" title="edit this reply in place (no rerun)" onclick={() => startEdit(i)}>{t('common.edit')}</button>
+            {/if}
+            {#if arts.length}
+              <button class="action" title="open in a sandboxed preview" onclick={() => (artifactView = arts)}>⛶ artifact{arts.length > 1 ? `s ${arts.length}` : ''}</button>
             {/if}
             {#if msg.role === 'assistant' && msg.id != null && msg.content}
               <button class="action" title="regenerate this reply" onclick={() => regenAt(i)}>{t('composer.regenerate')}</button>
@@ -1730,6 +1741,10 @@
       </div>
     </div>
   </div>
+{/if}
+
+{#if artifactView}
+  <ArtifactPanel artifacts={artifactView} onClose={() => (artifactView = null)} />
 {/if}
 
 <style>

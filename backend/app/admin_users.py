@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from .audit import record
 from .auth import current_user, hash_password, require_admin
 from .files import collect_user_objects, purge_objects
+from .webhooks import notify_signup
 
 router = APIRouter(
     prefix="/api/admin/users",
@@ -64,6 +65,7 @@ async def create_user(body: CreateUserBody, request: Request, me: dict = Depends
     )
     await db.commit()
     await record(db, me, "user.create", f"username={body.username} role={body.role}")
+    await notify_signup(body.username, body.role, "admin")
     return UserListed(
         id=new_id, username=body.username, role=body.role, created_at=now
     )

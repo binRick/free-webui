@@ -21,6 +21,10 @@ authoritative status):
   users; aggregated from existing tables, no new dep), and **broadcast banners**
   (admin-posted info/warning/error/success announcements shown to every user,
   client-side dismissible; `/admin/banners`).
+- **Signup webhooks**: notify a Slack/Discord/generic webhook on every new-user
+  signup (first-run setup, admin user-create, OIDC auto-provision). The payload
+  carries `text` (Slack) + `content` (Discord) plus structured fields; best-effort
+  and off by default (`FREE_WEBUI_WEBHOOK_URL`) — a failure never blocks signup.
 - **Per-feature permission matrix**: a fine-grained capability gate for non-admin
   users — web search, image generation, code interpreter, file upload, external
   (MCP/OpenAPI) tools, knowledge bases, notes, temporary chat, and public share

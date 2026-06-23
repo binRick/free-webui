@@ -92,6 +92,13 @@ class Settings(BaseSettings):
     # Allow users to create public read-only share links for conversations.
     allow_public_sharing: bool = True
 
+    # Outgoing webhook for operator notifications (currently new-user signups).
+    # POSTs a JSON payload carrying both `text` (Slack) and `content` (Discord)
+    # fields plus structured data; empty -> disabled. Best-effort: a failure never
+    # blocks the signup. Point it at a Slack/Discord incoming-webhook or any URL.
+    webhook_url: str = ""
+    webhook_timeout_seconds: float = 5.0
+
     # Default instance display name (branding). An admin can override it at
     # runtime via /admin/appearance (stored in app_settings); this is the
     # fallback shown before any override is set.

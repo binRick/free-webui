@@ -12,6 +12,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel, Field
 
 from .config import oidc_enabled, settings
+from .webhooks import notify_signup
 
 SESSION_COOKIE = "fw_session"
 
@@ -245,6 +246,7 @@ async def setup_endpoint(body: SetupBody, request: Request, response: Response) 
             "UPDATE conversations SET user_id = ? WHERE user_id IS NULL", (uid,)
         )
         await db.commit()
+    await notify_signup(body.username, "admin", "setup")
     token = issue_session(uid, body.username, "admin", 0)
     _set_cookie(response, token)
     return UserOut(id=uid, username=body.username, role="admin")

@@ -29,6 +29,7 @@ from .auth import (
 )
 from .config import oidc_enabled, settings
 from .database import INTEGRITY_ERRORS, Database
+from .webhooks import notify_signup
 
 router = APIRouter(prefix="/api/auth/oidc", tags=["auth"])
 
@@ -176,7 +177,8 @@ async def _find_or_create_user(db: Database, sub: str, claims: dict) -> dict | N
             if found:
                 return found
             raise
-        return {"id": new_id, "username": uname, "role": role, "token_version": 0}
+    await notify_signup(uname, role, "oidc")
+    return {"id": new_id, "username": uname, "role": role, "token_version": 0}
 
 
 @router.get("/login")

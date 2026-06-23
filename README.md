@@ -123,7 +123,7 @@ while deliberately staying a lean two-tier app. Roughly:
 | Knowledge / RAG | per-chat uploads, **URL ingest** (fetch a web page/PDF), reusable **collections**, web search, **inline citations + hovercards**, **hybrid dense+BM25 retrieval** (RRF) + optional **cross-encoder reranking** |
 | Tools | function-calling loop, **MCP**, **OpenAPI tool servers**, code interpreter, image generation, custom assistants, plugins/pipelines |
 | Models | **multiple upstream connections**, Ollama model management, per-model access control, per-chat params |
-| Multi-user / admin | argon2 auth, **OIDC/SSO**, groups + RBAC, **per-feature permission matrix**, audit log, feedback log, **usage analytics**, **broadcast banners**, self-service **data export + account deletion** |
+| Multi-user / admin | argon2 auth, **OIDC/SSO**, groups + RBAC, **per-feature permission matrix**, audit log, feedback log, **usage analytics**, **broadcast banners**, **signup webhooks**, self-service **data export + account deletion** |
 | Evaluation | **arena** (blind A/B vote → ELO), feedback-driven **leaderboard** (Wilson-scored) |
 | Collaboration | **real-time channels** (WebSocket), **notes**, public share links, **multi-model compare** |
 | Voice | server-side STT/TTS proxy + browser Web Speech fallback, **hands-free voice/video call mode** (VAD turn-taking, optional camera→vision) |

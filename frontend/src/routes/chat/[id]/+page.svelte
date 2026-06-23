@@ -179,7 +179,8 @@
         role: m.role,
         content: m.content,
         rating: m.rating ?? null,
-        sources: m.sources ?? undefined
+        sources: m.sources ?? undefined,
+        tool_calls: m.tool_calls ?? undefined
       }));
       await refreshVariants();
       systemPrompt = conv.system_prompt ?? '';

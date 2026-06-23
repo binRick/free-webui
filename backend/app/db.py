@@ -59,6 +59,9 @@ CREATE TABLE IF NOT EXISTS messages (
     parent_id       INTEGER,
     active          INTEGER NOT NULL DEFAULT 1,
     sources         TEXT,
+    -- JSON [{name, arguments, result}] of tool calls run for this assistant
+    -- reply, kept so the 🔧 chips re-render on reload (not just live).
+    tool_calls      TEXT,
     created_at      INTEGER NOT NULL
 );
 
@@ -440,6 +443,7 @@ _MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("messages", "sources", "TEXT"),
     # The model that produced an assistant message, for the evaluation leaderboard.
     ("messages", "model", "TEXT"),
+    ("messages", "tool_calls", "TEXT"),
     # Where a file's bytes live: 'db' (files.data) or 's3' (object store).
     ("files", "storage", "TEXT NOT NULL DEFAULT 'db'"),
     ("users", "token_version", "INTEGER NOT NULL DEFAULT 0"),

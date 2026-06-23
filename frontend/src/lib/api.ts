@@ -51,6 +51,7 @@ export interface StoredMessage {
   created_at: number;
   rating?: number | null; // current user's feedback: 1, -1, or null
   sources?: Source[] | null;
+  tool_calls?: ToolCallEvent[] | null; // 🔧 calls run for this reply, re-rendered on reload
 }
 
 export interface Conversation {

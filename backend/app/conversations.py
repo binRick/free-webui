@@ -60,6 +60,7 @@ class StoredMessage(BaseModel):
     created_at: int
     rating: int | None = None  # current user's feedback: 1 (up), -1 (down), or None
     sources: list[dict] | None = None  # RAG/web sources that grounded this reply
+    tool_calls: list[dict] | None = None  # [{name, arguments, result}] run for this reply
 
 
 class Conversation(BaseModel):
@@ -723,10 +724,11 @@ async def _stream_and_persist(
                         stored = text
                     await db.execute(
                         "INSERT INTO messages "
-                        "(conversation_id, role, content, parent_id, sources, model, created_at) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        "(conversation_id, role, content, parent_id, sources, tool_calls, model, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                         (cid, "assistant", stored, parent_message_id,
                          json.dumps(sources) if sources else None,
+                         json.dumps(tools_executed) if tools_executed else None,
                          body.get("model", model), ts),
                     )
                 await db.execute(
@@ -909,7 +911,8 @@ async def clone_conversation(
     cur = await db.execute(
         """
         SELECT title, model, system_prompt, temperature, top_p, stop, web_search,
-               tools_enabled, max_tokens, presence_penalty, frequency_penalty, seed
+               tools_enabled, full_context, max_tokens, presence_penalty,
+               frequency_penalty, seed
         FROM conversations WHERE id = ?
         """,
         (cid,),
@@ -925,26 +928,26 @@ async def clone_conversation(
         """
         INSERT INTO conversations
             (id, user_id, title, model, system_prompt, temperature, top_p, stop,
-             web_search, tools_enabled, max_tokens, presence_penalty,
+             web_search, tools_enabled, full_context, max_tokens, presence_penalty,
              frequency_penalty, seed, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (new_id, user["id"], new_title, *src[1:], now, now),
     )
     # Copy the visible thread (active messages only), preserving order + timestamps.
     cur = await db.execute(
-        "SELECT role, content, sources, created_at FROM messages "
+        "SELECT role, content, sources, tool_calls, created_at FROM messages "
         "WHERE conversation_id = ? AND active = 1 ORDER BY id",
         (cid,),
     )
-    for role, content, sources, created in await cur.fetchall():
+    for role, content, sources, tool_calls, created in await cur.fetchall():
         # Give the clone its own copies of any referenced blobs so it is
         # self-contained (deleting the original can't break the clone's images).
         content = await clone_file_refs(db, user["id"], new_id, cid, content)
         await db.execute(
-            "INSERT INTO messages (conversation_id, role, content, sources, active, created_at) "
-            "VALUES (?, ?, ?, ?, 1, ?)",
-            (new_id, role, content, sources, created),
+            "INSERT INTO messages (conversation_id, role, content, sources, tool_calls, active, created_at) "
+            "VALUES (?, ?, ?, ?, ?, 1, ?)",
+            (new_id, role, content, sources, tool_calls, created),
         )
     # Carry over organization: tags and attached knowledge collections.
     await db.execute(
@@ -987,7 +990,7 @@ async def get_conversation(
         raise HTTPException(status_code=404, detail="conversation not found")
     cur = await db.execute(
         """
-        SELECT m.id, m.role, m.content, m.created_at, fb.rating, m.sources
+        SELECT m.id, m.role, m.content, m.created_at, fb.rating, m.sources, m.tool_calls
         FROM messages m
         LEFT JOIN message_feedback fb
                ON fb.message_id = m.id AND fb.user_id = ?
@@ -1019,6 +1022,7 @@ async def get_conversation(
             StoredMessage(
                 id=m[0], role=m[1], content=m[2], created_at=m[3], rating=m[4],
                 sources=json.loads(m[5]) if m[5] else None,
+                tool_calls=json.loads(m[6]) if m[6] else None,
             )
             for m in msg_rows
         ],

@@ -131,3 +131,32 @@ async def test_malformed_tool_args_fall_back_to_empty(client, upstream):
 
     msgs = (await client.get(f"/api/conversations/{cid}")).json()["messages"]
     assert msgs[-1]["role"] == "assistant" and msgs[-1]["content"] == "recovered"
+
+
+async def test_tool_calls_persisted_and_returned_on_reload(client, upstream):
+    await _signup(client)
+    cid = await _new_conv(client, tools_enabled=True)
+    upstream.queue_chat(
+        sse(tool_call_chunk("calculate", '{"expression":"2+2"}'), finish("tool_calls")),
+        sse(content_chunk("The answer is 4."), finish("stop")),
+    )
+    text = await _raw(client, "POST", f"/api/conversations/{cid}/messages", {"content": "2+2?"})
+    assert "event: tool_call" in text  # streamed live
+
+    # ...and persisted: the GET re-serves the tool calls so the 🔧 chips re-render
+    conv = (await client.get(f"/api/conversations/{cid}")).json()
+    asst = [m for m in conv["messages"] if m["role"] == "assistant"][-1]
+    assert asst["content"] == "The answer is 4."
+    tcs = asst["tool_calls"]
+    assert tcs and tcs[0]["name"] == "calculate"
+    assert tcs[0]["arguments"] == {"expression": "2+2"}
+    assert "4" in tcs[0]["result"]
+
+
+async def test_no_tool_calls_field_when_none_run(client):
+    await _signup(client)
+    cid = (await client.post("/api/conversations", json={})).json()["id"]
+    await _raw(client, "POST", f"/api/conversations/{cid}/messages", {"content": "hi"})
+    conv = (await client.get(f"/api/conversations/{cid}")).json()
+    asst = [m for m in conv["messages"] if m["role"] == "assistant"][-1]
+    assert asst.get("tool_calls") in (None, [])

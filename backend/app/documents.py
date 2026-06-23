@@ -92,14 +92,16 @@ async def upload_document(
         )
 
     http = _http(request)
-    chunks, embeddings = await prepare_document(http, file.filename or "upload", file.content_type, data)
+    full_text, chunks, embeddings = await prepare_document(
+        http, file.filename or "upload", file.content_type, data
+    )
 
     now = int(time.time())
     doc_id = await db.insert(
         """
         INSERT INTO documents
-        (conversation_id, filename, mime, bytes, chunk_count, embedding_model, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        (conversation_id, filename, mime, bytes, chunk_count, embedding_model, full_text, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             cid,
@@ -108,6 +110,7 @@ async def upload_document(
             len(data),
             len(chunks),
             settings.embedding_model,
+            full_text,
             now,
         ),
     )
@@ -152,10 +155,10 @@ async def add_document_url(
         doc_id = await db.insert(
             """
             INSERT INTO documents
-            (conversation_id, filename, mime, bytes, chunk_count, embedding_model, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            (conversation_id, filename, mime, bytes, chunk_count, embedding_model, full_text, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (cid, label, mime, len(text.encode("utf-8")), len(chunks), settings.embedding_model, now),
+            (cid, label, mime, len(text.encode("utf-8")), len(chunks), settings.embedding_model, text, now),
         )
         await db.executemany(
             "INSERT INTO chunks (document_id, seq, text, embedding) VALUES (?, ?, ?, ?)",

@@ -63,6 +63,7 @@ export interface Conversation {
   stop: string[] | null;
   web_search: boolean;
   tools_enabled: boolean;
+  full_context: boolean;
   max_tokens: number | null;
   presence_penalty: number | null;
   frequency_penalty: number | null;
@@ -82,6 +83,7 @@ export interface UpdateConversation {
   stop?: string[] | null;
   web_search?: boolean | null;
   tools_enabled?: boolean | null;
+  full_context?: boolean | null;
   max_tokens?: number | null;
   presence_penalty?: number | null;
   frequency_penalty?: number | null;

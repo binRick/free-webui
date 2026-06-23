@@ -72,6 +72,7 @@ class Conversation(BaseModel):
     stop: list[str] | None = None
     web_search: bool = False
     tools_enabled: bool = False
+    full_context: bool = False
     max_tokens: int | None = None
     presence_penalty: float | None = None
     frequency_penalty: float | None = None
@@ -145,6 +146,7 @@ class UpdateBody(BaseModel):
     stop: list[str] | None = None
     web_search: bool | None = None
     tools_enabled: bool | None = None
+    full_context: bool | None = None
     max_tokens: int | None = Field(default=None, ge=1, le=131072)
     presence_penalty: float | None = Field(default=None, ge=-2, le=2)
     frequency_penalty: float | None = Field(default=None, ge=-2, le=2)
@@ -296,7 +298,7 @@ async def _conv_settings(db: aiosqlite.Connection, cid: str) -> dict[str, Any]:
         """
         SELECT title, model, system_prompt, temperature, top_p, stop,
                web_search, tools_enabled, max_tokens, presence_penalty,
-               frequency_penalty, seed
+               frequency_penalty, seed, full_context
         FROM conversations WHERE id = ?
         """,
         (cid,),
@@ -318,6 +320,7 @@ async def _conv_settings(db: aiosqlite.Connection, cid: str) -> dict[str, Any]:
         "presence_penalty": row[9],
         "frequency_penalty": row[10],
         "seed": row[11],
+        "full_context": bool(row[12]),
     }
 
 
@@ -334,7 +337,9 @@ async def _gather_context(
     sources (documents + web results) that grounded it. ``allow_web`` is the
     caller's web-search permission; web search is skipped when it's false even if
     the conversation has it toggled on."""
-    rag_ctx, sources = await retrieve_context(db, http, cid, query)
+    rag_ctx, sources = await retrieve_context(
+        db, http, cid, query, full_context=bool(conv.get("full_context"))
+    )
     web_ctx = None
     if allow_web and conv.get("web_search"):
         results = await web_search(query)
@@ -971,7 +976,8 @@ async def get_conversation(
         """
         SELECT id, title, model, system_prompt, temperature, top_p, stop,
                web_search, tools_enabled, created_at, updated_at,
-               max_tokens, presence_penalty, frequency_penalty, seed, folder_id
+               max_tokens, presence_penalty, frequency_penalty, seed, folder_id,
+               full_context
         FROM conversations WHERE id = ?
         """,
         (cid,),
@@ -1008,6 +1014,7 @@ async def get_conversation(
         frequency_penalty=row[13],
         seed=row[14],
         folder_id=row[15],
+        full_context=bool(row[16]),
         messages=[
             StoredMessage(
                 id=m[0], role=m[1], content=m[2], created_at=m[3], rating=m[4],

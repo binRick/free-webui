@@ -145,15 +145,17 @@ async def upload_collection_document(
     if len(data) > settings.rag_max_upload_bytes:
         raise HTTPException(status_code=413, detail=f"file too large (max {settings.rag_max_upload_bytes} bytes)")
 
-    chunks, embeddings = await prepare_document(_http(request), file.filename or "upload", file.content_type, data)
+    full_text, chunks, embeddings = await prepare_document(
+        _http(request), file.filename or "upload", file.content_type, data
+    )
     now = int(time.time())
     doc_id = await db.insert(
         """
         INSERT INTO collection_documents
-        (collection_id, filename, mime, bytes, chunk_count, embedding_model, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        (collection_id, filename, mime, bytes, chunk_count, embedding_model, full_text, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (coll_id, file.filename or "upload", file.content_type, len(data), len(chunks), settings.embedding_model, now),
+        (coll_id, file.filename or "upload", file.content_type, len(data), len(chunks), settings.embedding_model, full_text, now),
     )
     await db.executemany(
         "INSERT INTO collection_chunks (document_id, seq, text, embedding) VALUES (?, ?, ?, ?)",
@@ -186,10 +188,10 @@ async def add_collection_document_url(
         doc_id = await db.insert(
             """
             INSERT INTO collection_documents
-            (collection_id, filename, mime, bytes, chunk_count, embedding_model, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            (collection_id, filename, mime, bytes, chunk_count, embedding_model, full_text, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (coll_id, label, mime, len(text.encode("utf-8")), len(chunks), settings.embedding_model, now),
+            (coll_id, label, mime, len(text.encode("utf-8")), len(chunks), settings.embedding_model, text, now),
         )
         await db.executemany(
             "INSERT INTO collection_chunks (document_id, seq, text, embedding) VALUES (?, ?, ?, ?)",

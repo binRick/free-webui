@@ -123,6 +123,7 @@
   let webSearch = $state(false);
   let webSearchAvailable = $state(false);
   let toolsEnabled = $state(false);
+  let fullContext = $state(false);
   let imageGenAvailable = $state(false);
   let codeInterpreterAvailable = $state(false);
   let fileUploadAllowed = $state(true);
@@ -213,6 +214,7 @@
       // unavailable or no longer permitted (the server skips it regardless).
       webSearch = !!conv.web_search && webSearchAvailable;
       toolsEnabled = !!conv.tools_enabled;
+      fullContext = !!conv.full_context;
       imageGenAvailable = (await getImageStatus()).available && perms.image_generation !== false;
       codeInterpreterAvailable = (await getCodeStatus()).available && perms.code_interpreter !== false;
       const audioStatus = await getAudioStatus();
@@ -704,6 +706,7 @@
         seed: parseNumber(seed),
         web_search: webSearch,
         tools_enabled: toolsEnabled,
+        full_context: fullContext,
         folder_id: folderId
       });
       const tags = tagsText
@@ -1369,7 +1372,7 @@
         <input
           bind:this={docInput}
           type="file"
-          accept=".txt,.md,.pdf,.py,.ts,.tsx,.js,.jsx,.svelte,.go,.rs,.java,.json,.yaml,.yml,.toml,.csv,.html,.css,.sql"
+          accept=".txt,.md,.pdf,.docx,.xlsx,.pptx,.py,.ts,.tsx,.js,.jsx,.svelte,.go,.rs,.java,.json,.yaml,.yml,.toml,.csv,.html,.css,.sql"
           multiple
           hidden
           onchange={onDocPick}
@@ -1396,7 +1399,7 @@
       {/if}
       {#if docError}<div class="doc-err">{docError}</div>{/if}
       {#if docs.length === 0}
-        <div class="doc-empty">no documents — upload .txt, .md, .pdf or a code file to ground replies in its contents</div>
+        <div class="doc-empty">no documents — upload .txt, .md, .pdf, Office docs or a code file to ground replies in its contents</div>
       {:else}
         <ul class="doc-list">
           {#each docs as d (d.id)}
@@ -1407,6 +1410,14 @@
             </li>
           {/each}
         </ul>
+      {/if}
+      {#if docs.length + attachedCollections.size > 0}
+        <label class="toggle" title="inject whole documents verbatim instead of retrieving the top matching excerpts — best for small docs / high fidelity">
+          <input type="checkbox" bind:checked={fullContext} />
+          <span class="lbl" style="text-transform: none; letter-spacing: 0;">
+            full context <span class="hint">— send whole docs, skip retrieval</span>
+          </span>
+        </label>
       {/if}
     </div>
 

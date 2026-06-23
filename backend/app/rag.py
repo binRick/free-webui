@@ -465,11 +465,13 @@ async def prepare_text(
 
 async def prepare_document(
     http: httpx.AsyncClient, filename: str, content_type: str | None, data: bytes
-) -> tuple[list[str], list[list[float]]]:
-    """Extract, chunk, and embed a file. Shared by per-chat uploads and
-    knowledge-base collections. Raises HTTPException on bad input/upstream."""
+) -> tuple[str, list[str], list[list[float]]]:
+    """Extract, chunk, and embed a file. Returns (full_text, chunks, embeddings).
+    Shared by per-chat uploads and knowledge-base collections. The full text is
+    kept verbatim for full-context RAG. Raises HTTPException on bad input/upstream."""
     text = await extract_document_text(http, filename, content_type, data)
-    return await prepare_text(http, text)
+    chunks, embeddings = await prepare_text(http, text)
+    return text, chunks, embeddings
 
 
 # ---------- reranking ----------
@@ -528,16 +530,93 @@ async def _rerank(
 
 # ---------- retrieval ----------
 
+async def _legacy_doc_text(db, table: str, fk: str, doc_id: int) -> str:
+    """Reassemble a pre-full_text document by joining its chunks. Chunks overlap,
+    so this repeats some boundary text — only used for documents ingested before
+    full_text was stored; new uploads keep the exact text."""
+    cur = await db.execute(
+        f"SELECT text FROM {table} WHERE {fk} = ? ORDER BY seq", (doc_id,)
+    )
+    return "\n".join(r[0] for r in await cur.fetchall())
+
+
+async def _full_document_context(
+    db: aiosqlite.Connection, cid: str
+) -> tuple[str | None, list[dict]]:
+    """Full-context RAG: inject each attached document verbatim (the stored
+    full_text) instead of top-k retrieval — best for small docs / high fidelity.
+    Bounded by a char budget derived from max_context_tokens."""
+    docs: list[tuple[str, str]] = []  # (filename, full_text)
+
+    # The conversation's own uploads...
+    cur = await db.execute(
+        "SELECT id, filename, full_text FROM documents WHERE conversation_id = ? ORDER BY id",
+        (cid,),
+    )
+    for doc_id, filename, full in await cur.fetchall():
+        text = full if full is not None else await _legacy_doc_text(db, "chunks", "document_id", doc_id)
+        if text:
+            docs.append((filename, text))
+
+    # ...plus every attached knowledge-base collection.
+    cur = await db.execute(
+        """
+        SELECT cd.id, cd.filename, cd.full_text
+        FROM collection_documents cd
+        WHERE cd.collection_id IN (
+            SELECT collection_id FROM conversation_collections WHERE conversation_id = ?
+        )
+        ORDER BY cd.collection_id, cd.id
+        """,
+        (cid,),
+    )
+    for doc_id, filename, full in await cur.fetchall():
+        text = (
+            full if full is not None
+            else await _legacy_doc_text(db, "collection_chunks", "document_id", doc_id)
+        )
+        if text:
+            docs.append((filename, text))
+
+    if not docs:
+        return None, []
+
+    budget = (settings.max_context_tokens or 30000) * 4  # ~chars (≈4 chars/token)
+    sources: list[dict] = []
+    sections: list[str] = []
+    used = 0
+    for i, (fn, full) in enumerate(docs, start=1):
+        if used >= budget:
+            break
+        body = full[: budget - used]
+        used += len(body)
+        sources.append({"kind": "document", "label": fn, "snippet": snippet(body)})
+        sections.append(f'[{i}] from "{fn}":\n{neutralize_markers(body)}')
+    context = (
+        "The full text of the documents the user attached to this conversation is "
+        "below. Use it when answering, and when a statement relies on one, cite it "
+        "inline with its bracketed number, e.g. [1]. Say so if the answer isn't "
+        "supported by the documents.\n\n" + "\n\n".join(sections)
+    )
+    return context, sources
+
+
 async def retrieve_context(
     db: aiosqlite.Connection,
     http: httpx.AsyncClient,
     cid: str,
     query: str,
     top_k: int | None = None,
+    full_context: bool = False,
 ) -> tuple[str | None, list[dict]]:
     """Embed the query, score the conversation's chunks (own uploads + attached
     collections), and return (context_block, sources). sources is a list of
-    {kind: "document", label: filename}. (None, []) if nothing matched."""
+    {kind: "document", label: filename}. (None, []) if nothing matched.
+
+    When full_context is set, skip embedding/ranking and inject whole documents
+    verbatim instead (see _full_document_context)."""
+    if full_context:
+        return await _full_document_context(db, cid)
     if not query.strip():
         return None, []
     top_k = top_k or settings.rag_top_k

@@ -35,6 +35,9 @@ CREATE TABLE IF NOT EXISTS conversations (
     stop          TEXT,
     web_search    INTEGER NOT NULL DEFAULT 0,
     tools_enabled INTEGER NOT NULL DEFAULT 0,
+    -- Full-context RAG: inject whole attached documents verbatim instead of
+    -- top-k retrieval (best for small docs / high fidelity).
+    full_context  INTEGER NOT NULL DEFAULT 0,
     max_tokens    INTEGER,
     presence_penalty  REAL,
     frequency_penalty REAL,
@@ -78,6 +81,9 @@ CREATE TABLE IF NOT EXISTS collection_documents (
     bytes           INTEGER NOT NULL,
     chunk_count     INTEGER NOT NULL DEFAULT 0,
     embedding_model TEXT,
+    -- Full extracted text, kept verbatim for full-context RAG (whole-document
+    -- injection). NULL for documents ingested before this column existed.
+    full_text       TEXT,
     created_at      INTEGER NOT NULL
 );
 
@@ -116,6 +122,9 @@ CREATE TABLE IF NOT EXISTS documents (
     bytes           INTEGER NOT NULL,
     chunk_count     INTEGER NOT NULL DEFAULT 0,
     embedding_model TEXT,
+    -- Full extracted text, kept verbatim for full-context RAG (whole-document
+    -- injection). NULL for documents ingested before this column existed.
+    full_text       TEXT,
     created_at      INTEGER NOT NULL
 );
 
@@ -416,6 +425,9 @@ _MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("conversations", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"),
     ("conversations", "web_search", "INTEGER NOT NULL DEFAULT 0"),
     ("conversations", "tools_enabled", "INTEGER NOT NULL DEFAULT 0"),
+    ("conversations", "full_context", "INTEGER NOT NULL DEFAULT 0"),
+    ("documents", "full_text", "TEXT"),
+    ("collection_documents", "full_text", "TEXT"),
     ("conversations", "max_tokens", "INTEGER"),
     ("conversations", "presence_penalty", "REAL"),
     ("conversations", "frequency_penalty", "REAL"),

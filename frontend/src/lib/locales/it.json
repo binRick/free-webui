@@ -78,6 +78,8 @@
   "chat.sources": "fonti",
   "chat.saveRerun": "salva ed esegui di nuovo",
   "chat.fillPrompt": "compila il prompt",
+  "chat.reasoning": "ragionamento",
+  "chat.thinking": "sto pensando…",
   "setup.subtitle": "configurazione iniziale — crea il tuo account admin",
   "setup.confirmPassword": "conferma password",
   "setup.creating": "creazione…",

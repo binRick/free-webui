@@ -109,7 +109,7 @@
           </div>
           <div class="pane-body">
             {#if p.text}
-              <Markdown source={p.text} />
+              <Markdown source={p.text} reasoning />
             {:else}
               <div class="pane-empty">{streaming ? '…' : 'enter a prompt below to start a battle'}</div>
             {/if}

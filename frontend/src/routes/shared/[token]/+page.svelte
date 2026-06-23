@@ -38,11 +38,11 @@
           <span class="role">{m.role}</span>
           <div class="content">
             {#if typeof m.content === 'string'}
-              <Markdown source={m.content} sources={m.sources ?? []} />
+              <Markdown source={m.content} sources={m.sources ?? []} reasoning={m.role === 'assistant'} />
             {:else}
               {#each m.content as part}
                 {#if part.type === 'text'}
-                  <Markdown source={part.text} sources={m.sources ?? []} />
+                  <Markdown source={part.text} sources={m.sources ?? []} reasoning={m.role === 'assistant'} />
                 {:else if part.type === 'image_url'}
                   <img class="attached" src={part.image_url.url} alt="attachment" />
                 {/if}

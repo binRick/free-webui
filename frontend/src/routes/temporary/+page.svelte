@@ -146,7 +146,7 @@
         <span class="role">{m.role}</span>
         <div class="content">
           {#if m.role === 'assistant'}
-            <Markdown source={m.content} />
+            <Markdown source={m.content} reasoning />
           {:else}
             <div class="user-text">{m.content}</div>
           {/if}

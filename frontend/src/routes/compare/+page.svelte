@@ -131,7 +131,7 @@
           {#each col.messages as m, i (i)}
             <div class="msg {m.role}">
               {#if m.role === 'assistant'}
-                <Markdown source={m.content} />
+                <Markdown source={m.content} reasoning />
               {:else}
                 <div class="user-text">{m.content}</div>
               {/if}

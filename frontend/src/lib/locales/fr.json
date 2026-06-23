@@ -78,6 +78,8 @@
   "chat.sources": "sources",
   "chat.saveRerun": "enregistrer & relancer",
   "chat.fillPrompt": "remplir le prompt",
+  "chat.reasoning": "raisonnement",
+  "chat.thinking": "réflexion…",
   "setup.subtitle": "configuration initiale — créez votre compte admin",
   "setup.confirmPassword": "confirmer le mot de passe",
   "setup.creating": "création…",

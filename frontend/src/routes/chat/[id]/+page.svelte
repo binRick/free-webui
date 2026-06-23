@@ -1460,11 +1460,11 @@
         {:else}
           {@const parsed = parseContent(msg.content)}
           {#if typeof parsed === 'string'}
-            <Markdown source={parsed} sources={msg.sources ?? []} />
+            <Markdown source={parsed} sources={msg.sources ?? []} reasoning={msg.role === 'assistant'} />
           {:else}
             {#each parsed as part}
               {#if part.type === 'text'}
-                <Markdown source={part.text} sources={msg.sources ?? []} />
+                <Markdown source={part.text} sources={msg.sources ?? []} reasoning={msg.role === 'assistant'} />
               {:else if part.type === 'image_url'}
                 <img class="attached" src={part.image_url.url} alt="attachment" />
               {/if}

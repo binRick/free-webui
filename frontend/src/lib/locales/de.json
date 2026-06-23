@@ -78,6 +78,8 @@
   "chat.sources": "quellen",
   "chat.saveRerun": "speichern & erneut ausführen",
   "chat.fillPrompt": "prompt ausfüllen",
+  "chat.reasoning": "Denkprozess",
+  "chat.thinking": "denkt nach…",
   "setup.subtitle": "erstmalige einrichtung — erstelle dein admin-konto",
   "setup.confirmPassword": "passwort bestätigen",
   "setup.creating": "erstellen…",

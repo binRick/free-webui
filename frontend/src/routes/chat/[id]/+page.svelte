@@ -86,6 +86,9 @@
   let input = $state('');
   let pendingImages = $state<string[]>([]);
   let streaming = $state(false);
+  // Messages typed while the model is still streaming are queued here and
+  // auto-sent (FIFO) once it finishes — "continuous typing".
+  let queued = $state<{ outgoing: MessageContent; local: string }[]>([]);
   let loadingError = $state<string | null>(null);
   let editingIndex = $state<number | null>(null);
   let editText = $state('');
@@ -181,6 +184,7 @@
       temperature = conv.temperature != null ? String(conv.temperature) : '';
       topP = conv.top_p != null ? String(conv.top_p) : '';
       stopText = (conv.stop ?? []).join(', ');
+      queued = []; // a queue belongs to one conversation; reset on navigation
       maxTokens = conv.max_tokens != null ? String(conv.max_tokens) : '';
       presencePenalty = conv.presence_penalty != null ? String(conv.presence_penalty) : '';
       frequencyPenalty = conv.frequency_penalty != null ? String(conv.frequency_penalty) : '';
@@ -801,6 +805,7 @@
       streaming = false;
       abort = null;
       convs.refresh();
+      drainQueue();
     }
   }
 
@@ -819,12 +824,25 @@
 
   async function send() {
     const text = input.trim();
-    if ((!text && pendingImages.length === 0) || streaming) return;
-    const wasFirst = messages.length === 0; // no prior turns -> this is the opener
+    if (!text && pendingImages.length === 0) return;
     const outgoing = buildOutgoing(text, pendingImages);
     const localContent = serializeForLocal(text, pendingImages);
     input = '';
     pendingImages = [];
+    cmd = null;
+    if (streaming) {
+      // The model is busy — queue this turn; it auto-sends when the stream ends.
+      queued = [...queued, { outgoing, local: localContent }];
+      return;
+    }
+    await deliver(outgoing, localContent);
+  }
+
+  // Stream one turn end-to-end (append placeholders, run the stream, then title
+  // the conversation if it was the opener). Shared by send() and queue drain.
+  async function deliver(outgoing: MessageContent, localContent: string) {
+    streaming = true; // claim the stream synchronously so a fast second send queues
+    const wasFirst = messages.length === 0; // no prior turns -> this is the opener
     messages = [
       ...messages,
       { id: null, role: 'user', content: localContent },
@@ -846,6 +864,26 @@
         convs.refresh();
       }
     }
+  }
+
+  // After any stream settles, send the next queued turn (FIFO). Safe to call
+  // unconditionally — it no-ops while a stream is live or the queue is empty.
+  function drainQueue() {
+    if (streaming || queued.length === 0) return;
+    const next = queued[0];
+    queued = queued.slice(1);
+    deliver(next.outgoing, next.local);
+  }
+
+  function queuedPreview(q: { outgoing: MessageContent; local: string }): string {
+    const parsed = parseContent(q.local);
+    if (typeof parsed === 'string') return parsed;
+    const txt = parsed.find((p) => p.type === 'text');
+    return txt && txt.type === 'text' && txt.text ? txt.text : '🖼 image';
+  }
+
+  function cancelQueued(i: number) {
+    queued = queued.filter((_, idx) => idx !== i);
   }
 
   async function filesToDataUrls(files: FileList | File[]): Promise<string[]> {
@@ -965,6 +1003,8 @@
   }
 
   function stop() {
+    // Explicit stop also cancels anything the user queued behind this turn.
+    queued = [];
     abort?.abort();
   }
 
@@ -1548,6 +1588,17 @@
       {/each}
     </div>
   {/if}
+  {#if queued.length}
+    <div class="queued" aria-label="queued messages">
+      {#each queued as q, i (i)}
+        <div class="queued-chip">
+          <span class="queued-dot">⏳</span>
+          <span class="queued-text">{queuedPreview(q)}</span>
+          <button type="button" class="queued-x" aria-label="cancel queued message" onclick={() => cancelQueued(i)}>×</button>
+        </div>
+      {/each}
+    </div>
+  {/if}
   <div class="row">
     <input
       bind:this={fileInput}
@@ -1562,7 +1613,7 @@
       class="attach"
       aria-label="attach image"
       onclick={() => fileInput.click()}
-      disabled={streaming || editingIndex !== null}
+      disabled={editingIndex !== null}
     >📎</button>
     <button
       type="button"
@@ -1583,9 +1634,17 @@
       onblur={() => setTimeout(() => (cmd = null), 120)}
       onpaste={onPaste}
       rows="2"
-      disabled={streaming || editingIndex !== null || varFill !== null}
+      disabled={editingIndex !== null || varFill !== null}
     ></textarea>
     {#if streaming}
+      {#if input.trim() || pendingImages.length}
+        <button
+          type="submit"
+          class="queue-btn"
+          disabled={editingIndex !== null}
+          title="queue this message — it sends when the model finishes"
+        >＋ queue</button>
+      {/if}
       <button type="button" onclick={stop}>{t('common.stop')}</button>
     {:else}
       <button
@@ -2181,6 +2240,49 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
+  }
+  .queued {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 0.4rem;
+  }
+  .queued-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    max-width: 100%;
+    padding: 0.15rem 0.35rem 0.15rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+    color: var(--text);
+  }
+  .queued-dot { opacity: 0.8; font-size: 0.72rem; }
+  .queued-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 22rem;
+  }
+  .queued-x {
+    padding: 0;
+    width: 1.1rem;
+    height: 1.1rem;
+    line-height: 1;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-dim, var(--text));
+    cursor: pointer;
+    font-size: 0.9rem;
+    opacity: 0.7;
+  }
+  .queued-x:hover { opacity: 1; color: var(--danger); }
+  .queue-btn {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   }
   .thumb {
     position: relative;

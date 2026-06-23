@@ -186,6 +186,16 @@
     })();
   });
 
+  // Reset per-conversation transient UI ONLY when the conversation actually
+  // changes — NOT on the post-stream load() refresh (which re-runs for the same
+  // id). Clearing the queue inside load() would wipe a turn queued mid-stream
+  // the instant that stream finishes, before it could drain.
+  $effect(() => {
+    currentId; // track navigation only
+    queued = [];
+    artifactView = null;
+  });
+
   async function load(id: string) {
     loadingError = null;
     try {
@@ -206,8 +216,6 @@
       temperature = conv.temperature != null ? String(conv.temperature) : '';
       topP = conv.top_p != null ? String(conv.top_p) : '';
       stopText = (conv.stop ?? []).join(', ');
-      queued = []; // a queue belongs to one conversation; reset on navigation
-      artifactView = null; // close any open artifact preview on navigation
       maxTokens = conv.max_tokens != null ? String(conv.max_tokens) : '';
       presencePenalty = conv.presence_penalty != null ? String(conv.presence_penalty) : '';
       frequencyPenalty = conv.frequency_penalty != null ? String(conv.frequency_penalty) : '';

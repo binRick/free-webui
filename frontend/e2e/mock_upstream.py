@@ -12,9 +12,20 @@ Run: python3 e2e/mock_upstream.py [port]   (default 8910)
 """
 import json
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 MODEL = "e2e-model"
+
+# Deterministic triggers a spec can put in the user message:
+#   [[slow]]     -> a long, slowly-streamed reply (room to queue another turn)
+#   [[artifact]] -> a reply containing a fenced ```html block
+#   [[tool]]     -> emit a calculate() tool call, then answer (tools must be on)
+ARTIFACT_REPLY = (
+    "Here is a tiny page:\n\n"
+    "```html\n<!doctype html><title>E2E Artifact</title>"
+    "<h1 id=\"hi\">Hello from the artifact</h1>\n```\n"
+)
 
 
 def _last_user_text(messages):
@@ -32,15 +43,51 @@ def _last_user_text(messages):
     return ""
 
 
-def _chat_chunks(text):
-    reply = f"You said: {text.strip()}" if text.strip() else "Hello from the mock model."
-    # stream the reply in a few content deltas, then finish + a usage chunk
-    head = {"choices": [{"delta": {"role": "assistant", "content": ""}, "index": 0}]}
-    yield head
+def _chat_chunks(messages):
+    text = _last_user_text(messages)
+    has_tool_result = any(m.get("role") == "tool" for m in (messages or []))
+
+    # tool flow: first call asks to run calculate(); after the result comes back
+    # (a role:"tool" message present) we give the final answer.
+    if "[[tool]]" in text and not has_tool_result:
+        yield {"choices": [{"delta": {"role": "assistant", "content": ""}, "index": 0}]}
+        yield {
+            "choices": [
+                {
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "call_e2e",
+                                "type": "function",
+                                "function": {"name": "calculate", "arguments": '{"expression":"6*7"}'},
+                            }
+                        ]
+                    },
+                    "index": 0,
+                }
+            ]
+        }
+        yield {"choices": [{"delta": {}, "finish_reason": "tool_calls", "index": 0}]}
+        return
+
+    slow = "[[slow]]" in text
+    if has_tool_result:
+        reply = "The calculator says 42."
+    elif "[[artifact]]" in text:
+        reply = ARTIFACT_REPLY
+    elif slow:
+        reply = "streaming slowly so the next message can be queued " * 4
+    else:
+        reply = f"You said: {text.strip()}" if text.strip() else "Hello from the mock model."
+
+    yield {"choices": [{"delta": {"role": "assistant", "content": ""}, "index": 0}]}
     words = reply.split(" ")
     for i, w in enumerate(words):
         piece = w if i == 0 else " " + w
         yield {"choices": [{"delta": {"content": piece}, "index": 0}]}
+        if slow:
+            time.sleep(0.06)
     yield {"choices": [{"delta": {}, "finish_reason": "stop", "index": 0}]}
     yield {
         "choices": [],
@@ -103,14 +150,13 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "not found"}, status=404)
 
     def _stream_chat(self, body):
-        text = _last_user_text(body.get("messages"))
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "close")
         self.end_headers()
         try:
-            for chunk in _chat_chunks(text):
+            for chunk in _chat_chunks(body.get("messages")):
                 self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
                 self.wfile.flush()
             self.wfile.write(b"data: [DONE]\n\n")

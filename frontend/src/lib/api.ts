@@ -347,6 +347,32 @@ export async function setConversationTags(id: string, tags: string[]): Promise<s
   return (await res.json()).tags ?? [];
 }
 
+// First-class tags across the whole account.
+export interface TagCount {
+  tag: string;
+  count: number;
+}
+
+export async function listTags(): Promise<TagCount[]> {
+  const res = await apiFetch('/api/tags');
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function renameTag(oldTag: string, newTag: string): Promise<{ tag: string; count: number }> {
+  const res = await apiFetch('/api/tags/rename', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ old: oldTag, new: newTag })
+  });
+  if (!res.ok) throw new Error(`rename failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteTag(tag: string): Promise<void> {
+  await apiFetch(`/api/tags/${encodeURIComponent(tag)}`, { method: 'DELETE' });
+}
+
 export async function renameConversation(id: string, title: string): Promise<void> {
   await updateConversation(id, { title });
 }

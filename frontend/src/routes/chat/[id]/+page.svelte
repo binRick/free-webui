@@ -30,6 +30,8 @@
     deleteShare,
     getConversationCollections,
     getConversationTags,
+    listTags,
+    type TagCount,
     getFollowups,
     getShareToken,
     listFolders,
@@ -106,6 +108,20 @@
   let frequencyPenalty = $state<string>('');
   let seed = $state<string>('');
   let tagsText = $state('');
+  let allTags = $state<TagCount[]>([]); // every tag the user has, for autocomplete
+
+  // Existing tags not already on this conversation — clickable suggestions.
+  const tagSuggestions = $derived.by(() => {
+    const here = new Set(
+      tagsText.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
+    );
+    return allTags.filter((t) => !here.has(t.tag.toLowerCase())).slice(0, 12);
+  });
+
+  function addTag(tag: string) {
+    const base = tagsText.replace(/,\s*$/, '').trim();
+    tagsText = base ? `${base}, ${tag}` : tag;
+  }
   let folders = $state<Folder[]>([]);
   let folderId = $state<number | null>(null);
   let savingSettings = $state(false);
@@ -201,6 +217,7 @@
       collections = await listCollections();
       attachedCollections = new Set(await getConversationCollections(id));
       tagsText = (await getConversationTags(id)).join(', ');
+      allTags = await listTags();
       folders = await listFolders();
       folderId = conv.folder_id ?? null;
       shareToken = await getShareToken(id);
@@ -1228,6 +1245,15 @@
       <span class="lbl">{t('chat.tags')} <span class="hint">{t('chat.commaSeparated')}</span></span>
       <input type="text" bind:value={tagsText} placeholder={t('chat.tagsPlaceholder')} />
     </label>
+    {#if tagSuggestions.length}
+      <div class="tag-suggest">
+        {#each tagSuggestions as s (s.tag)}
+          <button type="button" class="tag-chip" title="{s.count} chat(s)" onclick={() => addTag(s.tag)}>
+            {s.tag} <span class="tc-n">{s.count}</span>
+          </button>
+        {/each}
+      </div>
+    {/if}
     {#if folders.length}
       <label>
         <span class="lbl">{t('chat.folder')}</span>
@@ -2296,6 +2322,26 @@
     flex-wrap: wrap;
     gap: 0.5rem;
   }
+  .tag-suggest {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin: 0.4rem 0 0.2rem;
+  }
+  .tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    background: var(--bg-elev);
+    border: 1px solid var(--border-soft);
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .tag-chip:hover { color: var(--text); border-color: var(--accent); }
+  .tag-chip .tc-n { opacity: 0.6; font-variant-numeric: tabular-nums; }
   .queued {
     display: flex;
     flex-wrap: wrap;

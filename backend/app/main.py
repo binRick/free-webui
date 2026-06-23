@@ -39,6 +39,7 @@ from .files import configure_store
 from .files import router as files_router
 from .objectstore import make_object_store
 from .folders import router as folders_router
+from .tags import router as tags_router
 from .notes import router as notes_router
 from .openapi_tools import router as openapi_tools_router
 from .documents import router as documents_router
@@ -255,6 +256,7 @@ app.include_router(collections_router)
 app.include_router(shares_router)
 app.include_router(files_router)
 app.include_router(folders_router)
+app.include_router(tags_router)
 app.include_router(notes_router)
 app.include_router(prompts_router)
 app.include_router(presets_router)

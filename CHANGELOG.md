@@ -18,8 +18,13 @@ authoritative status):
   (.docx/.xlsx/.pptx via stdlib, plus an optional external Tika/Docling
   extractor for OCR/scanned PDFs — `FREE_WEBUI_CONTENT_EXTRACTION_URL`);
   **full-context RAG mode** (inject whole attached documents verbatim instead
-  of top-k retrieval, per-conversation toggle); and **persisted tool calls**
-  (the 🔧 chips now re-render on reload, not just live).
+  of top-k retrieval, per-conversation toggle); **persisted tool calls**
+  (the 🔧 chips now re-render on reload, not just live); **token + cost
+  analytics** (per-model token usage on the admin dashboard, optional cost via
+  `FREE_WEBUI_MODEL_PRICES`); **interactive artifacts** (render model HTML/SVG
+  in a sandboxed iframe panel with version selector — security-reviewed);
+  **self-service password change**; and **first-class tags** (cross-chat
+  rename/merge/delete + composer autocomplete).
 - **Security hardening**: SSRF guard for user/operator URLs, authenticated
   `/api/models`, security-headers middleware, login rate-limiting, request
   body cap, finite upstream read timeout, bounded `calculate()`,

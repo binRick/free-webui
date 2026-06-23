@@ -38,6 +38,7 @@ authoritative status):
   **non-destructive regenerate with variant navigation**, copy + 👍/👎 per
   message, **LLM auto-titling**, optional **LLM auto-tagging** (1–3 topic tags
   added after the first exchange; `FREE_WEBUI_AUTO_TAG`, additive to manual tags),
+  a **scroll-to-latest** button (appears when scrolled up in a long chat),
   extra generation params (`max_tokens`/penalties/seed).
 - **i18n breadth**: two more UI languages (**Italian, Portuguese** → en/es/fr/de/
   it/pt), expanded `t()` coverage (setup + account pages), and a build-time

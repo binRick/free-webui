@@ -139,6 +139,16 @@
   let recChunks: Blob[] = [];
   let audioEl: HTMLAudioElement | null = null;
   let scroller: HTMLDivElement;
+  // Floating "jump to latest" button: shown once the user scrolls up off the
+  // bottom of a long conversation.
+  let atBottom = $state(true);
+  function onScroll() {
+    if (!scroller) return;
+    atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80;
+  }
+  function jumpToBottom() {
+    scroller?.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' });
+  }
 
   // This route is /chat/[id], so the param is always present here.
   let currentId = $derived(page.params.id!);
@@ -1359,7 +1369,8 @@
   </section>
 {/if}
 
-<div class="scroller" bind:this={scroller}>
+<div class="chat-scroll-wrap">
+<div class="scroller" bind:this={scroller} onscroll={onScroll}>
   {#if loadingError}
     <div class="empty err">couldn't load: {loadingError}</div>
   {:else if messages.length === 0}
@@ -1480,6 +1491,10 @@
       </div>
     </div>
   {/each}
+</div>
+  {#if !atBottom}
+    <button class="to-bottom" type="button" onclick={jumpToBottom} aria-label="scroll to latest" title="scroll to latest">↓</button>
+  {/if}
 </div>
 
 {#if followups.length && !streaming}
@@ -1943,6 +1958,13 @@
   }
   button { cursor: pointer; }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .chat-scroll-wrap {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
   .scroller {
     flex: 1;
     overflow-y: auto;
@@ -1951,6 +1973,23 @@
     flex-direction: column;
     gap: 1rem;
   }
+  .to-bottom {
+    position: absolute;
+    bottom: 1rem;
+    right: 1.25rem;
+    z-index: 5;
+    width: 2.1rem;
+    height: 2.1rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg-elev);
+    color: var(--text-dim);
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.25);
+  }
+  .to-bottom:hover { color: var(--text); border-color: var(--accent); }
   .empty {
     color: var(--text-muted);
     text-align: center;

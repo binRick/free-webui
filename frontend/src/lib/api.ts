@@ -454,6 +454,19 @@ export async function createConversation(model: string | null = null): Promise<C
   return res.json();
 }
 
+export async function importConversation(data: unknown): Promise<ConversationSummary> {
+  const res = await apiFetch('/api/conversations/import', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}));
+    throw new Error(b.detail ?? `import failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function getConversation(id: string): Promise<Conversation> {
   const res = await apiFetch(`/api/conversations/${id}`);
   if (!res.ok) throw new Error(`load failed: ${res.status}`);

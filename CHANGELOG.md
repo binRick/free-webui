@@ -45,6 +45,11 @@ authoritative status):
   setup / share pages) via a public `GET /api/config` and injected into a managed
   `<style>` via `textContent`; managed at `/admin/appearance`. Plus a **per-user
   accent color** (preset swatches, saved per browser) on top of light/dark/system.
+- **Conversation import**: recreate a previously-exported chat as a new
+  conversation (`POST /api/conversations/import` + a sidebar import button) —
+  the round-trip counterpart to JSON export. Carries over the title, settings,
+  and message thread; a model the importer can't access is dropped rather than
+  failing the import, and unresolved image refs are stripped (no dangling files).
 - **Knowledge bases**: reusable document **collections** attachable to any chat.
 - **Inline citation hovercards**: RAG/web-search context is injected as numbered
   excerpts and the model is asked to cite inline as `[n]`; the client turns each

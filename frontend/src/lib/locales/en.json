@@ -13,6 +13,7 @@
   "common.logout": "log out",
 
   "sidebar.newChat": "+ new chat",
+  "sidebar.import": "⤓ import",
   "sidebar.temporaryChat": "👻 temporary chat",
   "sidebar.compareModels": "⚖ compare models",
   "sidebar.arena": "⚔ arena",

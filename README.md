@@ -96,8 +96,9 @@ backend, running on **SQLite (zero-config default) or Postgres**, with a
   own OpenAI-compatible `/v1` surface (chat/models/embeddings) **and an Anthropic
   `/v1/messages` proxy** (Claude Code / the Anthropic SDK can target free-webui);
   per-user API keys.
-- **Sharing & collaboration** — conversation export (JSON/Markdown), **public
-  read-only share links**, and **real-time channels** (shared multi-user rooms
+- **Sharing & collaboration** — conversation **export (JSON/Markdown) + import**
+  (recreate an exported chat), **public read-only share links**, and
+  **real-time channels** (shared multi-user rooms
   over WebSocket: live messages, presence, typing); memories; prompt/preset
   libraries; server or browser voice; PWA.
 

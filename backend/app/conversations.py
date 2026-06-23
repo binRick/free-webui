@@ -10,7 +10,7 @@ import aiosqlite
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .access import can_access_model
 from .auth import current_user
@@ -84,6 +84,35 @@ class Conversation(BaseModel):
 
 class CreateBody(BaseModel):
     model: str | None = None
+
+
+class ImportMessage(BaseModel):
+    # Lenient: an exported message also carries id/rating/sources/created_at, which
+    # we ignore (a fresh conversation gets new ids and no carried-over feedback).
+    model_config = ConfigDict(extra="ignore")
+    role: str
+    content: str | list[dict] = ""
+    created_at: int | None = None
+
+
+class ImportBody(BaseModel):
+    """A previously-exported conversation JSON (the export format), recreated as a
+    NEW conversation owned by the importer. Extra fields (id, timestamps, …) are
+    ignored; a missing/unknown model is dropped rather than failing the import."""
+    model_config = ConfigDict(extra="ignore")
+    title: str = "imported chat"
+    model: str | None = None
+    system_prompt: str | None = None
+    temperature: float | None = None
+    top_p: float | None = None
+    stop: list[str] | None = None
+    web_search: bool = False
+    tools_enabled: bool = False
+    max_tokens: int | None = None
+    presence_penalty: float | None = None
+    frequency_penalty: float | None = None
+    seed: int | None = None
+    messages: list[ImportMessage] = Field(default_factory=list, max_length=5000)
 
 
 class SendBody(BaseModel):
@@ -707,6 +736,68 @@ async def create_conversation(
     )
     await db.commit()
     return ConversationSummary(id=cid, title="new chat", model=body.model, updated_at=now)
+
+
+def _normalize_import_content(content: "str | list[dict]") -> "str | list[dict]":
+    """Make imported message content safe to re-store: keep text parts and inline
+    ``data:`` images (re-externalized at insert), but DROP image parts that point
+    at ``/api/files/{id}`` — those bytes belong to the original conversation and
+    aren't in the export, so keeping them would leave dangling references."""
+    if not isinstance(content, list):
+        return content if isinstance(content, str) else ""
+    parts: list[dict] = []
+    for part in content:
+        if not isinstance(part, dict):
+            continue
+        if part.get("type") == "image_url":
+            url = (part.get("image_url") or {}).get("url", "")
+            if isinstance(url, str) and url.startswith("data:"):
+                parts.append(part)
+            # else: unresolved file ref -> drop
+        elif part.get("type") == "text" and isinstance(part.get("text"), str):
+            parts.append(part)
+    # collapse a text-only result back to a plain string (the normal storage shape)
+    if parts and all(p.get("type") == "text" for p in parts):
+        return "\n".join(p["text"] for p in parts)
+    return parts
+
+
+@router.post("/import", response_model=ConversationSummary)
+async def import_conversation(
+    body: ImportBody, request: Request, user: dict = Depends(current_user)
+) -> ConversationSummary:
+    """Recreate a previously-exported conversation as a NEW chat owned by the
+    caller. The model is pinned only if the caller can access it (otherwise left
+    unset — import never 403s on model access)."""
+    db = _db(request)
+    model = body.model if (body.model and await can_access_model(db, user, body.model)) else None
+    cid = uuid.uuid4().hex
+    now = int(time.time())
+    title = (body.title or "imported chat").strip()[:200] or "imported chat"
+    async with db.transaction():
+        await db.execute(
+            "INSERT INTO conversations (id, user_id, title, model, system_prompt, "
+            "temperature, top_p, stop, web_search, tools_enabled, max_tokens, "
+            "presence_penalty, frequency_penalty, seed, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                cid, user["id"], title, model, body.system_prompt,
+                body.temperature, body.top_p,
+                json.dumps(body.stop) if body.stop else None,
+                int(body.web_search), int(body.tools_enabled), body.max_tokens,
+                body.presence_penalty, body.frequency_penalty, body.seed, now, now,
+            ),
+        )
+        for m in body.messages:
+            if m.role not in ("user", "assistant", "system"):
+                continue
+            stored = await externalize_parts(db, user["id"], cid, _normalize_import_content(m.content))
+            await db.execute(
+                "INSERT INTO messages (conversation_id, role, content, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (cid, m.role, _encode_content(stored), m.created_at or now),
+            )
+    return ConversationSummary(id=cid, title=title, model=model, updated_at=now)
 
 
 @router.post("/{cid}/clone", response_model=ConversationSummary)

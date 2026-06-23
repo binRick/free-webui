@@ -12,6 +12,7 @@
   "common.close": "chiudi",
   "common.logout": "esci",
   "sidebar.newChat": "+ nuova chat",
+  "sidebar.import": "⤓ importa",
   "sidebar.temporaryChat": "👻 chat temporanea",
   "sidebar.compareModels": "⚖ confronta modelli",
   "sidebar.arena": "⚔ arena",

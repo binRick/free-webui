@@ -10,6 +10,7 @@
     createFolder,
     deleteConversation,
     deleteFolder,
+    importConversation,
     listFolders,
     renameConversation,
     renameFolder,
@@ -21,6 +22,25 @@
   import { i18n, LOCALES, t } from './i18n.svelte';
   import { sidebar } from './sidebarState.svelte';
   import { theme, type ThemeMode } from './theme.svelte';
+  import { toasts } from './toastStore.svelte';
+
+  let importInput: HTMLInputElement;
+
+  async function onImport(e: Event) {
+    const target = e.target as HTMLInputElement;
+    const file = target.files?.[0];
+    target.value = '';
+    if (!file) return;
+    try {
+      const data = JSON.parse(await file.text());
+      const created = await importConversation(data);
+      convs.refresh();
+      sidebar.close();
+      goto(`/chat/${created.id}`);
+    } catch (err) {
+      toasts.error((err as Error).message || 'could not import that file');
+    }
+  }
 
   // Map the (English) date-bucket / pinned labels to translation keys.
   const GROUP_KEYS: Record<string, string> = {
@@ -214,6 +234,14 @@
     >{THEME_LABEL[theme.mode]}</button>
   </header>
   <a href="/" class="new" data-sveltekit-reload onclick={openChat}>{t('sidebar.newChat')}</a>
+  <input
+    bind:this={importInput}
+    type="file"
+    accept="application/json,.json"
+    hidden
+    onchange={onImport}
+  />
+  <button class="temp-link import-btn" onclick={() => importInput.click()}>{t('sidebar.import')}</button>
   <a href="/temporary" class="temp-link" onclick={openChat}>{t('sidebar.temporaryChat')}</a>
   <a href="/compare" class="temp-link" onclick={openChat}>{t('sidebar.compareModels')}</a>
   <a href="/arena" class="temp-link" onclick={openChat}>{t('sidebar.arena')}</a>
@@ -383,6 +411,15 @@
     text-align: center;
   }
   .temp-link:hover { color: var(--text); }
+  /* the import control is a <button> styled like the temp-links */
+  .import-btn {
+    width: calc(100% - 1.5rem);
+    background: none;
+    border: 0;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.8rem;
+  }
   .search {
     padding: 0 0.75rem 0.5rem;
   }

@@ -84,3 +84,37 @@ jobs:
       # `npm run build` is intentionally not gated yet: svelte.config.js uses
       # adapter-auto with no chosen production target. Pick adapter-static (SPA)
       # or adapter-node first, then add `npm run build` here. See docs/INTEGRATION.md.
+
+  e2e:
+    # Playwright drives the real app (vite → backend on a throwaway SQLite DB →
+    # a deterministic stdlib mock upstream). Boots all three via webServer.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: install backend (for the real API under test)
+        run: pip install -e "./backend[test]"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: install frontend
+        working-directory: frontend
+        run: npm install
+      - name: install playwright browser
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: e2e
+        working-directory: frontend
+        env:
+          CI: "true"
+          E2E_PYTHON: python
+        run: npm run e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7

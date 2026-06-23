@@ -1,5 +1,10 @@
 # free-webui — test backlog
 
+> For the authoritative **feature → test** coverage map (every claimed feature
+> linked to the test that proves it, across the backend / E2E / contract
+> layers), see [`FEATURE_MATRIX.md`](./FEATURE_MATRIX.md). This file is the
+> deeper per-test backlog.
+
 The backend suite (134 → growing) skews toward the newest Tier-3 features
 (`code_exec`, `plugins`, `images` are well covered) while the load-bearing
 749-LOC `conversations.py` core and RAG ranking are thin, and the frontend,

@@ -69,7 +69,10 @@ If `open-webui` is the kitchen-sink reference, `free-webui` aims to be the lean,
 
 **v0.1 — a full self-host chat platform.** Built on a SvelteKit SPA + FastAPI
 backend, running on **SQLite (zero-config default) or Postgres**, with a
-320+-test backend suite that runs against **both** backends in CI. What works today:
+**490+-test backend suite** (run against **both** backends in CI) plus a
+**Playwright end-to-end suite** that drives the real UI against the real backend.
+Every claimed feature maps to a proving test in
+[`docs/FEATURE_MATRIX.md`](./docs/FEATURE_MATRIX.md). What works today:
 
 - **Chat** — streaming against any OpenAI-compatible upstream (Ollama, vLLM, LM
   Studio, llama.cpp, OpenAI); persistence; sidebar with search, date grouping,

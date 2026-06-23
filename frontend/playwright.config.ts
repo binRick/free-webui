@@ -1,8 +1,11 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// E2E drives the REAL app: vite dev (5173) → backend (8000, throwaway SQLite DB)
+// E2E drives the REAL app: vite dev (5173) → backend (8788, throwaway SQLite DB)
 // → a deterministic stdlib mock upstream (8910). Playwright boots all three.
 const CI = !!process.env.CI;
+// Local dev uses the backend virtualenv; CI installs the backend into its own
+// interpreter, so it sets E2E_PYTHON=python.
+const PY = process.env.E2E_PYTHON ?? '.venv/bin/python';
 
 export default defineConfig({
   testDir: './e2e',
@@ -30,8 +33,7 @@ export default defineConfig({
     {
       // fresh DB each boot; the real backend, pointed at the mock upstream.
       // Port 8788 (not 8000) to dodge anything already squatting the usual port.
-      command:
-        'sh -c "rm -f .e2e.db && exec .venv/bin/python -m uvicorn app.main:app --port 8788"',
+      command: `sh -c "rm -f .e2e.db && exec ${PY} -m uvicorn app.main:app --port 8788"`,
       cwd: '../backend',
       url: 'http://127.0.0.1:8788/api/health',
       reuseExistingServer: !CI,

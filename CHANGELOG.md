@@ -10,6 +10,16 @@ Highlights since the initial tiers (see git history + `docs/ROADMAP.md` for the
 authoritative status):
 
 ### Added
+- **Open WebUI parity sprint** (latest): admin **account suspension**
+  (enable/disable a user — closes cookie, API-key, and SSO doors at once,
+  keeps their data); **message queue** / continuous typing (compose and send
+  while the model is still streaming; queued turns auto-send FIFO); **edit
+  assistant replies in place** (no rerun); **Office document extraction**
+  (.docx/.xlsx/.pptx via stdlib, plus an optional external Tika/Docling
+  extractor for OCR/scanned PDFs — `FREE_WEBUI_CONTENT_EXTRACTION_URL`);
+  **full-context RAG mode** (inject whole attached documents verbatim instead
+  of top-k retrieval, per-conversation toggle); and **persisted tool calls**
+  (the 🔧 chips now re-render on reload, not just live).
 - **Security hardening**: SSRF guard for user/operator URLs, authenticated
   `/api/models`, security-headers middleware, login rate-limiting, request
   body cap, finite upstream read timeout, bounded `calculate()`,

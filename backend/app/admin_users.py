@@ -21,6 +21,7 @@ class UserListed(BaseModel):
     username: str
     role: str
     created_at: int
+    disabled: bool = False
 
 
 class CreateUserBody(BaseModel):
@@ -32,6 +33,7 @@ class CreateUserBody(BaseModel):
 class UpdateUserBody(BaseModel):
     role: str | None = Field(default=None, pattern="^(admin|user)$")
     password: str | None = Field(default=None, min_length=6, max_length=256)
+    disabled: bool | None = None
 
 
 def _db(request: Request) -> aiosqlite.Connection:
@@ -42,10 +44,10 @@ def _db(request: Request) -> aiosqlite.Connection:
 async def list_users(request: Request):
     db = _db(request)
     cur = await db.execute(
-        "SELECT id, username, role, created_at FROM users ORDER BY id"
+        "SELECT id, username, role, created_at, disabled FROM users ORDER BY id"
     )
     return [
-        UserListed(id=r[0], username=r[1], role=r[2], created_at=r[3])
+        UserListed(id=r[0], username=r[1], role=r[2], created_at=r[3], disabled=bool(r[4]))
         for r in await cur.fetchall()
     ]
 
@@ -80,12 +82,14 @@ async def update_user(
 ):
     db = _db(request)
     cur = await db.execute(
-        "SELECT username, role, created_at FROM users WHERE id = ?", (uid,)
+        "SELECT username, role, created_at, disabled FROM users WHERE id = ?", (uid,)
     )
     row = await cur.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="user not found")
     new_role = body.role if body.role is not None else row[1]
+    was_disabled = bool(row[3])
+    new_disabled = body.disabled if body.disabled is not None else was_disabled
 
     # Refuse to demote the only admin.
     if row[1] == "admin" and new_role != "admin":
@@ -96,6 +100,20 @@ async def update_user(
                 status_code=400, detail="cannot demote the only remaining admin"
             )
 
+    # Disabling guards: never lock yourself out, and never suspend the last admin
+    # who can still log in (else the instance has no reachable administrator).
+    if new_disabled and not was_disabled:
+        if uid == me["id"]:
+            raise HTTPException(status_code=400, detail="cannot disable your own account")
+        if row[1] == "admin":
+            cur = await db.execute(
+                "SELECT COUNT(*) FROM users WHERE role = 'admin' AND disabled = 0"
+            )
+            if (await cur.fetchone())[0] <= 1:
+                raise HTTPException(
+                    status_code=400, detail="cannot disable the only enabled admin"
+                )
+
     if body.password is not None:
         # Bump token_version so a forced password reset also revokes the user's
         # existing sessions.
@@ -105,12 +123,26 @@ async def update_user(
         )
     if body.role is not None and body.role != row[1]:
         await db.execute("UPDATE users SET role = ? WHERE id = ?", (new_role, uid))
+    if new_disabled != was_disabled:
+        if new_disabled:
+            # Suspend + bump token_version so every live session (cookie/WS) is
+            # cut immediately, not just on the next cookie read.
+            await db.execute(
+                "UPDATE users SET disabled = 1, token_version = token_version + 1 WHERE id = ?",
+                (uid,),
+            )
+        else:
+            await db.execute("UPDATE users SET disabled = 0 WHERE id = ?", (uid,))
     await db.commit()
     if body.password is not None:
         await record(db, me, "user.password_reset", f"user={row[0]}")
     if body.role is not None and body.role != row[1]:
         await record(db, me, "user.role_change", f"user={row[0]} {row[1]} -> {new_role}")
-    return UserListed(id=uid, username=row[0], role=new_role, created_at=row[2])
+    if new_disabled != was_disabled:
+        await record(db, me, "user.disable" if new_disabled else "user.enable", f"user={row[0]}")
+    return UserListed(
+        id=uid, username=row[0], role=new_role, created_at=row[2], disabled=new_disabled
+    )
 
 
 @router.delete("/{uid}", status_code=204)

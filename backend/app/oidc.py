@@ -290,9 +290,15 @@ async def _complete_callback(
     if not sub:
         raise HTTPException(status_code=502, detail="userinfo missing sub")
 
-    user = await _find_or_create_user(request.app.state.db, str(sub), claims)
+    db = request.app.state.db
+    user = await _find_or_create_user(db, str(sub), claims)
     if user is None:
         raise HTTPException(status_code=403, detail="sign-up via SSO is disabled")
+    # A suspended account can't re-enter via SSO either (the cookie current_user
+    # check would 403 it anyway; reject at login for a clean failure).
+    drow = await (await db.execute("SELECT disabled FROM users WHERE id = ?", (user["id"],))).fetchone()
+    if drow and drow[0]:
+        raise HTTPException(status_code=403, detail="account disabled")
 
     token = issue_session(user["id"], user["username"], user["role"], user["token_version"])
     resp = RedirectResponse(settings.oidc_post_login_redirect, status_code=302)

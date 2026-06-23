@@ -18,6 +18,9 @@ CREATE TABLE IF NOT EXISTS users (
     token_version INTEGER NOT NULL DEFAULT 0,
     -- OIDC subject id, when the account is linked to an SSO identity.
     oidc_sub      TEXT,
+    -- Admin suspension: a disabled account keeps all its data but can't log in
+    -- or authenticate (cookie, API key, or SSO) until re-enabled.
+    disabled      INTEGER NOT NULL DEFAULT 0,
     created_at    INTEGER NOT NULL
 );
 
@@ -429,6 +432,7 @@ _MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("files", "storage", "TEXT NOT NULL DEFAULT 'db'"),
     ("users", "token_version", "INTEGER NOT NULL DEFAULT 0"),
     ("users", "oidc_sub", "TEXT"),
+    ("users", "disabled", "INTEGER NOT NULL DEFAULT 0"),
     ("presets", "description", "TEXT"),
     ("presets", "tools_enabled", "INTEGER NOT NULL DEFAULT 0"),
     ("presets", "web_search", "INTEGER NOT NULL DEFAULT 0"),

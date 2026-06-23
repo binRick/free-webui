@@ -742,6 +742,7 @@ export interface AdminUser {
   username: string;
   role: string;
   created_at: number;
+  disabled: boolean;
 }
 
 export async function adminListUsers(): Promise<AdminUser[]> {
@@ -769,7 +770,7 @@ export async function adminCreateUser(
 
 export async function adminPatchUser(
   id: number,
-  patch: { role?: 'admin' | 'user'; password?: string }
+  patch: { role?: 'admin' | 'user'; password?: string; disabled?: boolean }
 ): Promise<AdminUser> {
   const res = await apiFetch(`/api/admin/users/${id}`, {
     method: 'PATCH',

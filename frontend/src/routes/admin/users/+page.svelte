@@ -69,6 +69,20 @@
     }
   }
 
+  async function toggleDisabled(u: AdminUser) {
+    if (
+      !u.disabled &&
+      !confirm(`disable ${u.username}? they'll be signed out and can't log in until re-enabled. their data is kept.`)
+    )
+      return;
+    try {
+      await adminPatchUser(u.id, { disabled: !u.disabled });
+      await refresh();
+    } catch (e) {
+      loadError = (e as Error).message;
+    }
+  }
+
   async function resetPassword(u: AdminUser) {
     const pw = window.prompt(`new password for ${u.username}? (min 6 chars)`);
     if (!pw || pw.length < 6) return;
@@ -132,8 +146,11 @@
       </thead>
       <tbody>
         {#each users as u (u.id)}
-          <tr>
-            <td class="uname">{u.username}{u.id === auth.user?.id ? ' (you)' : ''}</td>
+          <tr class:disabled-row={u.disabled}>
+            <td class="uname">
+              {u.username}{u.id === auth.user?.id ? ' (you)' : ''}
+              {#if u.disabled}<span class="dis-pill">disabled</span>{/if}
+            </td>
             <td>
               <span class="role-pill" class:admin={u.role === 'admin'}>{u.role}</span>
             </td>
@@ -141,6 +158,11 @@
             <td class="actions">
               <button onclick={() => toggleRole(u)}>{u.role === 'admin' ? '↓ user' : '↑ admin'}</button>
               <button onclick={() => resetPassword(u)}>reset pw</button>
+              <button
+                class:enable={u.disabled}
+                disabled={u.id === auth.user?.id}
+                onclick={() => toggleDisabled(u)}
+              >{u.disabled ? 'enable' : 'disable'}</button>
               <button class="del" disabled={u.id === auth.user?.id} onclick={() => remove(u)}>delete</button>
             </td>
           </tr>
@@ -240,7 +262,21 @@
   }
   td.actions button:hover { color: var(--text); background: var(--bg-hover); }
   td.actions .del:hover { color: var(--danger); border-color: var(--danger); }
+  td.actions .enable { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
   td.actions button:disabled { opacity: 0.4; cursor: not-allowed; }
+  tr.disabled-row .uname { opacity: 0.6; }
+  .dis-pill {
+    margin-left: 0.4rem;
+    padding: 0.05rem 0.4rem;
+    border-radius: 999px;
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: color-mix(in srgb, var(--danger) 16%, transparent);
+    color: var(--danger);
+    border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+    vertical-align: middle;
+  }
   .err {
     color: var(--danger);
     background: color-mix(in srgb, var(--danger) 12%, transparent);

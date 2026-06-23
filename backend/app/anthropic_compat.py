@@ -33,7 +33,7 @@ async def _user_from_key(request: Request, x_api_key: str | None, authorization:
     db = request.app.state.db
     cur = await db.execute(
         """
-        SELECT u.id, u.username, u.role, k.id
+        SELECT u.id, u.username, u.role, k.id, u.disabled
         FROM api_keys k JOIN users u ON u.id = k.user_id WHERE k.key_hash = ?
         """,
         (_hash_key(token),),
@@ -41,6 +41,8 @@ async def _user_from_key(request: Request, x_api_key: str | None, authorization:
     row = await cur.fetchone()
     if not row:
         raise HTTPException(status_code=401, detail="invalid api key")
+    if row[4]:
+        raise HTTPException(status_code=403, detail="account disabled")
     await db.execute("UPDATE api_keys SET last_used_at = ? WHERE id = ?", (int(time.time()), row[3]))
     await db.commit()
     return {"id": row[0], "username": row[1], "role": row[2]}

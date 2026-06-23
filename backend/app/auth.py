@@ -117,7 +117,8 @@ async def current_user(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=401, detail="not authenticated")
     db = _db(request)
     cur = await db.execute(
-        "SELECT id, username, role, token_version FROM users WHERE id = ?", (payload["uid"],)
+        "SELECT id, username, role, token_version, disabled FROM users WHERE id = ?",
+        (payload["uid"],),
     )
     row = await cur.fetchone()
     if not row:
@@ -125,6 +126,10 @@ async def current_user(request: Request) -> dict[str, Any]:
     if int(payload.get("tv", 0)) != int(row[3]):
         # The session was revoked (password reset / logout-everywhere).
         raise HTTPException(status_code=401, detail="session expired")
+    if row[4]:
+        # Admin-suspended: the fresh per-request read makes this the single gate
+        # that locks out cookie sessions the moment the account is disabled.
+        raise HTTPException(status_code=403, detail="account disabled")
     return {"id": row[0], "username": row[1], "role": row[2]}
 
 
@@ -257,13 +262,17 @@ async def login_endpoint(body: LoginBody, request: Request, response: Response) 
     await _check_login_rate(request, body.username)
     db = _db(request)
     cur = await db.execute(
-        "SELECT id, password_hash, role, token_version FROM users WHERE username = ?",
+        "SELECT id, password_hash, role, token_version, disabled FROM users WHERE username = ?",
         (body.username,),
     )
     row = await cur.fetchone()
     if not row or not verify_password(row[1], body.password):
         raise HTTPException(status_code=401, detail="invalid credentials")
-    uid, _, role, tv = row
+    uid, _, role, tv, disabled = row
+    # Checked only after the password verifies, so a disabled state isn't an
+    # account-enumeration oracle for someone who doesn't hold the password.
+    if disabled:
+        raise HTTPException(status_code=403, detail="account disabled")
     token = issue_session(uid, body.username, role, tv)
     _set_cookie(response, token)
     return UserOut(id=uid, username=body.username, role=role)

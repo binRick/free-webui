@@ -117,7 +117,7 @@ async def user_from_bearer(
     db = _db(request)
     cur = await db.execute(
         """
-        SELECT u.id, u.username, u.role, k.id
+        SELECT u.id, u.username, u.role, k.id, u.disabled
         FROM api_keys k JOIN users u ON u.id = k.user_id
         WHERE k.key_hash = ?
         """,
@@ -126,6 +126,10 @@ async def user_from_bearer(
     row = await cur.fetchone()
     if not row:
         raise HTTPException(status_code=401, detail="invalid api key")
+    if row[4]:
+        # A suspended user's keys stop working too — disabling covers /v1, not
+        # just the cookie session.
+        raise HTTPException(status_code=403, detail="account disabled")
     await db.execute(
         "UPDATE api_keys SET last_used_at = ? WHERE id = ?",
         (int(time.time()), row[3]),

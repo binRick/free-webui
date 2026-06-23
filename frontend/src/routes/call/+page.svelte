@@ -8,6 +8,7 @@
     temporaryChat,
     type ContentPart
   } from '$lib/api';
+  import { stripReasoning } from '$lib/reasoning';
 
   // Hands-free voice/video call: a continuous loop of
   //   listen (STT) → think (stream model) → speak (TTS) → listen …
@@ -29,6 +30,8 @@
   let cameraOn = $state(false);
   let transcript = $state<Turn[]>([]);
   let liveReply = $state('');
+  // The live bubble shows the answer only — never the raw <think> chain-of-thought.
+  let liveReplyText = $derived(stripReasoning(liveReply));
   let liveHeard = $state('');
   let error = $state('');
 
@@ -243,7 +246,9 @@
       liveReply = liveReply || '(no response)';
     }
     if (stopped) return;
-    const reply = liveReply.trim() || '(no response)';
+    // Strip chain-of-thought: a reasoning model's <think> must not be spoken
+    // aloud nor replayed back on the next turn (transcript feeds the next call).
+    const reply = stripReasoning(liveReply) || '(no response)';
     transcript = [...transcript, { role: 'assistant', text: reply }];
     liveReply = '';
     await speak(reply);
@@ -374,7 +379,7 @@
         </div>
       {/each}
       {#if liveHeard}<div class="turn user live"><span class="who">you</span><span class="text">{liveHeard}</span></div>{/if}
-      {#if liveReply}<div class="turn assistant live"><span class="who">assistant</span><span class="text">{liveReply}</span></div>{/if}
+      {#if liveReplyText}<div class="turn assistant live"><span class="who">assistant</span><span class="text">{liveReplyText}</span></div>{/if}
       {#if transcript.length === 0 && !liveHeard && !liveReply}
         <p class="hint">
           {active ? 'start speaking — I’ll reply out loud.' : 'press “start call”, then just talk. I listen, answer, and speak back.'}

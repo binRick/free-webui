@@ -19,6 +19,7 @@ from .conversations import (
     _build_upstream_messages,
     _guard_model,
     _stream_and_persist,
+    _strip_reasoning,
 )
 from .permissions import require_permission
 
@@ -63,7 +64,12 @@ class TemporaryBody(BaseModel):
 def _validate_history(messages: list[TemporaryMessage]) -> list[dict]:
     """Normalise to upstream ``{role, content}`` dicts while bounding total text
     and inline-image size. Images must be ``data:`` URLs (no remote fetch), so a
-    crafted transcript can't turn the upstream into an SSRF fetch agent."""
+    crafted transcript can't turn the upstream into an SSRF fetch agent.
+
+    Assistant turns carry the client's accumulated reply, which for reasoning
+    models includes the inline <think>…</think> chain-of-thought; strip it here
+    (the same chokepoint as the persisted path's _load_history) so a temporary /
+    compare / call transcript never replays a model its own prior reasoning."""
     text_total = 0
     image_count = 0
     out: list[dict] = []
@@ -71,14 +77,16 @@ def _validate_history(messages: list[TemporaryMessage]) -> list[dict]:
         if m.role not in _ROLES:
             raise HTTPException(status_code=422, detail="invalid message role")
         if isinstance(m.content, str):
-            text_total += len(m.content)
-            out.append({"role": m.role, "content": m.content})
+            content = _strip_reasoning(m.content) if m.role == "assistant" else m.content
+            text_total += len(content)
+            out.append({"role": m.role, "content": content})
             continue
         parts: list[dict] = []
         for p in m.content:
             if isinstance(p, TextPart):
-                text_total += len(p.text)
-                parts.append({"type": "text", "text": p.text})
+                text = _strip_reasoning(p.text) if m.role == "assistant" else p.text
+                text_total += len(text)
+                parts.append({"type": "text", "text": text})
             else:
                 url = p.image_url.url
                 if not url.startswith("data:"):

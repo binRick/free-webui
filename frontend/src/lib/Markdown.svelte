@@ -4,6 +4,7 @@
   import type { Source } from './api';
   import { t } from './i18n.svelte';
   import { renderMarkdown } from './markdown';
+  import { splitReasoning } from './reasoning';
   import { theme } from './theme.svelte';
 
   // `sources`, when present, turns inline [n] markers into citation chips whose
@@ -19,23 +20,9 @@
   let reasoningHtml = $state('');  // reasoning model <think>…</think> block, if any
   let container: HTMLDivElement;
 
-  // Reasoning models emit their chain-of-thought wrapped in <think>…</think>
-  // (or <thinking>…</thinking>) before the answer. Split it out so it can render
-  // in a collapsible block instead of inline. While the closing tag hasn't
-  // streamed yet, the whole tail is still-streaming reasoning.
-  function splitReasoning(src: string): { reasoning: string | null; answer: string; thinking: boolean } {
-    const open = /<think(?:ing)?>/i.exec(src);
-    if (!open) return { reasoning: null, answer: src, thinking: false };
-    const before = src.slice(0, open.index);
-    const rest = src.slice(open.index + open[0].length);
-    const close = /<\/think(?:ing)?>/i.exec(rest);
-    if (!close) return { reasoning: rest, answer: before, thinking: true };
-    return {
-      reasoning: rest.slice(0, close.index),
-      answer: before + rest.slice(close.index + close[0].length),
-      thinking: false
-    };
-  }
+  // Reasoning models emit their chain-of-thought wrapped in <think>…</think>;
+  // splitReasoning (shared with copy/TTS/voice) collapses every span into a
+  // collapsible block instead of rendering it inline with the answer.
   let parts = $derived(
     reasoning ? splitReasoning(source) : { reasoning: null, answer: source, thinking: false }
   );

@@ -66,6 +66,7 @@
   import { toasts } from '$lib/toastStore.svelte';
   import Markdown from '$lib/Markdown.svelte';
   import ModelPicker from '$lib/ModelPicker.svelte';
+  import { stripReasoning } from '$lib/reasoning';
   import { sidebar } from '$lib/sidebarState.svelte';
 
   interface UIMessage {
@@ -605,19 +606,24 @@
     speechSynthesis.speak(u);
   }
 
-  function messagePlainText(content: string): string {
+  function messagePlainText(content: string, role?: string): string {
     const parsed = parseContent(content);
-    if (typeof parsed === 'string') return parsed;
-    return parsed
-      .filter((p) => p.type === 'text')
-      .map((p) => (p as { text: string }).text)
-      .join(' ');
+    const text =
+      typeof parsed === 'string'
+        ? parsed
+        : parsed
+            .filter((p) => p.type === 'text')
+            .map((p) => (p as { text: string }).text)
+            .join(' ');
+    // Copy/TTS must not leak a reasoning model's <think> chain-of-thought; only
+    // assistant turns carry it (a user could legitimately type the tag).
+    return role === 'assistant' ? stripReasoning(text) : text;
   }
 
   let copiedIdx = $state<number | null>(null);
-  async function copyMessage(idx: number, content: string) {
+  async function copyMessage(idx: number, content: string, role?: string) {
     try {
-      await navigator.clipboard.writeText(messagePlainText(content));
+      await navigator.clipboard.writeText(messagePlainText(content, role));
       copiedIdx = idx;
       setTimeout(() => { if (copiedIdx === idx) copiedIdx = null; }, 1200);
     } catch {
@@ -1385,8 +1391,8 @@
             {#if msg.role === 'user' && msg.id != null}
               <button class="action" onclick={() => startEdit(i)}>{t('common.edit')}</button>
             {/if}
-            {#if messagePlainText(msg.content)}
-              <button class="action" title="copy message" onclick={() => copyMessage(i, msg.content)}>
+            {#if messagePlainText(msg.content, msg.role)}
+              <button class="action" title="copy message" onclick={() => copyMessage(i, msg.content, msg.role)}>
                 {copiedIdx === i ? t('composer.copied') : t('composer.copy')}
               </button>
             {/if}
@@ -1429,8 +1435,8 @@
                 onclick={() => rateMessage(i, -1)}
               >👎</button>
             {/if}
-            {#if msg.role === 'assistant' && messagePlainText(msg.content)}
-              <button class="action" onclick={() => speakMessage(i, messagePlainText(msg.content))}>
+            {#if msg.role === 'assistant' && messagePlainText(msg.content, msg.role)}
+              <button class="action" onclick={() => speakMessage(i, messagePlainText(msg.content, msg.role))}>
                 {speakingIdx === i ? '⏹ stop' : '🔊 speak'}
               </button>
             {/if}

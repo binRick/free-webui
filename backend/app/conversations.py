@@ -208,14 +208,59 @@ def _content_text(content: str | list[dict]) -> str:
     return content
 
 
+# Matches either a <think>/<thinking> opener or a </think>/</thinking> closer;
+# group 1 is "/" for a closer. One alternation so a single re.finditer pass over
+# the text finds every tag in order — keeps _strip_reasoning genuinely O(n).
+_THINK_TAG_RE = re.compile(r"<(/?)think(?:ing)?>", re.IGNORECASE)
+
+
+def _strip_reasoning(text: str) -> str:
+    """Drop <think>…</think> reasoning spans from assistant text before replaying
+    it upstream: reasoning models expect their chain-of-thought NOT to be fed back
+    on later turns (and it bloats context). Storage/display keep it intact.
+
+    A single linear finditer pass with a depth counter (NOT a per-tag scan, which
+    is O(n²) on many spans, nor a backtracking regex): text is emitted only at
+    depth 0, nesting is balanced, an orphan closer is dropped, and an unclosed
+    trailing span is dropped to end-of-text. Mirrors the frontend splitReasoning
+    so display and replay stay byte-for-byte consistent. (A literal think-tag the
+    answer happens to contain is treated as a real tag — the rare cost of not
+    parsing context, shared by any tag-based stripper.)"""
+    if not _THINK_TAG_RE.search(text):
+        return text.strip()
+    out: list[str] = []
+    depth = 0
+    last = 0
+    for m in _THINK_TAG_RE.finditer(text):
+        if not m.group(1):  # opener
+            if depth == 0:
+                out.append(text[last:m.start()])
+            depth += 1
+        elif depth > 0:  # matched closer
+            depth -= 1
+            if depth == 0:
+                last = m.end()
+        else:  # orphan closer at depth 0 -> drop the tag, keep the text
+            out.append(text[last:m.start()])
+            last = m.end()
+    if depth == 0:  # unclosed span (depth > 0) drops the rest to end-of-text
+        out.append(text[last:])
+    return "".join(out).strip()
+
+
 def _history_content_for_upstream(role: str, content: str | list[dict]):
     """Generated images persist inside assistant messages as image_url parts,
     but most chat-completion providers reject image parts in assistant turns
     (and replaying the large data: URL bloats context). Downcast assistant
     multimodal content to its text on the way upstream; user messages keep
-    their images (vision input). The stored/displayed message is untouched."""
-    if role == "assistant" and isinstance(content, list):
-        return _content_text(content) or "[generated an image]"
+    their images (vision input). The stored/displayed message is untouched.
+
+    Assistant reasoning (<think>…</think>) is also stripped here so it's never
+    replayed back to the model."""
+    if role == "assistant":
+        if isinstance(content, list):
+            return _strip_reasoning(_content_text(content)) or "[generated an image]"
+        return _strip_reasoning(content)
     return content
 
 
@@ -229,6 +274,10 @@ async def _load_history(db: aiosqlite.Connection, cid: str) -> list[dict]:
     budget = [_INLINE_BUDGET]  # bounds total image bytes inlined into one replay
     for r in rows:
         content = _history_content_for_upstream(r[0], _decode_content(r[1]))
+        # A pure-reasoning assistant turn strips to "" — drop it rather than
+        # replay {role: assistant, content: ""} (some providers 400 on that).
+        if r[0] == "assistant" and content == "":
+            continue
         # User vision attachments persist as /api/files/{id} refs; inline the
         # real bytes so the upstream model actually sees the image on replay.
         if isinstance(content, list):
@@ -450,6 +499,12 @@ async def _stream_and_persist(
     async def _gone() -> bool:
         return is_disconnected is not None and await is_disconnected()
 
+    def _content_frame(text: str) -> bytes:
+        # Synthesize an OpenAI content-delta SSE frame (used to normalize a
+        # model's separate `reasoning_content` stream into inline <think> markers
+        # the client already renders as a collapsible block).
+        return f"data: {json.dumps({'choices': [{'delta': {'content': text}}]})}\n\n".encode()
+
     sources_sent = False
     aborted = False
     try:
@@ -460,6 +515,7 @@ async def _stream_and_persist(
             iter_content: list[str] = []
             tool_buf: dict[int, dict] = {}
             saw_done = False
+            reasoning_open = False  # inside a reasoning_content -> <think> span
 
             async with http.stream(
                 "POST", conn_url(conn, "chat/completions"),
@@ -498,8 +554,25 @@ async def _stream_and_persist(
                         continue
 
                     delta = (chunk.get("choices") or [{}])[0].get("delta", {})
+                    # Some reasoning models stream their chain-of-thought in a
+                    # separate `reasoning_content` field. Normalize it into inline
+                    # <think>…</think> content so it persists + renders collapsibly
+                    # exactly like models that emit <think> inline.
+                    rc = delta.get("reasoning_content")
+                    if isinstance(rc, str) and rc:
+                        if not reasoning_open:
+                            reasoning_open = True
+                            iter_content.append("<think>")
+                            yield _content_frame("<think>")
+                        iter_content.append(rc)
+                        yield _content_frame(rc)
+
                     content = delta.get("content")
                     if isinstance(content, str) and content:
+                        if reasoning_open:
+                            reasoning_open = False
+                            iter_content.append("</think>\n\n")
+                            yield _content_frame("</think>\n\n")
                         iter_content.append(content)
                         # forward content chunk to client
                         yield f"{line}\n\n".encode()
@@ -525,6 +598,17 @@ async def _stream_and_persist(
                         aborted = True
                         break
 
+            # Close a reasoning span that ended without any answer content (e.g.
+            # the model reasoned then called a tool, or stopped) so <think> is
+            # always balanced in the persisted + streamed text. On an abort the
+            # socket is already dead, so DON'T yield first (a raise there would
+            # skip the persist below and lose the partial) — just record + persist.
+            if reasoning_open:
+                reasoning_open = False
+                iter_content.append("</think>")
+                if not aborted:
+                    yield _content_frame("</think>")
+
             final_content.extend(iter_content)
 
             if aborted or not tool_buf:
@@ -536,8 +620,11 @@ async def _stream_and_persist(
             # Replay the assistant tool_calls message + each tool's result
             # back to the upstream, and surface each tool call to the client.
             assistant_tool_msg: dict[str, Any] = {
+                # Strip reasoning from the tool-call turn replayed back upstream
+                # (same rationale as history replay — don't feed it the chain-of
+                # -thought), keeping any actual answer text it emitted.
                 "role": "assistant",
-                "content": "".join(iter_content),
+                "content": _strip_reasoning("".join(iter_content)),
                 "tool_calls": [
                     {
                         "id": rec["id"],
@@ -1226,7 +1313,11 @@ async def continue_message(
         raise HTTPException(
             status_code=400, detail="can only continue the latest assistant message"
         )
-    if not isinstance(_decode_content(last[2]), str) or not last[2].strip():
+    decoded_last = _decode_content(last[2])
+    # Strip reasoning before the check + (below) before replay: a turn that is
+    # ONLY <think>…</think> has no answer to continue, and the reasoning must not
+    # be fed back to the model.
+    if not isinstance(decoded_last, str) or not _strip_reasoning(decoded_last):
         raise HTTPException(
             status_code=400, detail="cannot continue a non-text or empty message"
         )

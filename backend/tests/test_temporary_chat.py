@@ -65,6 +65,31 @@ async def test_temporary_chat_replays_full_transcript(client, upstream):
     assert sent[-1]["content"] == "second"
 
 
+async def test_temporary_chat_strips_assistant_reasoning_on_replay(client, upstream):
+    """A reasoning model's <think> chain-of-thought, accumulated client-side into
+    the assistant turn, must not be replayed back upstream (the temporary/compare/
+    call routes all flow through here). User turns are left untouched."""
+    await _signup(client)
+    upstream.queue_chat(sse(content_chunk("ok"), finish("stop")))
+    await _consume(
+        client,
+        "/api/chat/temporary",
+        {
+            "messages": [
+                {"role": "user", "content": "first <think>not mine to strip</think>"},
+                {"role": "assistant", "content": "<think>secret CoT</think>visible answer"},
+                {"role": "user", "content": "second"},
+            ],
+        },
+    )
+    sent = upstream.chat_calls[-1]["messages"]
+    asst = [m for m in sent if m["role"] == "assistant"][0]
+    assert asst["content"] == "visible answer"  # reasoning gone, answer kept
+    # the user turn keeps its literal text verbatim (a user may type the tag)
+    user_first = [m for m in sent if m["role"] == "user"][0]
+    assert "<think>not mine to strip</think>" in user_first["content"]
+
+
 async def test_temporary_chat_forwards_generation_params(client, upstream):
     await _signup(client)
     upstream.queue_chat(sse(content_chunk("ok"), finish("stop")))

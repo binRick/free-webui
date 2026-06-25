@@ -1580,6 +1580,12 @@
         </div>
       {/if}
       <div class="content">
+        {#if streaming && i === messages.length - 1 && msg.role === 'assistant' && !msg.content?.trim() && !(msg.tool_calls && msg.tool_calls.length)}
+          <!-- waiting on the first token (the model may be loading) -->
+          <div class="thinking" role="status" aria-label="thinking…" title="thinking…">
+            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          </div>
+        {/if}
         {#if editingIndex === i}
           <textarea class="edit" bind:value={editText} rows="4"></textarea>
           <div class="edit-actions">
@@ -1710,6 +1716,7 @@
     >🎤</button>
     <textarea
       bind:this={composer}
+      use:focusOnMount
       placeholder={t('composer.placeholder')}
       bind:value={input}
       onkeydown={onKey}
@@ -2195,6 +2202,33 @@
   .action.vnav:disabled { opacity: 0.4; cursor: default; }
   .vcount { font-size: 0.7rem; color: var(--text-muted); min-width: 1.8rem; text-align: center; }
   .content { line-height: 1.5; word-wrap: break-word; }
+  .thinking {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.35rem 0.1rem;
+  }
+  .thinking .dot {
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 50%;
+    background: var(--accent);
+    opacity: 0.45;
+    animation: thinking-bounce 1.2s ease-in-out infinite;
+  }
+  .thinking .dot:nth-child(2) { animation-delay: 0.2s; }
+  .thinking .dot:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes thinking-bounce {
+    0%, 80%, 100% { opacity: 0.3; transform: translateY(0); }
+    40% { opacity: 1; transform: translateY(-0.2rem); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .thinking .dot { animation: thinking-fade 1.2s ease-in-out infinite; }
+    @keyframes thinking-fade {
+      0%, 100% { opacity: 0.3; }
+      50% { opacity: 1; }
+    }
+  }
   .sources {
     display: flex;
     flex-wrap: wrap;

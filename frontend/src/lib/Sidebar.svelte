@@ -576,9 +576,9 @@
   }
   footer {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.4rem;
     padding: 0.6rem 0.75rem;
     border-top: 1px solid var(--border-soft);
     font-size: 0.8rem;
@@ -589,7 +589,16 @@
     white-space: nowrap;
     text-overflow: ellipsis;
   }
-  .footer-actions { display: flex; gap: 0.35rem; align-items: center; }
+  /* wrap the nav chips onto multiple rows instead of clipping them off the
+     right edge; cap the height + scroll so a long admin list can't dominate. */
+  .footer-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    align-items: center;
+    max-height: 38vh;
+    overflow-y: auto;
+  }
   .admin-link {
     color: var(--text-muted);
     text-decoration: none;

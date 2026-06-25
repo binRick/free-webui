@@ -7,8 +7,13 @@
     value: string | null;
     disabled?: boolean;
     onSelect: (model: string) => void;
+    // Which edge the popover anchors to. 'right' (default) grows leftward — good
+    // when the trigger sits on the right (chat header). 'left' grows rightward —
+    // use when the trigger is near the left edge (compare columns) so the menu
+    // doesn't spill under the sidebar.
+    align?: 'left' | 'right';
   }
-  let { models, value, disabled = false, onSelect }: Props = $props();
+  let { models, value, disabled = false, onSelect, align = 'right' }: Props = $props();
 
   let open = $state(false);
   let query = $state('');
@@ -77,7 +82,7 @@
   </button>
 
   {#if open}
-    <div class="menu" role="listbox">
+    <div class="menu" class:left={align === 'left'} role="listbox">
       <input
         bind:this={input}
         bind:value={query}
@@ -146,7 +151,7 @@
     right: 0;
     z-index: 30;
     width: 280px;
-    max-width: 80vw;
+    max-width: min(280px, calc(100vw - 1rem));
     background: var(--bg-elev);
     border: 1px solid var(--border-soft);
     border-radius: 8px;
@@ -155,6 +160,10 @@
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
+  }
+  .menu.left {
+    right: auto;
+    left: 0;
   }
   .filter {
     background: var(--bg-sidebar);

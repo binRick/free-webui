@@ -1500,6 +1500,7 @@
       msg.role === 'assistant' && msg.content
         ? extractArtifacts(messagePlainText(msg.content, 'assistant'))
         : []}
+    {@const live = streaming && i === messages.length - 1 && msg.role === 'assistant'}
     <div class="msg {msg.role}">
       <div class="role-row">
         <span class="role">{msg.role}</span>
@@ -1597,11 +1598,11 @@
         {:else}
           {@const parsed = parseContent(msg.content)}
           {#if typeof parsed === 'string'}
-            <Markdown source={parsed} sources={msg.sources ?? []} reasoning={msg.role === 'assistant'} />
+            <Markdown source={parsed} sources={msg.sources ?? []} reasoning={msg.role === 'assistant'} {live} />
           {:else}
             {#each parsed as part}
               {#if part.type === 'text'}
-                <Markdown source={part.text} sources={msg.sources ?? []} reasoning={msg.role === 'assistant'} />
+                <Markdown source={part.text} sources={msg.sources ?? []} reasoning={msg.role === 'assistant'} {live} />
               {:else if part.type === 'image_url'}
                 <img class="attached" src={part.image_url.url} alt="attachment" />
               {/if}

@@ -14,8 +14,9 @@
   let {
     source,
     sources = [],
-    reasoning = false
-  }: { source: string; sources?: Source[]; reasoning?: boolean } = $props();
+    reasoning = false,
+    live = false
+  }: { source: string; sources?: Source[]; reasoning?: boolean; live?: boolean } = $props();
   let html = $state('');           // the answer
   let reasoningHtml = $state('');  // reasoning model <think>…</think> block, if any
   let container: HTMLDivElement;
@@ -211,6 +212,7 @@
 {/if}
 <div
   class="md"
+  class:live
   bind:this={container}
   onclick={onClick}
   onpointerover={positionCite}
@@ -285,6 +287,10 @@
     transition: opacity 0.15s;
   }
   .md :global(.code-block:hover .code-copy) { opacity: 1; }
+  /* while streaming, the markdown re-renders every token and auto-scrolls under
+     the cursor — which made the hover-revealed copy button flash. It's not
+     useful mid-stream, so hide it until the reply settles. */
+  .md.live :global(.code-copy) { display: none; }
   .md :global(.code-copy:hover) { color: var(--text); background: var(--border); }
 
   .md :global(table) {

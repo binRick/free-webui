@@ -121,6 +121,7 @@
             models={allModels}
             value={col.model}
             disabled={col.streaming}
+            align="left"
             onSelect={(m) => setModel(col.id, m)}
           />
           {#if columns.length > 1}

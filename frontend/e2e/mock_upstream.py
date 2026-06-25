@@ -125,7 +125,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.rstrip("/").endswith("/v1/models"):
-            self._json({"object": "list", "data": [{"id": MODEL, "object": "model"}]})
+            # a text model + a vision-named one, so specs can test capability gating
+            self._json(
+                {
+                    "object": "list",
+                    "data": [
+                        {"id": MODEL, "object": "model"},
+                        {"id": "moondream", "object": "model"},
+                    ],
+                }
+            )
         else:
             self._json({"status": "ok"})
 

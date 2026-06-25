@@ -71,6 +71,7 @@
   import ModelPicker from '$lib/ModelPicker.svelte';
   import ArtifactPanel from '$lib/ArtifactPanel.svelte';
   import { extractArtifacts, type Artifact } from '$lib/artifacts';
+  import { modelSupportsVision } from '$lib/vision';
   import { stripReasoning } from '$lib/reasoning';
   import { sidebar } from '$lib/sidebarState.svelte';
 
@@ -86,6 +87,9 @@
 
   let models = $state<string[]>([]);
   let model = $state<string | null>(null);
+  // Best-effort: does the selected model accept image input? Drives an
+  // attach-an-image warning so users don't silently send images to a text model.
+  let visionOk = $derived(modelSupportsVision(model));
   let title = $state('new chat');
   let messages = $state<UIMessage[]>([]);
   let input = $state('');
@@ -1680,6 +1684,11 @@
       {/each}
     </div>
   {/if}
+  {#if pendingImages.length && !visionOk}
+    <div class="vision-warn" role="alert">
+      ⚠ <strong>{model ?? 'this model'}</strong> probably can't read images — it'll see a placeholder, not the picture. Switch to a vision model (e.g. <code>gemma3:4b</code>, <code>moondream</code>, <code>llava</code>, <code>llama3.2-vision</code>).
+    </div>
+  {/if}
   {#if queued.length}
     <div class="queued" aria-label="queued messages">
       {#each queued as q, i (i)}
@@ -1703,7 +1712,9 @@
     <button
       type="button"
       class="attach"
+      class:warn={!visionOk}
       aria-label="attach image"
+      title={visionOk ? 'attach image' : `${model ?? 'this model'} may not support images`}
       onclick={() => fileInput.click()}
       disabled={editingIndex !== null}
     >📎</button>
@@ -2385,6 +2396,23 @@
   }
   .tag-chip:hover { color: var(--text); border-color: var(--accent); }
   .tag-chip .tc-n { opacity: 0.6; font-variant-numeric: tabular-nums; }
+  .vision-warn {
+    margin-bottom: 0.4rem;
+    padding: 0.4rem 0.6rem;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    line-height: 1.4;
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+    color: var(--text);
+  }
+  .vision-warn code {
+    background: var(--bg-hover);
+    padding: 0.05em 0.3em;
+    border-radius: 3px;
+    font-size: 0.92em;
+  }
+  .attach.warn { color: var(--danger); opacity: 0.85; }
   .queued {
     display: flex;
     flex-wrap: wrap;
